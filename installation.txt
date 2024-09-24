@@ -1,0 +1,17 @@
+
+
+Prerequisites: 
+
+- Git
+- WSL
+- Ubuntu
+
+
+Extensions:
+
+- WSL
+- Github pull request
+- Git graph
+- vscode great icons
+- Python
+
