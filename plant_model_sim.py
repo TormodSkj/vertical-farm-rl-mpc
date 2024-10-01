@@ -53,14 +53,15 @@ def x_dot(x, u):
     f_phot_max = alpha * U_par * f_sat / (alpha * U_par + f_sat)                        #Maximum photosynthetic rate
     f_phot = f_phot_max * CAC                                                           #Gross canopy photosynthesis
     f_resp = (c_resp_sht*(1-c_T) + c_resp_rt*c_T)*x_sdw * c_Q_10_gr**((T_crop-25)/10)   #Maintenance respiration rate
-
+    x_dw_plant = (x_sdw + x_nsdw) / PCD                                                 #X dont worry plant <3
+    x_fw_sht = x_dw_plant * (1-c_T)/c_d                                                 #Fresh weight per plant
 
     #Derivatives
     x_sdw_dot = r_gr * x_sdw
     # x_nsdw_dot = c_a * f_phot - x_sdw_dot - f_resp - (1-c_b)/c_b * r_gr * x_sdw       Slightly inefficient implementation
     x_nsdw_dot = c_a * f_phot - f_resp - 1/c_b * x_sdw_dot                              #More efficient implementation
 
-    return np.array([x_sdw_dot, x_nsdw_dot])
+    return np.array([x_sdw_dot, x_nsdw_dot]), np.array([f_phot, x_fw_sht])
 
 
 def simulate(x_0: np.ndarray, TH: int, dt: float):
@@ -70,6 +71,7 @@ def simulate(x_0: np.ndarray, TH: int, dt: float):
 
     #init
     N = int(np.ceil(TH/dt))
+    z = np.zeros((2, N))
     x = np.zeros((nx, N))
     u = 250 * np.ones((nu, N))      #TODO change
     x[:,0] = x_0
@@ -85,14 +87,17 @@ def simulate(x_0: np.ndarray, TH: int, dt: float):
 
     #Forward euler. keep it simple
     for k in range(N-1):
-        x[:,k+1] = x[:,k] + dt*x_dot(x[:,k],u[:,k])
+        x_dot_k, other_data = x_dot(x[:,k],u[:,k])
+        x[:,k+1] = x[:,k] + dt*x_dot_k
+        z[:,k+1] = other_data
+        
     
     t = np.linspace(0,TH,N)
 
-    return x, u, t
+    return x, u, t, z
 
 
-def plotting(x, u, t):
+def plotting(x, u, t, z):
 
     plot_folder = 'plots'
     os.makedirs(plot_folder, exist_ok=True)
@@ -100,7 +105,8 @@ def plotting(x, u, t):
     plt.figure(1)
     plt.plot(t, x[0,:])
     plt.plot(t, x[1,:])
-    plt.legend(("Structural dry weight", "Non-structural dry weight"))
+    plt.plot(t, z[1,:])
+    plt.legend(("Structural dry weight / m^2", "Non-structural dry weight / m^2", "Fresh weight per plant"))
     plot_path = os.path.join(plot_folder, "Plantmodel_plot_plantweight.png")
     plt.savefig(plot_path)
 
@@ -111,7 +117,7 @@ def plotting(x, u, t):
     plt.savefig(plot_path)
 
 
-x, u, t = simulate(np.array([5, 1]), 14*24*60*60, 60)
-plotting(x, u, t)
+x, u, t, z = simulate(np.array([5, 1]), 14*24*60*60, 60)
+plotting(x, u, t, z)
 
 
