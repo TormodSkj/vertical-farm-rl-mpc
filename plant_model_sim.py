@@ -1,4 +1,4 @@
-
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -93,16 +93,22 @@ def simulate(x_0: np.ndarray, TH: int, dt: float):
 
 
 def plotting(x, u, t):
+
+    plot_folder = 'plots'
+    os.makedirs(plot_folder, exist_ok=True)
+
     plt.figure(1)
     plt.plot(t, x[0,:])
     plt.plot(t, x[1,:])
     plt.legend(("Structural dry weight", "Non-structural dry weight"))
-    plt.savefig("Plantmodel_plot_plantweight.png")
+    plot_path = os.path.join(plot_folder, "Plantmodel_plot_plantweight.png")
+    plt.savefig(plot_path)
 
     plt.figure(2)
     plt.plot(t, u[0,:])
     plt.legend(("Light level"))
-    plt.savefig("Plantmodel_plot_lightlevel.png")
+    plot_path = os.path.join(plot_folder, "Plantmodel_plot_lightlevel.png")
+    plt.savefig(plot_path)
 
 
 x, u, t = simulate(np.array([5, 1]), 14*24*60*60, 60)

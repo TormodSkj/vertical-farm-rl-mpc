@@ -3,7 +3,7 @@
 # from acados import *
 
 
-import PyQt5
+# import PyQt5
 
 import matplotlib
 matplotlib.use("Qt5Agg")
