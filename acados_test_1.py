@@ -29,17 +29,18 @@
 #
 
 from acados_template import AcadosOcp, AcadosOcpSolver
-from example_model_pendulum import export_pendulum_ode_model
+from plant_model import export_lettuce_ode_model
 import numpy as np
 import casadi as ca
 # from utils import plot_pendulum
+from utils import *
 
 def main():
     # create ocp object to formulate the OCP
     ocp = AcadosOcp()
 
     # set model
-    model = export_pendulum_ode_model()
+    model = export_lettuce_ode_model()
     ocp.model = model
 
     Tf = 1.0
@@ -52,28 +53,31 @@ def main():
     ocp.solver_options.tf = Tf
 
     # cost matrices
-    Q_mat = 2*np.diag([1e3, 1e3, 1e-2, 1e-2])
-    R_mat = 2*np.diag([1e-2])
+    Q_mat = 2*np.diag([1e6, 1e6])
+    R_mat = 2*np.diag([1e-10])
 
     # path cost
-    ocp.cost.cost_type = 'NONLINEAR_LS'
-    ocp.model.cost_y_expr = ca.vertcat(model.x, model.u)
-    ocp.cost.yref = np.zeros((nx+nu,))
-    ocp.cost.W = ca.diagcat(Q_mat, R_mat).full()
+    # ocp.cost.cost_type = 'NONLINEAR_LS'
+    # ocp.model.cost_y_expr = ca.vertcat(model.x, model.u)
+    # ocp.cost.yref = np.zeros((nx+nu,))
+    # ocp.cost.W = ca.diagcat(Q_mat, R_mat).full()
 
     # terminal cost
     ocp.cost.cost_type_e = 'NONLINEAR_LS'
-    ocp.cost.yref_e = np.zeros((nx,))
+    ocp.cost.yref_e = np.zeros([nx,])
     ocp.model.cost_y_expr_e = model.x
     ocp.cost.W_e = Q_mat
 
     # set constraints
-    Fmax = 80
-    ocp.constraints.lbu = np.array([-Fmax])
+    Fmax = 250
+    ocp.constraints.lbu = np.array([0])
     ocp.constraints.ubu = np.array([+Fmax])
     ocp.constraints.idxbu = np.array([0])
+    ocp.constraints.lbx_e = np.array([200.0, 100.0])
+    ocp.constraints.idxbx = np.array([0])
 
-    ocp.constraints.x0 = np.array([0.0, np.pi, 0.0, 0.0])
+
+    ocp.constraints.x0 = np.array([5.0, 1.0])
 
     # set options
     ocp.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM' # FULL_CONDENSING_QPOASES
@@ -103,7 +107,12 @@ def main():
     simX[N,:] = ocp_solver.get(N, "x")
 
     # plot_pendulum(np.linspace(0, Tf, N+1), Fmax, simU, simX, latexify=True, time_label=model.t_label, x_labels=model.x_labels, u_labels=model.u_labels)
+    plotting(np.linspace(0, Tf, N+1), [simU, simX], "acados_test")
 
+    print(simX.shape)
+    print(simU.shape)
+    print(simX[0,:])
+    print(simX[-1,:])
 
 if __name__ == '__main__':
     main()

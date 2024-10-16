@@ -1,8 +1,64 @@
-import os
 import numpy as np
 import matplotlib.pyplot as plt
+import os
+from scipy.optimize import minimize
 
-def x_dot(x, u):
+
+def generate_spotprice(sigma=10):
+    """
+    Generates a random array of 96 elements where every four consecutive elements
+    are identical. The values are drawn from a normal distribution with a specified
+    mean (mu) and standard deviation (sigma).
+    
+    Parameters:
+    mu (float): The mean of the normal distribution. Default is 50.
+    sigma (float): The standard deviation of the normal distribution. Default is 10.
+    
+    Returns:
+    np.ndarray: A 1D array of 96 elements.
+    """
+
+    timesteps = np.linspace(0, 23, 24)
+    timesteps = np.repeat(timesteps, 4)
+    prices_mean = 0.7 - 0.2*np.cos(np.pi * timesteps/6) - 0.15*np.cos(np.pi * timesteps/12) 
+
+
+    # Generate 24 random values from a normal distribution
+    spot_prices = prices_mean + np.repeat(np.random.normal(loc=0, scale=sigma, size=24), 4)
+
+    # Ensure that no values are below 0
+    spot_prices = np.clip(spot_prices, a_min=0, a_max=None)
+    
+    # Repeat each value 4 times to get a total of 96 elements
+    
+    return spot_prices
+
+
+
+
+
+def plotting(t, timeseries, filename, folder = 'plots'):
+    #Function to plot timeseries to a given file.
+
+    if(len(timeseries)<1):
+        print("Specify one or more timeseries for plotting")
+        return
+
+    plt.figure(1)
+    for ts in timeseries:
+        plt.plot(t[0:len(ts)], ts)
+
+    filename = filename + ".png"
+    # plot_path = os.path.join(folder, filename)
+    plot_path = "/home/tormodskj/vertical-farm-rl-mpc/plots/" + filename
+    plt.savefig(plot_path)
+
+    import numpy as np
+
+
+
+
+def plant_model_derivative(x, u):
     
     #Extract state
     x_sdw = x[0]
@@ -61,65 +117,37 @@ def x_dot(x, u):
     # x_nsdw_dot = c_a * f_phot - x_sdw_dot - f_resp - (1-c_b)/c_b * r_gr * x_sdw       Slightly inefficient implementation
     x_nsdw_dot = c_a * f_phot - f_resp - 1/c_b * x_sdw_dot                              #More efficient implementation
 
-    return np.array([x_sdw_dot, x_nsdw_dot]), np.array([f_phot, x_fw_sht])
+    return np.array([x_sdw_dot, x_nsdw_dot])
 
 
-def simulate(x_0: np.ndarray, TH: int, dt: float):
 
-    nx = len(x_0)
-    nu = 1
-
-    #init
-    N = int(np.ceil(TH/dt))
-    z = np.zeros((2, N))
-    x = np.zeros((nx, N))
-    u = 250 * np.ones((nu, N))      #TODO change
-    x[:,0] = x_0
-
-    start_time = 18 * 60 * 60  # 18:00 in seconds (64,800)
-    end_time = 24 * 60 * 60    # 00:00 in seconds (86,400)
-    day_seconds = 24 * 60 * 60  # 86,400 seconds
-
-    for i in range(N):
-        current_time = (i * dt) % day_seconds
-        if start_time <= current_time < end_time:
-            u[:, i] = 0  # Set u to 0 between 18:00 and 00:00
-
-    #Forward euler. keep it simple
-    for k in range(N-1):
-        x_dot_k, other_data = x_dot(x[:,k],u[:,k])
-        x[:,k+1] = x[:,k] + dt*x_dot_k
-        z[:,k+1] = other_data
+# Objective function to minimize (based on spot prices and control input u)
+def objective(u, x0, spot_prices, dt):
+    x = x0
+    total_cost = 0
+    for t in range(96):
+        # Update state using the plant derivative and Euler integration
+        dx_dt = plant_model_derivative(x, u[t])
+        x = x + dx_dt * dt  # Euler integration for state update
         
+        # Cost function: u_t * spot_price_t
+        total_cost += u[t] * spot_prices[t]
     
-    t = np.linspace(0,TH,N)
+    return total_cost
 
-    return x, u, t, z
+# Main optimization loop over the time horizon
+def optimize_control(x0, spot_prices):
+    dt = 1  # Time step size
+    u_init = np.zeros(96)  # Initial guess for control input (zeros)
+    
+    # Bounds for control input u (optional)
+    bounds = [(0, 5) for _ in range(96)]  # Example: bounds on u between -5 and 5
 
-
-def plotting(x, u, t, z):
-
-    plot_folder = 'plots'
-    os.makedirs(plot_folder, exist_ok=True)
-
-    plt.figure(1)
-    plt.plot(t, x[0,:])
-    plt.plot(t, x[1,:])
-    plt.plot(t, z[1,:])
-    plt.legend(("Structural dry weight / m^2", "Non-structural dry weight / m^2", "Fresh weight per plant"))
-    # plot_path = os.path.join(plot_folder, "Plantmodel_plot_plantweight.png")
-    plot_path = "/home/tormodskj/vertical-farm-rl-mpc/plots/Plantmodel_plot_plantweight.png"
-    plt.savefig(plot_path)
-
-    plt.figure(2)
-    plt.plot(t, u[0,:])
-    plt.legend(("Light level"))
-    # plot_path = os.path.join(plot_folder, "Plantmodel_plot_lightlevel.png")
-    plot_path = "/home/tormodskj/vertical-farm-rl-mpc/plots/Plantmodel_plot_lightlevel.png"
-    plt.savefig(plot_path)
-
-
-x, u, t, z = simulate(np.array([5, 1]), 14*24*60*60, 60)
-plotting(x, u, t, z)
-
+    # Perform the optimization using minimize
+    result = minimize(objective, u_init, args=(x0, spot_prices, dt),
+                      method='SLSQP', bounds=bounds)
+    
+    # Optimized control inputs
+    u_optimal = result.x
+    return u_optimal
 
