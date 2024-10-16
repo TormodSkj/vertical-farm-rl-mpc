@@ -73,6 +73,8 @@ def main():
     ocp.constraints.lbu = np.array([0])
     ocp.constraints.ubu = np.array([+Fmax])
     ocp.constraints.idxbu = np.array([0])
+
+    #TODO
     ocp.constraints.lbx_e = np.array([200.0, 100.0])
     ocp.constraints.idxbx = np.array([0])
 
