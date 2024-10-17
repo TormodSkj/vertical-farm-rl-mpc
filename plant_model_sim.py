@@ -10,7 +10,9 @@ def x_dot(x, u):
     PPFD = u[0]
 
     #Indoor climate assumptions
-    T_crop = 20     #Indoor ambient temperature [C]
+    T_in = 24       #Indoor ambient temperature [C]
+    #T_crop = 20     #Crop temperature [C]
+    T_crop = T_in     #As defined in the gandj code
     co2_in = 1200   #CO2 consentration of indoor air [PPM]
 
     #Constants
@@ -42,24 +44,29 @@ def x_dot(x, u):
 
     LAI = c_lar * (1-c_T)*x_sdw                                                         #Leaf area index
     CAC = 1-np.exp(-c_k * LAI)                                                          #Cultivation area cover fraction
-    Gamma = c_Gamma * c_Q_10_Gamma**(T_crop - 20)/10                                    #Co2 compensation point 
+    Gamma = c_Gamma * c_Q_10_Gamma**((T_crop - 20)/10)                                  #Co2 compensation point 
     alpha = c_e * (co2_in - Gamma)/(co2_in + 2*Gamma)                                   #Quantum yield
     U_par = c_p * PPFD                                                                  #Photosynthetically active radiation
-    r_car = 1/(c_car_1 * T_crop**2 + c_car_2 * T_crop + c_car_3)                        #Carboxylation resistance
+    r_car = 1/(c_car_1 * T_crop**2 + c_car_2 * T_crop + c_car_3)                       #Carboxylation resistance from thesis
+    # r_car = 1/( 1/(c_car_1 * T_crop**2) + 1/(c_car_2 * T_crop) + 1/c_car_3)             #Carboxylation resistance from code
     r_bnd = 350*np.sqrt(l/u_inf) / LAI                                                  #Boundary layer resistance 
     r_stm = 60*(1500 + PPFD)/(200 + PPFD)                                               #Stomatal resistance
     r_co2 = r_bnd + r_stm + r_car                                                       #Canopy resistance 
     f_sat = rho_c * (co2_in - Gamma)/r_co2                                              #Light saturated vlaue of max photosynthesis
-    f_phot_max = alpha * U_par * f_sat / (alpha * U_par + f_sat)                        #Maximum photosynthetic rate
+    f_phot_max = alpha * U_par * f_sat / (alpha * U_par + f_sat)                        #Maximum photosynthetic rate from thesis
+    # f_phot_max = (alpha * U_par * r_co2 * (co2_in - Gamma)) / (alpha * U_par + r_co2 * (co2_in - Gamma))      #Maximum photosynthetic rate from code
     f_phot = f_phot_max * CAC                                                           #Gross canopy photosynthesis
     f_resp = (c_resp_sht*(1-c_T) + c_resp_rt*c_T)*x_sdw * c_Q_10_gr**((T_crop-25)/10)   #Maintenance respiration rate
     x_dw_plant = (x_sdw + x_nsdw) / PCD                                                 #X dont worry plant <3
     x_fw_sht = x_dw_plant * (1-c_T)/c_d                                                 #Fresh weight per plant
 
+    # f_resp = 0
+
     #Derivatives
     x_sdw_dot = r_gr * x_sdw
     # x_nsdw_dot = c_a * f_phot - x_sdw_dot - f_resp - (1-c_b)/c_b * r_gr * x_sdw       Slightly inefficient implementation
     x_nsdw_dot = c_a * f_phot - f_resp - 1/c_b * x_sdw_dot                              #More efficient implementation
+    # x_nsdw_dot = c_a * f_phot - f_resp - c_b * x_sdw_dot                              #More efficient implementation
 
     return np.array([x_sdw_dot, x_nsdw_dot]), np.array([f_phot, x_fw_sht])
 
@@ -118,8 +125,14 @@ def plotting(x, u, t, z):
     plot_path = "/home/tormodskj/vertical-farm-rl-mpc/plots/Plantmodel_plot_lightlevel.png"
     plt.savefig(plot_path)
 
+    plt.figure(3)
+    plt.plot(t, z[0,:])
+    plt.legend(("F_phot"))
+    plot_path = os.path.join(plot_folder, "Plantmodel_plot_f_phot.png")
+    plt.savefig(plot_path)
 
-x, u, t, z = simulate(np.array([5, 1]), 14*24*60*60, 60)
+
+x, u, t, z = simulate(np.array([5, 1]), 20*24*60*60, 60)
 plotting(x, u, t, z)
 
 
