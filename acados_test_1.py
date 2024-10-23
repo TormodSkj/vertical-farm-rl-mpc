@@ -43,30 +43,44 @@ def main():
     model = export_lettuce_ode_model()
     ocp.model = model
 
-    Tf = 1.0
+    Tf = 60*60*24*30
     nx = model.x.rows()
     nu = model.u.rows()
-    N = 20
+    N = 200
 
     # set prediction horizon
     ocp.solver_options.N_horizon = N
     ocp.solver_options.tf = Tf
 
-    # cost matrices
-    Q_mat = 2*np.diag([1e6, 1e6])
-    R_mat = 2*np.diag([1e-10])
+    # # cost matrices
+    # Q_mat = 2*np.diag([1e6, 1e6])
+    # R_mat = 2*np.diag([1e-10])
 
-    # path cost
-    # ocp.cost.cost_type = 'NONLINEAR_LS'
-    # ocp.model.cost_y_expr = ca.vertcat(model.x, model.u)
-    # ocp.cost.yref = np.zeros((nx+nu,))
-    # ocp.cost.W = ca.diagcat(Q_mat, R_mat).full()
+    # # path cost
+    # # ocp.cost.cost_type = 'NONLINEAR_LS'
+    # # ocp.model.cost_y_expr = ca.vertcat(model.x, model.u)
+    # # ocp.cost.yref = np.zeros((nx+nu,))
+    # # ocp.cost.W = ca.diagcat(Q_mat, R_mat).full()
 
-    # terminal cost
-    ocp.cost.cost_type_e = 'NONLINEAR_LS'
-    ocp.cost.yref_e = np.zeros([nx,])
-    ocp.model.cost_y_expr_e = model.x
-    ocp.cost.W_e = Q_mat
+    # # terminal cost
+    # ocp.cost.cost_type_e = 'NONLINEAR_LS'
+    # ocp.cost.yref_e = np.zeros([nx,])
+    # ocp.model.cost_y_expr_e = model.x
+    # ocp.cost.W_e = Q_mat
+
+
+    # Adjust stage cost: Only penalize u (no state cost)
+    R_mat = 2 * np.eye(nu)  # Penalizing only u
+
+    ocp.cost.cost_type = 'NONLINEAR_LS'  # Nonlinear least squares
+    ocp.model.cost_y_expr = model.u      # Cost based only on u (no state)
+    ocp.cost.yref = np.zeros((nu,))      # Reference for u (typically zero)
+    ocp.cost.W = R_mat                   # Weight for u
+
+    # Remove terminal cost on the state
+    ocp.cost.cost_type_e = 'LINEAR_LS'   # No terminal cost
+    ocp.model.cost_y_expr_e = np.zeros((0,))  # Empty cost expression
+    ocp.cost.W_e = np.zeros((0, 0))      # No terminal weight matrix
 
     # set constraints
     Fmax = 250
@@ -76,7 +90,8 @@ def main():
 
     #TODO
     ocp.constraints.lbx_e = np.array([200.0, 100.0])
-    ocp.constraints.idxbx = np.array([0])
+    ocp.constraints.ubx_e = np.array([1000.0, 1000.0])
+    ocp.constraints.idxbx_e = np.array([0,1])
 
 
     ocp.constraints.x0 = np.array([5.0, 1.0])

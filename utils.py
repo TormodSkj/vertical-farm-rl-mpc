@@ -46,7 +46,7 @@ def plotting(t, timeseries, filename, folder = 'plots'):
 
     plt.figure(1)
     for ts in timeseries:
-        plt.plot(t[0:len(ts)], ts)
+        plt.plot(t[0:len(ts)], ts, "r")
 
     filename = filename + ".png"
     # plot_path = os.path.join(folder, filename)
@@ -55,7 +55,19 @@ def plotting(t, timeseries, filename, folder = 'plots'):
 
     import numpy as np
 
+def plot_trajectory(x1, x2, filename, folder = 'plots'):
+    #Function to plot timeseries to a given file.
 
+    
+    plt.figure(2)
+    plt.plot(x1, x2, "r")
+
+    filename = filename + ".png"
+    # plot_path = os.path.join(folder, filename)
+    plot_path = "/home/tormodskj/vertical-farm-rl-mpc/plots/" + filename
+    plt.savefig(plot_path)
+
+    import numpy as np
 
 
 def plant_model_derivative(x, u):
