@@ -5,7 +5,7 @@ from acados_template import *
 
 
 
-p_spot = generate_spotprice(sigma=0.10)
+p_spot = generate_spotprice()
 plotting(np.linspace(0, 23.75, 96), np.array([p_spot]), "spotprice")
 
 # Example usage
