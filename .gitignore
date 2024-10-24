@@ -2,3 +2,5 @@
 /master_23_24_gandj/
 /__pycache__/
 /c_generated_code/
+/src/__pycache__/
+/test/__pycache__/

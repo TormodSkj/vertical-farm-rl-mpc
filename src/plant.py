@@ -1,14 +1,20 @@
 import numpy as np
-
+import casadi as ca
 
 class PlantModel:
 
+
+    nx = 2
+    nu = 1
+
+    P_cap = 10 # Vertical farm power capacity [MW]
 
     #constants:
 
     #Indoor climate assumptions
     T_crop = 24     #Indoor ambient temperature [C]
     co2_in = 1200   #CO2 consentration of indoor air [PPM]
+
 
     #Constants
     c_a = 0.68              #Conversion factor CO2 -> sugar
@@ -33,8 +39,16 @@ class PlantModel:
     eta_light = 0.8         #LED efficiency
     c_d = 0.05              #Dry matter content
     PCD = 25                #Plant crop density
+    
+   
+    #Vertical farm specs
+    A_crop = 1000                                   # Total growth area [m^2]
+    C_PPFD_max = 250                                # Max lighting capacity (or max tolerated light level for the plants)
+    C_conv = 0.217                                  # W / PPFD
+    C_conv_PPFD = C_conv*A_crop/(eta_light*1000000) # Conversion factor between PPFD and power. Expressed in MW
 
-    def derivative(self, x, u):
+
+    def derivative(self, x: ca.MX.sym, u: ca.MX.sym)->ca.MX.sym:
         
         #Extract state
         x_sdw = x[0]
@@ -71,4 +85,5 @@ class PlantModel:
         # x_nsdw_dot = c_a * f_phot - x_sdw_dot - f_resp - (1-c_b)/c_b * r_gr * x_sdw       Slightly inefficient implementation
         x_nsdw_dot = self.c_a * f_phot - f_resp - 1/self.c_b * x_sdw_dot                              #More efficient implementation
 
-        return np.array([x_sdw_dot, x_nsdw_dot])
+
+        return ca.vertcat(x_sdw_dot, x_nsdw_dot)

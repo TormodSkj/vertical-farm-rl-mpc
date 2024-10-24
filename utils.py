@@ -54,7 +54,7 @@ def plotting(t, timeseries, filename, folder = 'plots'):
     plot_path = "/home/tormodskj/vertical-farm-rl-mpc/plots/" + filename
     plt.savefig(plot_path)
 
-    import numpy as np
+
 
 def plot_trajectory(x1, x2, filename, folder = 'plots'):
     #Function to plot timeseries to a given file.
