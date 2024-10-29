@@ -38,8 +38,8 @@ class Market:
 
     def Pr_a_dn(self, Bc_dn):
         
-        mu_dn = 50
-        sigma_dn = 10
+        mu_dn = 0.3
+        sigma_dn = 0.01
         
         Bc_dn_norm = (Bc_dn - mu_dn)/sigma_dn
 
@@ -48,8 +48,8 @@ class Market:
 
     def Pr_a_up(self, Bc_up):
         
-        mu_up = 50
-        sigma_up = 10
+        mu_up = 0.03
+        sigma_up = 0.01
         
         Bc_up_norm = (Bc_up - mu_up)/sigma_up
 

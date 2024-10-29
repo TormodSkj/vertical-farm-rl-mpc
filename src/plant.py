@@ -7,7 +7,8 @@ class PlantModel:
     nx = 2
     nu = 1
 
-    P_cap = 10 # Vertical farm power capacity [MW]
+    P_cap = 10              # Vertical farm power capacity [MW]
+    Final_s_fw_sht = 80     # Final plant shoot fresh weight requirement [g]
 
     #constants:
 
@@ -87,3 +88,15 @@ class PlantModel:
 
 
         return ca.vertcat(x_sdw_dot, x_nsdw_dot)
+    
+
+    def freshweight(self, x):
+        x_sdw = x[0]
+        x_nsdw = x[1]
+
+        x_dw = x_sdw + x_nsdw
+        x_dw_plant = x_dw/self.PCD
+        x_fw_sht = x_dw_plant*(1-self.c_T)/self.c_d
+
+        return ca.vertcat(x_fw_sht)
+

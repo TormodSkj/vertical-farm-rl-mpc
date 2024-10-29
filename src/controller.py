@@ -40,10 +40,10 @@ class Controller():
         nu = self.model.nu            # Dimension of control u (scalar)
 
         # Create decision variables for the optimization problem
-        X = ca.MX.sym('X', nx, N+1)             # States over time (Nx1 vector)
-        U = ca.MX.sym('U', nu, N)               # Controls over time (scalar)
-        B = ca.MX.sym('B', 4, N)                # Bids over time (Vol_up, Vol_down, Price_up, Price_down)
-        Eps = ca.MX.sym('eps')                  # Slack variable
+        X = ca.MX.sym('X', nx, N+1)             # States over time ((N+1)x1 vector)
+        U = ca.MX.sym('U', nu, N)               # Controls over time (Nx1 vector)
+        B = ca.MX.sym('B', 4, N)                # Bids over time (Vol_up, Vol_down, Price_up, Price_down) (4Nx1 vector)
+        Eps = ca.MX.sym('eps')                  # Slack variable (scalar)
 
 
         # Get spot price and baseline
@@ -53,7 +53,8 @@ class Controller():
 
         # Initialize cost function and constraints
         J = self.cost_function(p_spot, B, Eps)                         # Cost function
-        g = []                        # Constraint list
+        g = []                        # Equality constraint list
+        h = []                        # Inequality constraint list
 
         # Initial state constraint
         x0 = np.array([5, 1])         # Define the initial state: x1=0, x2=0
@@ -63,33 +64,60 @@ class Controller():
 
         # Define the dynamic and control constraints
         for k in range(N):
-            # Dynamics constraint: X_k+1 = X_k + dt * [x2_k, u_k]
             #Using basic forward euler #TODO Evaluate
 
             x_next = X[:, k] + dt*self.model.derivative(X[:, k], U[:, k])
             g.append(X[:, k+1] - x_next)
             
             if(k == 0): continue
-            g.append(U[:,k] - (u_base[k] + B[1,k]*self.market.Pr_a_dn(B[3,k]) - B[0,k]*self.market.Pr_a_up(B[2,k])))
+            g.append(U[:,k] - (u_base[k] + B[1,k]*self.market.Pr_a_dn(B[3,k])/self.model.C_conv_PPFD - B[0,k]*self.market.Pr_a_up(B[2,k])/self.model.C_conv_PPFD))
+
+        n_eq = ca.vertcat(*g).size()[0]
+
+
+        #Inequality constraints
+        # for k in range(N):
+        #     #TODO Implement
+        #     h.append( B[0:1, k])
+        
+        h.append(self.model.freshweight(X[:,-1]) + Eps - self.model.Final_s_fw_sht) #TODO replace final weight constraint with correct values
+            
+
+        n_ineq = ca.vertcat(*h).size()[0]
+
+        lbg = np.concatenate((np.zeros((1, n_eq + n_ineq))), axis=None)
+        ubg = np.concatenate((np.zeros((1, n_eq)), np.inf * np.ones((1, n_ineq))), axis=None)
+
+        # lbg = [-ca.inf, 0]
+        # ubg = [0, 0]
+
+        # assert(len(lbg) == len(g)), f"Length of lower constraint bounds lbg({len(lbg)}) should be equal to number of constraints g({len(g)})"
+        # assert(len(ubg) == len(g)), f"Length of upper constraint bounds ubg({len(ubg)}) should be equal to number of constraints g({len(g)})"
+
 
         # Define bounds on x and u
-        lbx = 0* np.ones((nx, N+1))   # Upper bound for x (no upper bound)
+        lbx = 0* np.ones((nx, N+1))         # Lower bound for x (x >= 0)
         ubx = np.inf * np.ones((nx, N+1))   # Upper bound for x (no upper bound)
 
-        lbu = 0 * np.ones((nu, N))         # Lower bound for u (-2 <= u)
-        ubu =  250 * np.ones((nu, N))         # Upper bound for u (u <= 2)
+        lbu = 0 * np.ones((nu, N))          # Lower bound for u (u >= 0)
+        ubu =  250 * np.ones((nu, N))       # Upper bound for u (u <= Max PPFD 250)
 
         lb_B = 0 * np.ones((4, N))
-        ub_B = np.vstack((self.model.C_conv_PPFD * u_base, self.model.P_cap * np.ones((1, N)), np.inf * np.ones((1, N)), p_spot))
+
+        ub_Bp_up = np.minimum(self.model.P_cap, self.model.C_conv_PPFD * u_base)
+        ub_Bp_dn = np.minimum(self.model.P_cap, self.model.C_conv_PPFD * (self.model.C_PPFD_max - u_base))
+
+        ub_B = np.vstack((ub_Bp_up, ub_Bp_dn, np.inf * np.ones((1, N)), p_spot))
 
         lbeps = 0
         ubeps = np.inf
 
 
         # Flatten decision variables and bounds
-        Z = ca.vertcat(ca.reshape(X, -1, 1), ca.reshape(U, -1, 1), ca.reshape(B, -1, 1), Eps)
+        Z =   ca.vertcat(ca.reshape(X, -1, 1),   ca.reshape(U, -1, 1),   ca.reshape(B, -1, 1),    Eps)
         lbz = ca.vertcat(ca.reshape(lbx, -1, 1), ca.reshape(lbu, -1, 1), ca.reshape(lb_B, -1, 1), ca.reshape(lbeps, -1, 1))
         ubz = ca.vertcat(ca.reshape(ubx, -1, 1), ca.reshape(ubu, -1, 1), ca.reshape(ub_B, -1, 1), ca.reshape(ubeps, -1, 1))
+        g = g + h #Sum together the equality and inequality constraints
 
         # Nonlinear problem definition
         nlp = {'x': Z, 'f': J, 'g': ca.vertcat(*g)}
@@ -99,7 +127,7 @@ class Controller():
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
 
         # Solve the problem
-        sol = solver(x0=ca.DM.zeros(Z.size1()), lbg=0, ubg=0, lbx=lbz, ubx=ubz)
+        sol = solver(x0=ca.DM.zeros(Z.size1()), lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
 
         # Extract solution
         X_opt = sol['x'][:(nx * (N+1))].reshape((nx, N+1))

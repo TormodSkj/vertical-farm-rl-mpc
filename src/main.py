@@ -6,8 +6,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 T = 7
-N = 96*T
-dt = 15*60 #15 minutes times 60 seconds
+N = 96*T    # 96 quarter hours per day
+dt = 15*60  # 15 minutes times 60 seconds
 
 
 controller = Controller(N, T, dt)
@@ -40,7 +40,9 @@ import matplotlib.pyplot as plt
 plt.figure(1)
 plt.plot(t, x1_ts, "r", label="Structural dry weight") 
 plt.plot(t, x2_ts, "b", label="Non-structural dry weight")
-plt.legend()  
+plt.plot(t, controller.model.freshweight(x_ts[:,1:]), "g", label="Freshweight shoot")
+plt.axhline(y=controller.model.Final_s_fw_sht, color='orange', linestyle=':', label="Required plant shoot fresh weight")
+plt.legend()
 
 
 filename = "Combined_ocp_x" + ".png"
