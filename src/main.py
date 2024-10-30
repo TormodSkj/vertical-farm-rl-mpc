@@ -2,6 +2,7 @@ from controller import Controller
 from plant import PlantModel
 from market import Market
 from utils import plotting
+from config import Config
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -13,6 +14,7 @@ dt = 15*60  # 15 minutes times 60 seconds
 controller = Controller(N, T, dt)
 # plant = PlantModel
 # market = Market
+config = Config()
 
 
 t, X_opt, U_opt, B_opt = controller.optimize()
@@ -45,9 +47,8 @@ plt.axhline(y=controller.model.Final_s_fw_sht, color='orange', linestyle=':', la
 plt.legend()
 
 
-filename = "Combined_ocp_x" + ".png"
-plot_path = "/home/tormodskj/vertical-farm-rl-mpc/plots/" + filename
-plt.savefig(plot_path)
+filename = "Combined_ocp_x"
+plt.savefig(config.plot_path + filename + ".png")
 
 
 plt.figure(2)
@@ -55,9 +56,8 @@ plt.plot(t, u_ts, label="PPFD")
 plt.legend()
 
 
-filename = "Combined_ocp_u" + ".png"
-plot_path = "/home/tormodskj/vertical-farm-rl-mpc/plots/" + filename
-plt.savefig(plot_path)
+filename = "Combined_ocp_u"
+plt.savefig(config.plot_path + filename + ".png")
 
 plt.figure(3)
 plt.plot(t, b_p_up, label="Bidding volume up") 
@@ -65,9 +65,8 @@ plt.plot(t, b_p_dn, label="Bidding volume down")
 plt.legend()
 
 
-filename = "Combined_ocp_b_p" + ".png"
-plot_path = "/home/tormodskj/vertical-farm-rl-mpc/plots/" + filename
-plt.savefig(plot_path)
+filename = "Combined_ocp_b_p"
+plt.savefig(config.plot_path + filename + ".png")
 
 plt.figure(4)
 plt.plot(t, b_c_up, label="Bidding price up")
@@ -75,9 +74,8 @@ plt.plot(t, b_c_dn, label="Bidding price down")
 plt.legend()
 
 
-filename = "Combined_ocp_b_c" + ".png"
-plot_path = "/home/tormodskj/vertical-farm-rl-mpc/plots/" + filename
-plt.savefig(plot_path)
+filename = "Combined_ocp_b_c"
+plt.savefig(config.plot_path + filename + ".png")
 
 
 
@@ -89,16 +87,13 @@ plt.plot(t, b_a_up, label="Probability of up-activation")
 plt.plot(t, b_a_dn, label="Probability of down-activation")
 plt.legend()
 
-filename = "Combined_ocp_b_a" + ".png"
-plot_path = "/home/tormodskj/vertical-farm-rl-mpc/plots/" + filename
-plt.savefig(plot_path)
-
+filename = "Combined_ocp_b_a"
+plt.savefig(config.plot_path + filename + ".png")
 
 plt.figure(6)
 plt.plot(t, controller.market.generate_spotprice(N), label="Spot price")
 plt.legend()
 
 
-filename = "Combined_ocp_p_spot" + ".png"
-plot_path = "/home/tormodskj/vertical-farm-rl-mpc/plots/" + filename
-plt.savefig(plot_path)
+filename = "Combined_ocp_p_spot"
+plt.savefig(config.plot_path + filename + ".png")
