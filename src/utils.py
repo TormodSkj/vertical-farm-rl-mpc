@@ -15,3 +15,8 @@ def plotting(t, timeseries, filename, folder = 'plots'):
     # plot_path = os.path.join(folder, filename)
     plot_path = "/home/tormodskj/vertical-farm-rl-mpc/plots/" + filename
     plt.savefig(plot_path)
+
+
+def saveplot(filename, foldername, config):
+    filename = "Combined_ocp_b_p"
+    plt.savefig(config.plot_path + foldername + "/" + filename + ".png")

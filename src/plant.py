@@ -3,12 +3,15 @@ import casadi as ca
 
 class PlantModel:
 
-
+    Final_fw_sht: float    # Final plant shoot fresh weight requirement [g]
+    
+    def __init__(self, Final_fw_sht):
+        self.Final_fw_sht = Final_fw_sht
+    
     nx = 2
     nu = 1
 
     P_cap = 10              # Vertical farm power capacity [MW]
-    Final_s_fw_sht = 80     # Final plant shoot fresh weight requirement [g]
 
     #constants:
 

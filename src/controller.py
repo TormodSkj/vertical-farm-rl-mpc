@@ -16,12 +16,12 @@ class Controller():
     T: float
     dt: float
 
-    def __init__(self, N, T, dt):
+    def __init__(self, N, T, dt, plantmodel, market):
         self.N = N      
         self.T = T   
         self.dt = dt   
-        self.model = PlantModel()  # Instantiate the PlantModel
-        self.market = Market()      # Instantiate the Market
+        self.model = plantmodel  
+        self.market = market     
         
 
     '''
@@ -43,12 +43,12 @@ class Controller():
         X = ca.MX.sym('X', nx, N+1)             # States over time ((N+1)x1 vector)
         U = ca.MX.sym('U', nu, N)               # Controls over time (Nx1 vector)
         B = ca.MX.sym('B', 4, N)                # Bids over time (Vol_up, Vol_down, Price_up, Price_down) (4Nx1 vector)
-        Eps = ca.MX.sym('eps')                  # Slack variable (scalar)
+        Eps = ca.MX.sym('Eps')                  # Slack variable (scalar)
 
 
         # Get spot price and baseline
-        p_spot = self.market.generate_spotprice(N) #Generates a spot price according to a simple model
-        u_base = self.baseline_opt(N) #TODO optimize
+        p_spot = self.market.get_spotprice() #Generates a spot price according to a simple model
+        u_base = self.baseline_opt() #TODO optimize
 
 
         # Initialize cost function and constraints
@@ -80,7 +80,7 @@ class Controller():
         #     #TODO Implement
         #     h.append( B[0:1, k])
         
-        h.append(self.model.freshweight(X[:,-1]) + Eps - self.model.Final_s_fw_sht) #TODO replace final weight constraint with correct values
+        h.append(self.model.freshweight(X[:,-1]) + Eps - self.model.Final_fw_sht) #TODO replace final weight constraint with correct values
             
 
         n_ineq = ca.vertcat(*h).size()[0]
@@ -152,18 +152,21 @@ class Controller():
         for k in range(2, N-1): #from k = 2, to N-1. 
             L += (p_spot[k] - Bc_dn[k]) * Bp_dn[k] * self.market.Pr_a_dn(Bc_dn[k]) - (p_spot[k] + Bc_up[k]) * Bp_up[k] * self.market.Pr_a_up(Bc_up[k])
 
-        L += eps * 10**6
+        L += eps * 10**10
 
         return L
 
 
     import numpy as np
 
-    def baseline_opt(self, N):
+    def baseline_opt(self):
         '''
         Temporary function to get a generic baseline lighting schedule.
         This schedule assumes 18 hours on, 6 hours off.
         '''
+
+        N = self.N
+
         # 18 hours on, 6 hours off in 15 minute intervals
         intervals_per_hour = 4   # 4 intervals (15 minutes) per hour
         hours_on = 18

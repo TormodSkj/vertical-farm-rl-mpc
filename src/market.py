@@ -1,12 +1,26 @@
 import numpy as np
 from scipy.stats import norm
 import casadi as ca
+import pandas as pd
+from config import Config
 
 class Market:
 
-    seed = 1133
+    N: int
+    seed: int
+    grid: str
+    date: str
+    
+    config = Config()
 
-    def generate_spotprice(self, N):
+    def __init__(self, N, seed, grid, date):
+        self.N = N
+        self.seed = seed
+        self.grid = grid
+        self.date = date
+    
+
+    def generate_spotprice(self):
         '''
         Returns an array of spot prices for each quarter hour. Number of quarter hours amounts to N. 
         N = 96 -> List of spot prices for a whole 24h period. 
@@ -15,7 +29,7 @@ class Market:
         This is in kr/Kw. In order to work with mwh, you must factor that in :)
         '''
 
-
+        N = self.N
         sigma=0.10
 
         hours = int(np.ceil(N/4))
@@ -34,6 +48,24 @@ class Market:
         
         # Repeat each value 4 times to get a total of 96 elements
         return spot_prices[(hours*4)-N:]
+    
+
+    def get_spotprice(self) -> np.array:
+
+        N = self.N
+        n_hours = int(np.ceil(N/4))
+
+
+        # df = pd.read_csv('../data/Spotprices_norway.csv', delimiter=';')
+        df = pd.read_csv(self.config.path + 'data/Spotprices_norway.csv', delimiter=';')
+        
+        # Convert to datetime format
+        df['Dato/klokkeslett'] = pd.to_datetime(df['Dato/klokkeslett'].str.split().str[0])
+        start_idx = df[df['Dato/klokkeslett'] == pd.to_datetime(self.date)].index[0]
+        
+        P_spot_hours = np.array(df[self.grid].iloc[start_idx:start_idx+n_hours].values)
+        P_spot = np.repeat(P_spot_hours, 4)[0:N]
+        return P_spot
     
 
     def Pr_a_dn(self, Bc_dn):
