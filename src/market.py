@@ -80,7 +80,7 @@ class Market:
 
     def Pr_a_up(self, Bc_up):
         
-        mu_up = 0.03
+        mu_up = 0.05
         sigma_up = 0.01
         
         Bc_up_norm = (Bc_up - mu_up)/sigma_up

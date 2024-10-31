@@ -11,29 +11,44 @@ T = 7
 N = 96*T    # 96 quarter hours per day
 dt = 15*60  # 15 minutes times 60 seconds
 
-Final_fw_sht = 80       #Final plant weight requirement
+x_init = np.array([5, 1])
+Final_fw_sht = 70       #Final plant weight requirement
 
 config = Config()
-plant = PlantModel(Final_fw_sht)
+plant = PlantModel(x_init, Final_fw_sht)
 market = Market(N, 1133, 'NO1', '2023-12-24')
-controller = Controller(N, T, dt, plant, market)
+controller = Controller(N, T, dt, plant, market, "opt")     #Baseline: 'opt' / 'rigid'
 
 
+#################################################
 start_time = time.time()
-t, X_opt, U_opt, B_opt = controller.optimize()
+controller.optimize()
 end_time = time.time()
 
-x_ts = np.array(X_opt)
-u_ts = np.array(U_opt)[0,:]
-b_ts = np.array(B_opt)
+elapsed_time = end_time - start_time
+minutes, seconds = divmod(elapsed_time, 60)
 
-x1_ts = x_ts[0,1:]
-x2_ts = x_ts[1,1:]
+print(f"OCP took: {int(minutes)} minutes and {seconds:.2f} seconds to solve.")
+#################################################
 
-b_p_up = b_ts[0,:]
-b_p_dn = b_ts[1,:]
-b_c_up = b_ts[2,:]
-b_c_dn = b_ts[3,:]
+
+t = controller.t
+u_opt = controller.u_opt
+u_base = controller.u_base
+
+x_opt = controller.x_opt
+x1_opt = x_opt[0,1:]
+x2_opt = x_opt[1,1:]
+x_base = controller.x_base
+x1_base = x_base[0,1:]
+x2_base = x_base[1,1:]
+
+b_p_up = controller.B_opt[0,:]
+b_p_dn = controller.B_opt[1,:]
+b_c_up = controller.B_opt[2,:]
+b_c_dn = controller.B_opt[3,:]
+b_a_up = controller.market.Pr_a_up(b_c_up)
+b_a_dn = controller.market.Pr_a_dn(b_c_dn)
 
 '''
 plotting(t,[x1_ts[1:], x2_ts[1:]], "Combined_ocp_x")
@@ -41,15 +56,29 @@ plotting(t,[u_ts], "Combined_ocp_u")
 plotting(t,[b_p_up, b_p_dn], "Combined_ocp_bp")
 '''
 
+bidding_earnings_up = np.multiply(b_a_up, b_p_up, b_c_up)
+bidding_earnings_dn = np.multiply(b_a_dn, b_p_dn, b_c_dn)
+f_opt = 1000*(np.sum(bidding_earnings_up) + np.sum(bidding_earnings_dn))
+f_base = controller.f_base
 
+print(f"\nCost of base: {f_base}")
+print(f"Cost after bidding: {f_base - f_opt}")
+print(f"Cost reduction from bidding: {f_opt}")
+print(f"Reduction in percentage: {100*f_opt/(f_base - f_opt)} \n")
+
+
+#################################################
+#                   PLOTTING                    #
+#################################################
 
 foldername = "casadi_ocp"
 
 ##################################################
 plt.figure(1)
-plt.plot(t, x1_ts, "r", label="Structural dry weight (g/m^2)") 
-plt.plot(t, x2_ts, "b", label="Non-structural dry weight (g/m^2)")
-plt.plot(t, controller.model.freshweight(x_ts[:,1:]), "g", label="Freshweight shoot (g/plant)")
+plt.plot(t, x1_opt, "r", label="Structural dry weight (g/m^2)") 
+plt.plot(t, x2_opt, "b", label="Non-structural dry weight (g/m^2)")
+plt.plot(t, controller.model.freshweight(x_opt[:,1:]), "g", label="Freshweight shoot (g/plant)")
+plt.plot(t, controller.model.freshweight(x_base[:,1:]), color='purple', linestyle=':', label="Baseline freshweight shoot (g/plant)")
 plt.axhline(y=controller.model.Final_fw_sht, color='orange', linestyle=':', label="Required Freshweight (g/plant)")
 plt.ylabel("Weight")
 plt.xlabel("Time (days)")
@@ -61,8 +90,8 @@ plt.savefig(config.plot_path + foldername + "/" + filename + ".png")
 
 ##################################################
 plt.figure(2)
-plt.plot(t, u_ts, label="U") 
-plt.plot(t, controller.baseline_opt(), label="Baseline U") 
+plt.plot(t, u_opt, label="U") 
+plt.plot(t, u_base, label="Baseline U") 
 plt.ylabel("Light level (PPFD)")
 plt.xlabel("Time (days)")
 plt.legend()
@@ -104,9 +133,6 @@ filename = "Combined_ocp_b_c"
 plt.savefig(config.plot_path + foldername + "/" + filename + ".png")
 
 ##################################################
-b_a_up = controller.market.Pr_a_up(b_c_up)
-b_a_dn = controller.market.Pr_a_dn(b_c_dn)
-
 plt.figure(6)
 plt.plot(t, b_a_up, label="Up-activation")
 plt.plot(t, b_a_dn, label="Down-activation")
@@ -130,10 +156,3 @@ plt.savefig(config.plot_path + foldername + "/" + filename + ".png")
 
 
 
-#################################################
-#Display the time it took running the program
-
-elapsed_time = end_time - start_time
-minutes, seconds = divmod(elapsed_time, 60)
-
-print(f"OCP took: {int(minutes)} minutes and {seconds:.2f} seconds to solve.")

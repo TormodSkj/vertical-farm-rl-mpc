@@ -3,10 +3,16 @@ import casadi as ca
 
 class PlantModel:
 
-    Final_fw_sht: float    # Final plant shoot fresh weight requirement [g]
+    Final_fw_sht:   float       # Final plant shoot fresh weight requirement    [g]
+    x_init:         np.array    # Initial dry weights per m^2                   [g/m^2]
+    x_sdw_init:     float       # Initial structural dry weight per m^2         [g/m^2]
+    x_nsdw_init:    float       # Initial non-structural dry weight per m^2     [g/m^2]
     
-    def __init__(self, Final_fw_sht):
+    def __init__(self, x_init, Final_fw_sht):
         self.Final_fw_sht = Final_fw_sht
+        self.x_init = x_init
+        self.x_sdw_init = x_init[0]
+        self.x_nsdw_init = x_init[1]
     
     nx = 2
     nu = 1
