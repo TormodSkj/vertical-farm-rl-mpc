@@ -50,6 +50,10 @@ b_c_dn = controller.B_opt[3,:]
 b_a_up = controller.market.Pr_a_up(b_c_up)
 b_a_dn = controller.market.Pr_a_dn(b_c_dn)
 
+eps = controller.Eps_opt
+
+print(f"Missing fresh weight: {eps}g per plant")
+
 '''
 plotting(t,[x1_ts[1:], x2_ts[1:]], "Combined_ocp_x")
 plotting(t,[u_ts], "Combined_ocp_u")
