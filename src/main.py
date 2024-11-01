@@ -7,12 +7,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 
-T = 7
-N = 96*T    # 96 quarter hours per day
-dt = 15*60  # 15 minutes times 60 seconds
+T = 2
+N = 96*T                    # 96 quarter hours per day
+dt = 15*60                  # 15 minutes times 60 seconds
 
-x_init = np.array([5, 1])
-Final_fw_sht = 70       #Final plant weight requirement
+x_init = np.array([5, 1])   # Specify init vector
+Final_fw_sht = 15           # Final plant weight requirement
 
 config = Config()
 plant = PlantModel(x_init, Final_fw_sht)

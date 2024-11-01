@@ -107,10 +107,10 @@ class Controller():
             # Using basic forward euler #TODO Evaluate
 
             if(k==0):
-                x_next = X[:, k] + dt*self.model.derivative(X[:, k], u_base[k] + (B[0,k]*B_a_up_0 - B[1,k]*B_a_dn_0)/C_conv_PPFD)
+                x_next = X[:, k] + dt*self.model.derivative(X[:, k], u_base[k] + (B[1,k]*B_a_dn_0 - B[0,k]*B_a_up_0)/C_conv_PPFD)
                 g.append(X[:, k+1] - x_next)
             else:
-                x_next = X[:, k] + dt*self.model.derivative(X[:, k], u_base[k] + (B[0,k]*self.market.Pr_a_up(B[2,k]) - B[1,k]*self.market.Pr_a_dn(B[2,k])/C_conv_PPFD))
+                x_next = X[:, k] + dt*self.model.derivative(X[:, k], u_base[k] + (B[1,k]*self.market.Pr_a_dn(B[3,k]) - B[0,k]*self.market.Pr_a_up(B[2,k]))/C_conv_PPFD)
                 g.append(X[:, k+1] - x_next)
             
             # Bidding equalities
@@ -124,8 +124,8 @@ class Controller():
         
         # Upper and lower bounds on u
         for k in range(0,N):
-            h.append(u_base[k] + (B[0,k]*self.market.Pr_a_up(B[2,k]) - B[1,k]*self.market.Pr_a_dn(B[2,k]))/self.model.C_conv_PPFD)
-            h.append(self.model.C_PPFD_max - (u_base[k] + (B[0,k]*self.market.Pr_a_up(B[2,k]) - B[1,k]*self.market.Pr_a_dn(B[2,k]))/self.model.C_conv_PPFD))
+            h.append(u_base[k] + (B[1,k]*self.market.Pr_a_dn(B[3,k]) - B[0,k]*self.market.Pr_a_up(B[2,k]))/C_conv_PPFD)
+            h.append(self.model.C_PPFD_max - (u_base[k] + (B[1,k]*self.market.Pr_a_dn(B[3,k]) - B[0,k]*self.market.Pr_a_up(B[2,k]))/C_conv_PPFD))
 
         n_ineq = ca.vertcat(*h).size()[0]
 
@@ -148,8 +148,8 @@ class Controller():
 
         lb_B = 0 * np.ones((4, N))
 
-        ub_Bp_up = np.minimum(self.model.P_cap, self.model.C_conv_PPFD * u_base)
-        ub_Bp_dn = np.minimum(self.model.P_cap, self.model.C_conv_PPFD * (self.model.C_PPFD_max - u_base))
+        ub_Bp_up = np.minimum(self.model.P_cap, C_conv_PPFD * u_base)
+        ub_Bp_dn = np.minimum(self.model.P_cap, C_conv_PPFD * (self.model.C_PPFD_max - u_base))
 
         ub_B = np.vstack((ub_Bp_up, ub_Bp_dn, np.inf * np.ones((1, N)), p_spot))
 
@@ -175,7 +175,7 @@ class Controller():
 
         # Extract solution
         final_cost = float(sol['f'])
-        X_opt = sol['x'][:(nx * (N+1))].reshape((nx, N+1))
+        X_opt = sol['x'][:(nx*(N+1))].reshape((nx, N+1))
         # U_opt = sol['x'][(nx*(N+1)):(nx*(N+1)+N*nu)].reshape((nu, N))
         B_opt = sol['x'][(nx*(N+1)):(nx*(N+1) + 4*N)].reshape((4, N))
         eps_opt = sol['x'][-1]
@@ -186,7 +186,7 @@ class Controller():
         self.B_opt = np.array(B_opt)
         self.Eps_opt = float(eps_opt)
 
-        self.u_opt = u_base + (np.multiply(self.B_opt[0,:], self.market.Pr_a_up(self.B_opt[2,:])) + np.multiply(self.B_opt[1,:], self.market.Pr_a_dn(self.B_opt[2,:])))/self.model.C_conv_PPFD
+        self.u_opt = u_base + (np.multiply(self.B_opt[1,:], self.market.Pr_a_dn(self.B_opt[3,:])) - np.multiply(self.B_opt[0,:], self.market.Pr_a_up(self.B_opt[2,:])))/C_conv_PPFD
         return 0
         
 
@@ -258,31 +258,26 @@ class Controller():
         u_base_ub = 1*self.model.C_PPFD_max
         u_base_lb = 0*self.model.C_PPFD_max
 
-
         N = self.N
         T = self.T
         dt = self.dt
 
         # State and control dimensions
-        nx = self.model.nx            # Dimension of state x (x1, x2)
-        nu = self.model.nu            # Dimension of control u (scalar)
+        nx = self.model.nx                              # Dimension of state x (x1, x2)
+        nu = self.model.nu                              # Dimension of control u (scalar)
 
         # Create decision variables for the optimization problem
-        X = ca.MX.sym('X', nx, N+1)             # States over time ((N+1)x1 vector)
-        U = ca.MX.sym('U', nu, N)               # Controls over time (Nx1 vector)
-        Eps = ca.MX.sym('Eps')                  # Slack variable (scalar)
+        X = ca.MX.sym('X', nx, N+1)                     # States over time ((N+1)x1 vector)
+        U = ca.MX.sym('U', nu, N)                       # Controls over time (Nx1 vector)
+        Eps = ca.MX.sym('Eps')                          # Slack variable (scalar)
 
-        # Get spot price
-        p_spot = self.p_spot #Generates a spot price according to a simple model
-
-
-        J = self.baseline_cost_function(U, Eps)                         # Cost function
-        g = []                        # Equality constraint list
-        h = []                        # Inequality constraint list
+        J = self.baseline_cost_function(U, Eps)         # Cost function
+        g = []                                          # Equality constraint list
+        h = []                                          # Inequality constraint list
 
         # Initial state constraint
-        x0 = self.model.x_init
-        g.append(X[:, 0] - x0)        # Enforce the initial condition
+        g.append(X[:, 0] - self.model.x_init)                                       # Enforce the initial condition
+        h.append(self.model.freshweight(X[:,-1]) + Eps - self.model.Final_fw_sht)   # Enforce final weight condition
 
         # Define the dynamic and control constraints
         for k in range(N):
@@ -291,32 +286,22 @@ class Controller():
             x_next = X[:, k] + dt*self.model.derivative(X[:, k], U[:, k])
             g.append(X[:, k+1] - x_next)
             
+
         n_eq = ca.vertcat(*g).size()[0]
-
-        #Inequality constraints
-        # for k in range(N):
-        #     #TODO Implement
-        #     h.append( B[0:1, k])
-        
-        h.append(self.model.freshweight(X[:,-1]) + Eps - self.model.Final_fw_sht) #TODO replace final weight constraint with correct values
-            
-
         n_ineq = ca.vertcat(*h).size()[0]
-
         lbg = np.concatenate((np.zeros((1, n_eq + n_ineq))), axis=None)
         ubg = np.concatenate((np.zeros((1, n_eq)), np.inf * np.ones((1, n_ineq))), axis=None)
 
 
         # Define bounds on x and u
-        lbx = 0* np.ones((nx, N+1))         # Lower bound for x (x >= 0)
-        ubx = np.inf * np.ones((nx, N+1))   # Upper bound for x (no upper bound)
+        lbx = 0* np.ones((nx, N+1))             # Lower bound for x (x >= 0)
+        ubx = np.inf * np.ones((nx, N+1))       # Upper bound for x (no upper bound)
 
-        lbu = u_base_lb * np.ones((nu, N))          # Lower bound for u (u >= 0)
-        ubu =  u_base_ub * np.ones((nu, N))       # Upper bound for u (u <= Max PPFD 250)
+        lbu = u_base_lb * np.ones((nu, N))      # Lower bound for u (u >= 0)
+        ubu = u_base_ub * np.ones((nu, N))      # Upper bound for u (u <= Max PPFD 250)
 
         lbeps = 0
         ubeps = np.inf
-
 
         # Flatten decision variables and bounds
         Z =   ca.vertcat(ca.reshape(X, -1, 1),   ca.reshape(U, -1, 1),   Eps)
@@ -336,7 +321,7 @@ class Controller():
 
         # Extract solution
         final_cost = float(sol['f'])
-        X_opt = sol['x'][:(nx * (N+1))].reshape((nx, N+1))
+        X_opt = sol['x'][:(nx*(N+1))].reshape((nx, N+1))
         U_opt = sol['x'][(nx*(N+1)):(nx*(N+1)+N*nu)].reshape((nu, N))
 
         self.x_base = np.array(X_opt)
@@ -350,7 +335,7 @@ class Controller():
         p_spot = self.p_spot
 
         L = 0
-        for k in range(N): #from k = 2, to N-1. 
+        for k in range(N):
             L += p_spot[k] *U[k]
                   
         L += eps * 10**10
