@@ -1,7 +1,12 @@
-
 import pytest
+
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parent.parent / 'src'))
+
 import numpy as np
-from src.plant import PlantModel 
+from market import Market
+from plant import PlantModel
 
 def test_c_conv_value():
     
@@ -19,3 +24,14 @@ def test_fw_calculation():
     print(plant.freshweight(X))
 
     assert True
+
+
+def test_constants():
+
+    plant = PlantModel(np.array([0,0]), 0)
+    print(plant.C_conv_PPFD)
+    print(plant.P_cap_max)
+    print(plant.C_conv_PPFD*2.5)
+    print(250*plant.C_conv_PPFD)
+
+    assert False

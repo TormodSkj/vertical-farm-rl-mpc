@@ -17,8 +17,6 @@ class PlantModel:
     nx = 2
     nu = 1
 
-    P_cap = 10              # Vertical farm power capacity [MW]
-
     #constants:
 
     #Indoor climate assumptions
@@ -55,7 +53,8 @@ class PlantModel:
     A_crop = 1000                                   # Total growth area [m^2]
     C_PPFD_max = 250                                # Max lighting capacity (or max tolerated light level for the plants)
     C_conv = 0.217                                  # W / PPFD
-    C_conv_PPFD = C_conv*A_crop/(eta_light*1000000) # Conversion factor between PPFD and power. Expressed in MW
+    C_conv_PPFD = C_conv*A_crop/(eta_light*1000)    # Conversion factor between PPFD and power. Expressed in kW
+    P_cap_max = C_PPFD_max*C_conv_PPFD              # Vertical farm power capacity [MW]
 
 
     def derivative(self, x: ca.MX.sym, u: ca.MX.sym)->ca.MX.sym:
