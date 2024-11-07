@@ -32,6 +32,7 @@ print(f"OCP took: {int(minutes)} minutes and {seconds:.2f} seconds to solve.")
 #################################################
 
 
+
 t = controller.t
 u_opt = controller.u_opt
 u_base = controller.u_base
