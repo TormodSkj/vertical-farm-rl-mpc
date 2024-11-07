@@ -16,6 +16,7 @@ def test_spot_price():
     date = '2023-12-24'
 
     market = Market(N, 1133, grid, date)
+    config = Config()
     
     p_spot = market.get_spotprice()
 
@@ -27,9 +28,9 @@ def test_spot_price():
     plt.xlabel("Hour")
     plt.xticks(list(np.linspace(0,N,17)))
 
-    # filename = "Spot_price_from_data"
-    # foldername = "testing"
-    # plt.savefig(config.plot_path + foldername + "/" + filename + ".png")    
+    filename = "Spot_price_from_data"
+    foldername = "testing"
+    plt.savefig(config.plot_path + foldername + "/" + filename + ".png")    
 
     # assert plant.C_conv_PPFD == expected_value, f"Expected {expected_value}, but got {plant.C_conv_PPFD}"
     assert True

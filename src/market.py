@@ -13,6 +13,8 @@ class Market:
     
     config = Config()
 
+    C_bid_price = 11.78/1000        # 11.78 kr/eur * 1MW / 1000 kW     As of 7. nov 2024
+
     def __init__(self, N, seed, grid, date):
         self.N = N
         self.seed = seed
