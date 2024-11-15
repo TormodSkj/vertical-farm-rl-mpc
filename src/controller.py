@@ -2,7 +2,11 @@ import casadi as ca
 import numpy as np
 from market import Market
 from plant import PlantModel
-
+from config import Config
+from utils import print_cost_comparison_table, print_bidding_table
+import time
+import os
+import json
 
 class Controller():
     """The controller is tasked with finding an optimal 
@@ -11,6 +15,7 @@ class Controller():
 
     model: PlantModel
     market: Market
+    config: Config
 
     N: float
     T: float
@@ -19,9 +24,13 @@ class Controller():
     p_spot: np.array
 
     t: np.array
+
+    sol_base: dict
     f_base: float
+    eps_base: float
     u_base: np.array
     x_base: np.array
+    elapsedtime_base: float
 
     f_opt: float
     u_opt: np.array
@@ -29,12 +38,21 @@ class Controller():
     B_opt: np.array
     Eps_opt: float
 
-    def __init__(self, N, T, dt, plantmodel, market, baseline: str):
+    sol_bid: dict
+    f_bid: float
+    u_bid: np.array
+    x_bid: np.array
+    B_bid: np.array
+    eps_bid: float
+    elapsedtime_base: float
+
+    def __init__(self, N, T, dt, plantmodel, market, config, baseline: str):
         self.N = N      
         self.T = T   
         self.dt = dt   
         self.model = plantmodel  
         self.market = market
+        self.config = config
         self.t = np.linspace(0, T, N)
         
         #
@@ -52,6 +70,8 @@ class Controller():
 
     def optimize(self):
         
+        start_time = time.time()
+
 
         B_p_up_0 = 0
         B_p_dn_0 = 0
@@ -90,7 +110,7 @@ class Controller():
 
 
         # Initialize cost function and constraints
-        J = self.cost_function(B, Eps)                         # Cost function
+        J = self.bidding_objective_function(B, Eps)                         # Cost function
         g = []                        # Equality constraint list
         h = []                        # Inequality constraint list
 
@@ -106,10 +126,12 @@ class Controller():
             # Using basic forward euler #TODO Evaluate other methods
 
             if(k==0):
-                x_next = X[:, k] + dt*self.model.derivative(X[:, k], u_base[k] + (B[1,k]*B_a_dn_0 - B[0,k]*B_a_up_0)/C_conv_PPFD)
+                u_tilde = 1000*(B[1,k]*B_a_dn_0 - B[0,k]*B_a_up_0)/C_conv_PPFD
+                x_next = X[:, k] + dt*self.model.derivative(X[:, k], u_base[k] + u_tilde)
                 g.append(X[:, k+1] - x_next)
             else:
-                x_next = X[:, k] + dt*self.model.derivative(X[:, k], u_base[k] + (B[1,k]*self.market.Pr_a_dn(B[3,k]) - B[0,k]*self.market.Pr_a_up(B[2,k]))/C_conv_PPFD)
+                u_tilde = 1000*(B[1,k]*self.market.Pr_a_dn(B[3,k]) - B[0,k]*self.market.Pr_a_up(B[2,k]))/C_conv_PPFD
+                x_next = X[:, k] + dt*self.model.derivative(X[:, k], u_base[k] + u_tilde)
                 g.append(X[:, k+1] - x_next)
             
         
@@ -118,8 +140,11 @@ class Controller():
         
         # Upper and lower bounds on u
         for k in range(0,N):
-            h.append(u_base[k] + (B[1,k]*self.market.Pr_a_dn(B[3,k]) - B[0,k]*self.market.Pr_a_up(B[2,k]))/C_conv_PPFD)
-            h.append(self.model.C_PPFD_max - (u_base[k] + (B[1,k]*self.market.Pr_a_dn(B[3,k]) - B[0,k]*self.market.Pr_a_up(B[2,k]))/C_conv_PPFD))
+
+            u_tilde = 1000*(B[1,k]*self.market.Pr_a_dn(B[3,k]) - B[0,k]*self.market.Pr_a_up(B[2,k]))/C_conv_PPFD
+
+            h.append(u_base[k] + u_tilde)
+            h.append(self.model.C_PPFD_max - (u_base[k] + u_tilde))
 
         n_eq = ca.vertcat(*g).size()[0]
         n_ineq = ca.vertcat(*h).size()[0]
@@ -133,11 +158,13 @@ class Controller():
         ubx = np.inf * np.ones((nx, N+1))   # Upper bound for x (no upper bound)
 
         lb_B = 0 * np.ones((4, N))
-        ub_B = np.vstack((C_conv_PPFD * u_base,                             # Bid vol up
-                          C_conv_PPFD * (self.model.C_PPFD_max - u_base),   # Bid vol down
-                        #   np.inf * np.ones((1, N)),                         # Bid price up
-                          5*p_spot,                                         # Bid price up
-                          p_spot))                                          # Bid price down
+        ub_B = np.vstack((C_conv_PPFD * u_base/1000,                             # Bid vol up
+                          C_conv_PPFD * (self.model.C_PPFD_max - u_base)/1000,   # Bid vol down
+                          1000 * np.ones((1, N)),                                # Bid price up. Arbitrary limit of 1000€ / MW 
+                        #   100*p_spot*1000/self.market.C_eur2nok,               # Bid price up
+                        #   p_spot*1000/self.market.C_eur2nok))                  # Bid price down limited to spot price in eur/MW.  might be arbitrary
+                          1000 * np.ones((1, N))))                               # Bid price down. Arbitrary limit of 1000€ / MW 
+        # ub_B = 0 * np.ones((4, N)) # TODO Uncomment to set all bids to 0
 
         lbeps = 0
         ubeps = np.inf
@@ -154,27 +181,35 @@ class Controller():
         opts = {'ipopt.print_level': 0, 'print_time': 0}
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
 
-        # Solve the problem
-        sol = solver(x0=ca.DM.zeros(Z.size1()), lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
+        x0 = ca.DM.zeros(Z.size1())  
+        x0[0:2] = self.model.x_init  # enforce init state
+
+        
+        sol = solver(x0=x0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
 
         # Extract solution
-        final_cost = float(sol['f'])
-        X_opt = sol['x'][:(nx*(N+1))].reshape((nx, N+1))
-        B_opt = sol['x'][(nx*(N+1)):(nx*(N+1) + 4*N)].reshape((4, N))
-        eps_opt = sol['x'][-1]
+
+        self.sol_bid = sol
+        self.f_bid = float(sol['f'])
+        self.x_bid = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
+        self.B_bid = np.array(sol['x'][(nx*(N+1)):(nx*(N+1) + 4*N)].reshape((4, N)))
+        self.eps_bid = float(sol['x'][-1])
+
+        self.u_bid = u_base + 1000*(np.multiply(self.B_bid[1,:], self.market.Pr_a_dn(self.B_bid[3,:]))\
+                                     - np.multiply(self.B_bid[0,:], self.market.Pr_a_up(self.B_bid[2,:])))/C_conv_PPFD
         
+        
+        end_time = time.time()
+        self.elapsedtime_bid = end_time - start_time
 
-        self.f_opt = final_cost
-        self.x_opt = np.array(X_opt)
-        self.B_opt = np.array(B_opt)
-        self.Eps_opt = float(eps_opt)
+        print('Bids optimized')
 
-        self.u_opt = u_base + (np.multiply(self.B_opt[1,:], self.market.Pr_a_dn(self.B_opt[3,:])) - np.multiply(self.B_opt[0,:], self.market.Pr_a_up(self.B_opt[2,:])))/C_conv_PPFD
+        self.status_report()
         return 0
         
 
 
-    def cost_function(self, B, eps):
+    def bidding_objective_function(self, B, eps):
         
         N = self.N
         p_spot = self.p_spot
@@ -186,8 +221,16 @@ class Controller():
 
         L = 0
 
-        for k in range(2, N-1): #from k = 2, to N-1. 
-            L += (p_spot[k] - Bc_dn[k]) * Bp_dn[k] * self.market.Pr_a_dn(Bc_dn[k]) - (p_spot[k] + Bc_up[k]) * Bp_up[k] * self.market.Pr_a_up(Bc_up[k])
+        # for k in range(0, N): #from k = 2, to N-1. 
+        #     L += (1000*p_spot[k] - self.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * self.market.Pr_a_dn(Bc_dn[k])\
+        #           - (1000*p_spot[k] + self.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * self.market.Pr_a_up(Bc_up[k])
+        
+        for k in range(0, N): #from k = 2, to N-1. 
+            L += p_spot[k] * self.model.C_conv_PPFD * self.u_base[k] \
+                  + (1000*p_spot[k] - self.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * self.market.Pr_a_dn(Bc_dn[k])\
+                  - (1000*p_spot[k] + self.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * self.market.Pr_a_up(Bc_up[k])
+
+        L = L/4
 
         L += eps * 10**10
 
@@ -238,6 +281,8 @@ class Controller():
         This schedule assumes 18 hours on, 6 hours off.
         '''
 
+        start_time = time.time()
+
         u_base_ub = 1*self.model.C_PPFD_max
         u_base_lb = 0*self.model.C_PPFD_max
 
@@ -254,7 +299,7 @@ class Controller():
         U = ca.MX.sym('U', nu, N)                       # Controls over time (Nx1 vector)
         Eps = ca.MX.sym('Eps')                          # Slack variable (scalar)
 
-        J = self.baseline_cost_function(U, Eps)         # Cost function
+        J = self.baseline_obj_function(U, Eps)         # Cost function
         g = []                                          # Equality constraint list
         h = []                                          # Inequality constraint list
 
@@ -299,32 +344,150 @@ class Controller():
         opts = {'ipopt.print_level': 0, 'print_time': 0}
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
 
-        # Solve the problem
-        sol = solver(x0=ca.DM.zeros(Z.size1()), lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
+        x0 = ca.DM.zeros(Z.size1())
+        x0[0:2] = self.model.x_init  # Enforce init state
+
+        sol = solver(x0=x0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
 
         # Extract solution
-        final_cost = float(sol['f'])
-        X_opt = sol['x'][:(nx*(N+1))].reshape((nx, N+1))
-        U_opt = sol['x'][(nx*(N+1)):(nx*(N+1)+N*nu)].reshape((nu, N))
-        E_opt = float(sol['x'][-1])
-
-        self.x_base = np.array(X_opt)
-        self.u_base = np.array(U_opt)[0,:]
+        self.sol_base = sol
+        self.x_base = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
+        self.u_base = np.array(sol['x'][(nx*(N+1)):(nx*(N+1)+N*nu)].reshape((nu, N)))[0,:]
         self.f_base = np.sum(np.multiply(self.p_spot, self.u_base))*self.model.C_conv_PPFD/4 # Scale down from p_spot*u to p_spot*u*C_conv_ppfd/4
+        self.eps_base = float(sol['x'][-1])
+
+        end_time = time.time()
+        self.elapsedtime_base = end_time - start_time
+        print('Baseline optimized')
         return 0
 
 
-    def baseline_cost_function(self, U, eps):
+    def baseline_obj_function(self, U, eps):
         N = self.N
         p_spot = self.p_spot
 
         L = 0
         for k in range(N):
-            L += p_spot[k] *U[k]
+            L += p_spot[k] * U[k] * self.model.C_conv_PPFD/4
                   
         L += eps * 10**10
 
         return L
+
+
+
+    def save_to_json(self):
+        # Convert arrays to lists for JSON serialization
+        data_to_save = {
+            "u_base": np.array(self.u_base).tolist(),  
+            "x_base": np.array(self.x_base).tolist(),
+            "u_bid": np.array(self.u_bid).tolist(),
+            "x_bid": np.array(self.x_bid).tolist(),
+        }
+
+        # Filepath
+        sim_name = self.config.sim_name
+        sim_save_path = os.path.join(self.config.sim_path, f"{sim_name}.json")
+
+        # Ensure the target json file exists
+        os.makedirs(self.config.sim_path, exist_ok=True)
+
+        # Save the file
+        with open(sim_save_path, "w") as json_file:
+            json.dump(data_to_save, json_file, indent=4)
+
+
+    def status_report(self):
+
+        b_p_up = self.B_bid[0,:]
+        b_p_dn = self.B_bid[1,:]
+        b_c_up = self.B_bid[2,:]
+        b_c_dn = self.B_bid[3,:]
+        b_a_up = self.market.Pr_a_up(b_c_up)
+        b_a_dn = self.market.Pr_a_dn(b_c_dn)
+
+        bidding_earnings_up = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(b_a_up, b_p_up), b_c_up)
+        bidding_earnings_dn = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(b_a_dn, b_p_dn), b_c_dn)
+        bidding_earnings = np.sum(bidding_earnings_up) + np.sum(bidding_earnings_dn)
+
+        u_tilde = 1000*(np.multiply(b_a_dn, b_p_dn) - np.multiply(b_a_up, b_p_up))/self.model.C_conv_PPFD
+
+        bidding_costs = np.sum(np.multiply(self.p_spot, (self.u_base + u_tilde)))*self.model.C_conv_PPFD/4
+
+        bidding_eps_penalty = self.eps_bid * 10**10
+
+        f_opt = bidding_costs - bidding_earnings
+
+
+        baseline_costs = np.sum(np.multiply(self.u_base, self.p_spot)) * self.model.C_conv_PPFD / 4
+        baseline_eps_penalty = self.eps_base * 10**10
+
+
+
+        print("")
+        print(f"Baseline f-val minus eps: {float(self.sol_base['f']) - self.eps_base*10**10}")
+        print(f"Bidding f-val minus eps: {float(self.sol_bid['f']) - self.eps_bid*10**10}")
+
+        print(f"Obj function f-val: {self.bidding_objective_function(self.B_bid, self.eps_bid)}")
+
+        print(f"Calculated earnings: {np.sum(bidding_earnings)}")
+        print(f"Calculated costs: {np.sum(bidding_costs)}")
+        print(f"Calculated total cost from bidding: {f_opt}")
+        print("")
+
+
+                
+        cost_data = {
+            'Cost of power': [baseline_costs, bidding_costs],
+            'Cost of bidding': [0, -bidding_earnings],
+            'Epsilon penalty': [baseline_eps_penalty, bidding_eps_penalty]
+        }
+
+        print_cost_comparison_table("Baseline", "Bidding", cost_data)
+        print("")
+        
+        b_a_up = np.array(self.market.Pr_a_up(b_c_up))
+        b_a_dn = np.array(self.market.Pr_a_dn(b_c_dn))
+        up_bids = np.where(b_a_up.flatten() > 1e-6)
+        dn_bids = np.where(b_a_dn.flatten() > 1e-6)
+
+        filtered_b_p_up = b_p_up[up_bids]
+        filtered_b_p_dn = b_p_dn[dn_bids]
+        filtered_b_c_up = b_c_up[up_bids]
+        filtered_b_c_dn = b_c_dn[dn_bids]
+        filtered_b_a_up = 100*b_a_up[up_bids]
+        filtered_b_a_dn = 100*b_a_dn[dn_bids]
+
+        bidding_data = {
+            'Avg bid size': [np.average(filtered_b_p_up), np.average(filtered_b_p_dn), "MW"],
+            'Avg feasible bid price': [np.average(filtered_b_c_up), np.average(filtered_b_c_dn), "€/MW"],
+            'Avg activation rate': [np.average(filtered_b_a_up), np.average(filtered_b_a_dn), "%"],
+            'Chance of activation given demand': [np.average(filtered_b_a_up)/self.market.Pr_D_up(), np.average(filtered_b_a_dn)/self.market.Pr_D_up(), "%"],
+            'Submitted bids': [len(filtered_b_a_up), len(filtered_b_a_dn), "-"]
+        }
+
+        print_bidding_table(bidding_data)
+        print("")
+
+
+        
+        # Print solve times
+        minutes, seconds = divmod(self.elapsedtime_base, 60)
+        print(f"Baseline opt solved in: {int(minutes)} minutes and {seconds:.2f} seconds. ")
+        minutes, seconds = divmod(self.elapsedtime_bid, 60)
+        print(f"Bidding opt solved in: {int(minutes)} minutes and {seconds:.2f} seconds. \n")
+
+
+        self.f_opt = f_opt
+
+        print(f"Missing fresh weight: {self.eps_bid}g per plant")
+
+
+        f_base = self.f_base
+        print(f"\nCost of base: {f_base}")
+        print(f"Cost after bidding: {f_opt}")
+        print(f"Cost reduction from bidding: {f_base - f_opt}")
+        print(f"Reduction in percentage: {100*(f_base - f_opt)/(f_base)} \n")
 
 
 

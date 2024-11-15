@@ -50,8 +50,8 @@ class PlantModel:
     
    
     #Vertical farm specs
-    A_crop = 1000                                   # Total growth area [m^2]
-    C_PPFD_max = 250                                # Max lighting capacity (or max tolerated light level for the plants)
+    A_crop = 15000                                  # Total growth area [m^2]
+    C_PPFD_max = 250                                # Max lighting capacity (or max tolerated light level for the plants) [mol / m^2/s]
     C_conv = 0.217                                  # W / PPFD
     C_conv_PPFD = C_conv*A_crop/(eta_light*1000)    # Conversion factor between PPFD and power. Expressed in kW
     P_cap_max = C_PPFD_max*C_conv_PPFD              # Vertical farm power capacity [MW]
@@ -70,8 +70,10 @@ class PlantModel:
         c_T = self.c_T
 
 
+        epsilon = 1e-6      #Small constant to avoid division by zero
+
         #Abstractions
-        r_gr = x_nsdw / (x_nsdw + x_sdw) * self.c_gr_max * self.c_Q_10_gr**((T_crop-20)/10)      #Growth rate
+        r_gr = x_nsdw / (x_nsdw + x_sdw + epsilon) * self.c_gr_max * self.c_Q_10_gr**((T_crop-20)/10)      #Growth rate
 
         LAI = self.c_lar * (1-c_T)*x_sdw                                                         #Leaf area index
         CAC = 1-np.exp(-self.c_k * LAI)                                                          #Cultivation area cover fraction
@@ -79,7 +81,7 @@ class PlantModel:
         alpha = self.c_e * (self.co2_in - Gamma)/(self.co2_in + 2*Gamma)                                   #Quantum yield
         U_par = self.c_p * PPFD                                                                  #Photosynthetically active radiation
         r_car = 1/(self.c_car_1 * T_crop**2 + self.c_car_2 * T_crop + self.c_car_3)                        #Carboxylation resistance
-        r_bnd = 350*np.sqrt(self.l/self.u_inf) / LAI                                                  #Boundary layer resistance 
+        r_bnd = 350*np.sqrt(self.l/self.u_inf) / (LAI + epsilon)                                                  #Boundary layer resistance 
         r_stm = 60*(1500 + PPFD)/(200 + PPFD)                                               #Stomatal resistance
         r_co2 = r_bnd + r_stm + r_car                                                       #Canopy resistance 
         f_sat = self.rho_c * (self.co2_in - Gamma)/r_co2                                              #Light saturated vlaue of max photosynthesis

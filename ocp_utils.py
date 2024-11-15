@@ -126,7 +126,7 @@ def generate_spotprice(N):
 def test_spotprice():
     print(generate_spotprice(4*96))
 
-    from utils import plotting
+    from old_utils import plotting
 
     N = 5*24*4
     p_spot = generate_spotprice(N)

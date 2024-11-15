@@ -1,7 +1,7 @@
 import casadi as ca
 import numpy as np
 from ocp_utils import *
-from utils import *
+from old_utils import *
 
 # Time horizon and discretization
 T = 30.0          # Total time in days

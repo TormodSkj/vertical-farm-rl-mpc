@@ -13,7 +13,7 @@ class Market:
     
     config = Config()
 
-    C_bid_price = 11.78/1000        # 11.78 kr/eur * 1MW / 1000 kW     As of 7. nov 2024
+    C_eur2nok = 11.76               # € -> NOK conversion rate as of nov 14 2024
 
     def __init__(self, N, seed, grid, date):
         self.N = N
@@ -72,22 +72,37 @@ class Market:
 
     def Pr_a_dn(self, Bc_dn):
         #TODO Find real numbers here
-        mu_dn = 0.3
-        sigma_dn = 0.5
+        mu_dn = 30         # € / MW
+        sigma_dn = 7      # € / MW
         
         Bc_dn_norm = (Bc_dn - mu_dn)/sigma_dn
 
         # return norm.cdf(-Bc_dn_norm)
-        return (1.0 + ca.erf(-Bc_dn_norm / ca.sqrt(2.0))) / 2.0
+        return self.Pr_D_dn() * (1.0 + ca.erf(-Bc_dn_norm / ca.sqrt(2.0))) / 2.0
 
     def Pr_a_up(self, Bc_up):
         #TODO Find real numbers here
-        mu_up = 0.5
-        sigma_up = 0.7
+        mu_up = 50         # € / MW
+        sigma_up = 10      # € / MW
         
         Bc_up_norm = (Bc_up - mu_up)/sigma_up
 
         # return norm.cdf(-Bc_up_norm)
-        return (1.0 + ca.erf(-Bc_up_norm / ca.sqrt(2.0))) / 2.0
+        return self.Pr_D_up() * (1.0 + ca.erf(-Bc_up_norm / ca.sqrt(2.0))) / 2.0
 
+
+
+    def Pr_D_dn(self):  
+        # Probability of the grid needing down regulation.
+        # TODO implement actual model from Erlend when that's ready
+
+        return 1/3
+    
+    def Pr_D_up(self):
+        # Probability of the grid needing up regulation.
+        # TODO implement actual model from Erlend when that's ready
+
+        return 1/3
+    
+    
 
