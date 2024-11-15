@@ -1,6 +1,6 @@
 import casadi as ca
 import numpy as np
-from market import Market
+from market import Market, Bid
 from plant import PlantModel
 from config import Config
 from utils import print_cost_comparison_table, print_bidding_table
@@ -14,17 +14,27 @@ class Controller():
     bidding strategy while making sure the plant reaches 
     the required fresh weight mass"""
 
+    surpress_output: bool
+
     model: PlantModel
     market: Market
     config: Config
 
-    N: float
-    T: float
+    N:  float
+    T:  float
     dt: float
+    t:  np.array
 
-    p_spot: np.array
+    p_spot:     np.array
+    Bid_0:      Bid
+    Bid_1:      Bid
+    x_init:     np.array
+    A_up:       float
+    A_down:     float
 
-    t: np.array
+    bidding_z_init: ca.DM
+    baseline_z_init: ca.DM
+
 
     sol_base: dict
     f_base: float
@@ -48,6 +58,7 @@ class Controller():
     elapsedtime_base: float
 
     def __init__(self, timehorizon, plantmodel, market, config, baseline: str):
+        self.surpress_output = False
         self.T = timehorizon   
         self.N = timehorizon * QUARTER_HOURS_PER_DAY
         self.dt = SECONDS_PER_QUARTER_HOUR   
@@ -56,38 +67,43 @@ class Controller():
         self.config = config
         self.t = np.linspace(0, self.T, self.N)
         
-        #
         self.p_spot = self.market.get_spotprice()
 
-        if(baseline == 'opt'):
-            self.optimize_baseline()
-        elif(baseline == 'rigid'):
-            self.rigid_baseline()
+
+        # Set previous 2 bids By default inits at 0
+        self.Bid_0 = Bid()
+        self.Bid_1 = Bid()
+        self.A_up = 0
+        self.A_down = 0
+
+        # Set initial state
+        self.x_init = self.model.x_init
+
+        # Start the bidding and baseline solvers with the init x state
+        bidding_z0 = ca.DM.zeros((self.N + 1)*self.model.nx + self.N*4 + 1, 1)  
+        bidding_z0[0:2] = self.x_init  # enforce init state
+        self.bidding_z_init = bidding_z0
+
+        baseline_z0 = ca.DM.zeros((self.N + 1)*self.model.nx + self.N*self.model.nu + 1)  
+        baseline_z0[0:2] = self.x_init  # enforce init state
+        self.baseline_z_init = baseline_z0
         
-    '''
-    def __post_init__(self):
-        self.dt = self.T/self.N
-    '''
+ 
+        
+    def set_bids(self, Bid_0, Bid_1):
+        self.Bid_0 = Bid_0
+        self.Bid_1 = Bid_1
+
+
 
     def optimize(self):
         
         start_time = time.time()
 
+        # Inform controller of any current activations
+        B_a_up_0 = self.A_up
+        B_a_dn_0 = self.A_down
 
-        B_p_up_0 = 0
-        B_p_dn_0 = 0
-        B_c_up_0 = 0
-        B_c_dn_0 = 0
-
-        B_c_up_1 = 0
-        B_c_dn_1 = 0
-        B_p_up_1 = 0
-        B_p_dn_1 = 0
-
-        B_a_up_0 = 0
-        B_a_dn_0 = 0
-        # B_a_up_1 = self.market.Pr_a_up(B_c_up_1)
-        # B_a_dn_1 = self.market.Pr_a_dn(B_c_dn_1)
 
         N = self.N
         T = self.T
@@ -116,10 +132,9 @@ class Controller():
         h = []                        # Inequality constraint list
 
         # Initial state constraint
-        x0 = np.array([5, 1])         # Define the initial state: x1=0, x2=0
-        g.append(X[:, 0] - x0)        # Enforce the initial condition
-        g.append(B[:, 0] - np.array([B_p_up_0, B_p_dn_0, B_c_up_0, B_c_dn_0]))      # Enforce bids for Q0
-        g.append(B[:, 1] - np.array([B_p_up_1, B_p_dn_1, B_c_up_1, B_c_dn_1]))      # Enforce bids for Q1
+        g.append(X[:, 0] - self.x_init)                  # Enforce the initial condition
+        g.append(B[:, 0] - self.Bid_0.as_array())    # Enforce bids for Q0
+        g.append(B[:, 1] - self.Bid_1.as_array())    # Enforce bids for Q1
 
         # Define the dynamic and control constraints
         for k in range(0,N):
@@ -182,11 +197,8 @@ class Controller():
         opts = {'ipopt.print_level': 0, 'print_time': 0}
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
 
-        x0 = ca.DM.zeros(Z.size1())  
-        x0[0:2] = self.model.x_init  # enforce init state
-
         
-        sol = solver(x0=x0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
+        sol = solver(x0=self.bidding_z_init, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
 
         # Extract solution
 
@@ -203,9 +215,11 @@ class Controller():
         end_time = time.time()
         self.elapsedtime_bid = end_time - start_time
 
-        print('Bids optimized')
+        
 
-        self.status_report()
+        if not self.surpress_output: 
+            print('Bids optimized')
+            self.status_report()
         return 0
         
 
@@ -262,9 +276,9 @@ class Controller():
 
         u_base = full_schedule
 
-        x0 = self.model.x_init
+        x0 = self.x_init
         X = np.zeros((self.model.nx, N+1))
-        X[:,0] = self.model.x_init.reshape(1,-1)
+        X[:,0] = x0.reshape(1,-1)
         for k in range(N):
             #Forward euler
             dt = self.dt
@@ -305,7 +319,7 @@ class Controller():
         h = []                                          # Inequality constraint list
 
         # Initial state constraint
-        g.append(X[:, 0] - self.model.x_init)                                       # Enforce the initial condition
+        g.append(X[:, 0] - self.x_init)                                       # Enforce the initial condition
         h.append(self.model.freshweight(X[:,-1]) + Eps - self.model.Final_fw_sht)   # Enforce final weight condition
 
         # Define the dynamic and control constraints
@@ -345,10 +359,8 @@ class Controller():
         opts = {'ipopt.print_level': 0, 'print_time': 0}
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
 
-        x0 = ca.DM.zeros(Z.size1())
-        x0[0:2] = self.model.x_init  # Enforce init state
 
-        sol = solver(x0=x0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
+        sol = solver(x0=self.baseline_z_init, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
 
         # Extract solution
         self.sol_base = sol
@@ -359,7 +371,7 @@ class Controller():
 
         end_time = time.time()
         self.elapsedtime_base = end_time - start_time
-        print('Baseline optimized')
+        if not self.surpress_output: print('Baseline optimized')
         return 0
 
 
