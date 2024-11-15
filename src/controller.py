@@ -7,6 +7,7 @@ from utils import print_cost_comparison_table, print_bidding_table
 import time
 import os
 import json
+from globals import *
 
 class Controller():
     """The controller is tasked with finding an optimal 
@@ -46,14 +47,14 @@ class Controller():
     eps_bid: float
     elapsedtime_base: float
 
-    def __init__(self, N, T, dt, plantmodel, market, config, baseline: str):
-        self.N = N      
-        self.T = T   
-        self.dt = dt   
+    def __init__(self, timehorizon, plantmodel, market, config, baseline: str):
+        self.T = timehorizon   
+        self.N = timehorizon * QUARTER_HOURS_PER_DAY
+        self.dt = SECONDS_PER_QUARTER_HOUR   
         self.model = plantmodel  
         self.market = market
         self.config = config
-        self.t = np.linspace(0, T, N)
+        self.t = np.linspace(0, self.T, self.N)
         
         #
         self.p_spot = self.market.get_spotprice()

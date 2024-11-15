@@ -3,22 +3,23 @@ from scipy.stats import norm
 import casadi as ca
 import pandas as pd
 from config import Config
+from globals import *
 
 class Market:
 
     N: int
     seed: int
-    grid: str
+    bidding_zone: str
     date: str
     
     config = Config()
 
     C_eur2nok = 11.76               # € -> NOK conversion rate as of nov 14 2024
 
-    def __init__(self, N, seed, grid, date):
-        self.N = N
+    def __init__(self, time_horizon, seed, bidding_zone, date):
+        self.N = time_horizon * QUARTER_HOURS_PER_DAY
         self.seed = seed
-        self.grid = grid
+        self.bidding_zone = bidding_zone
         self.date = date
     
 
@@ -65,7 +66,7 @@ class Market:
         df['Dato/klokkeslett'] = pd.to_datetime(df['Dato/klokkeslett'].str.split().str[0])
         start_idx = df[df['Dato/klokkeslett'] == pd.to_datetime(self.date)].index[0]
         
-        P_spot_hours = np.array(df[self.grid].iloc[start_idx:start_idx+n_hours].values)
+        P_spot_hours = np.array(df[self.bidding_zone].iloc[start_idx:start_idx+n_hours].values)
         P_spot = np.repeat(P_spot_hours, 4)[0:N]
         return P_spot
     
