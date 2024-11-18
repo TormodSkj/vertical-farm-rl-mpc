@@ -68,7 +68,7 @@ class Simulator():
 
             # Decide next bids
             self.controller.optimize_baseline()
-            self.controller.optimize()
+            self.controller.optimize_bidding()
 
             next_bid = self.controller.B_bid[:,0].flatten()
             Bids.append(Bid(next_bid[0], next_bid[1], next_bid[2], next_bid[3]))
