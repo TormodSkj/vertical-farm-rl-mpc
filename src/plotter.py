@@ -59,14 +59,14 @@ class Plotter():
             plt.plot(t, controller.model.freshweight(x_bid[:,1:]), "g", label="Freshweight shoot (g/plant)")
             plt.plot(t, controller.model.freshweight(x_base[:,1:]), color='purple', linestyle=':', label="Baseline freshweight shoot (g/plant)")
             plt.axhline(y=controller.model.Final_fw_sht, color='gray', linestyle=':', label="Required Freshweight (g/plant)")
-            plt.ylabel("Weight (grams)")
+            plt.ylabel("Weight (g/plant)")
             plt.xlabel("Time (days)")
             plt.legend()
 
         if self.controller.model.title == "Battery":
             plt.figure(1)
-            plt.plot(t, x_bid[:,1:], label="Bidding state of charge")
-            plt.plot(t, x_base[:,1:], label="Baseline state of charge")
+            plt.plot(t, x_bid[:,1:].flatten(), label="Bidding state of charge")
+            plt.plot(t, x_base[:,1:].flatten(), label="Baseline state of charge")
             plt.ylabel(self.controller.model.x_unit)
             plt.xlabel("Time (days)")
             plt.legend()

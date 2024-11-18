@@ -168,55 +168,11 @@ class PlantModel:
 
     def get_bidding_constraints(self, controller, g_eq, g_ineq, B):
 
-        
-        N = controller.N
-        u_base = controller.u_base
-        market = controller.market
-        dt = controller.dt
-
-        # Initial state constraint
-
-        # g_eq.append(X[:,0] - self.x_init)
+        # Enforce initial bids
 
         for k, bid in enumerate(controller.bids):
             g_eq.append(B[:, k] - bid.as_array())
         
-        '''
-        # Define the dynamic and control constraints
-        for k in range(0,N):
-            # Model equalities
-            # Using basic forward euler #TODO Evaluate other methods
-
-            if(k==0):
-                u_tilde = 1000*(B[1,k]*controller.A_down - B[0,k]*controller.A_up)/self.C_conv_PPFD
-                x_next = X[:, k] + dt*self.derivative(X[:, k], u_base[k] + u_tilde)
-                g_eq.append(X[:, k+1] - x_next)
-            else:
-                u_tilde = 1000*(B[1,k]*controller.market.Pr_a_dn(B[3,k]) - B[0,k]*controller.market.Pr_a_up(B[2,k]))/self.C_conv_PPFD
-                x_next = X[:, k] + dt*self.derivative(X[:, k], u_base[k] + u_tilde)
-                g_eq.append(X[:, k+1] - x_next)
-
-        
-        # Final freshweight constraint
-        g_ineq.append(self.freshweight(X[:,-1]) - self.Final_fw_sht) 
-        
-        # Upper and lower bounds on u
-        for k in range(N):
-
-            u_tilde = 1000*(B[1,k]*market.Pr_a_dn(B[3,k]) - B[0,k]*market.Pr_a_up(B[2,k]))/self.C_conv_PPFD
-
-            # Inequality constraints g_ineq >= 0
-            g_ineq.append(u_base[k] + u_tilde)
-            g_ineq.append(self.C_PPFD_max - (u_base[k] + u_tilde))
-
-            # DLI adherence
-            # if (k % QUARTER_HOURS_PER_DAY == 0 and k!=0): 
-                # g_ineq.append(X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY] - self.model.C_DLI_min)
-                # g_ineq.append(self.model.C_DLI_max - X[2,k] + X[2,k-QUARTER_HOURS_PER_DAY])
-
-        '''
-
-
         return g_eq, g_ineq
     
 
@@ -386,49 +342,22 @@ class BatteryModel:
                   
         return L
 
+    def final_cost(self, controller, X, U, Eps):
+
+        return 0
 
 
-    def get_bidding_constraints(self, controller, g_eq, g_ineq, X, B):
+    def get_bidding_constraints(self, controller, g_eq, g_ineq, B):
 
-        N = controller.N
-        u_base = controller.u_base
-        market = controller.market
-        dt = controller.dt
-
-        # Initial state constraint
-        g_eq.append(X[:,0] - self.x_init)
+        # Enforce initial bids
 
         for k, bid in enumerate(controller.bids):
             g_eq.append(B[:, k] - bid.as_array())
-
-        # Define the dynamic and control constraints
-        for k in range(0,N):
-            # Model equalities
-            # Using basic forward euler #TODO Evaluate other methods
-
-            if(k==0):
-                u_tilde = 1000*(B[1,k]*controller.A_down - B[0,k]*controller.A_up)
-                x_next = X[:, k] + dt*self.derivative(X[:, k], u_base[k] + u_tilde)
-                g_eq.append(X[:, k+1] - x_next)
-            else:
-                u_tilde = 1000*(B[1,k]*controller.market.Pr_a_dn(B[3,k]) - B[0,k]*controller.market.Pr_a_up(B[2,k]))
-                x_next = X[:, k] + dt*self.derivative(X[:, k], u_base[k] + u_tilde)
-                g_eq.append(X[:, k+1] - x_next)
-
-
-        # Upper and lower bounds on u
-        for k in range(N):
-
-            u_tilde = 1000*(B[1,k]*market.Pr_a_dn(B[3,k]) - B[0,k]*market.Pr_a_up(B[2,k]))
-
-            # Inequality constraints g_ineq >= 0
-            g_ineq.append(u_base[k] + u_tilde - self.u_min)
-            g_ineq.append(self.u_max - (u_base[k] + u_tilde))
-
-
+        
         return g_eq, g_ineq
     
-    def get_process_constraints(self, controller, g_eq, g_ineq, X, U):
+    
+    def get_process_constraints(self, controller, g_eq, g_ineq, X, U, Eps):
 
         N = controller.N
         dt = controller.dt
