@@ -10,7 +10,7 @@ from simulator import Simulator
 
 SIM_NAME = "casadi_ocp"
 HORIZON_DAYS = 1
-FINAL_WEIGHT = 8
+FINAL_WEIGHT = 9
 
 SIMULATION_DATE = '2023-12-01'
 BIDDING_ZONE    = 'NO4'
@@ -22,20 +22,23 @@ def main():
     config = Config(SIM_NAME)
     plant = PlantModel(x_init, FINAL_WEIGHT)
     market = Market(HORIZON_DAYS, 1133, BIDDING_ZONE, SIMULATION_DATE)
-    controller = Controller(HORIZON_DAYS, plant, market, config, "opt")     #Baseline: 'opt' / 'rigid'
-    simulator = Simulator(HORIZON_DAYS, plant, market, config, controller)
-    plotter = Plotter(config, controller, simulator)
+    controller = Controller(HORIZON_DAYS, plant, market, config, "opt")         #Baseline: 'opt' / 'rigid'
     
-    simulator.Simulate_mpc()
-
-    plotter.save_mpc_plots()
+    mpc_controller = Controller(HORIZON_DAYS, plant, market, config, "opt", surpress_output = True)     # Instance of controller used in mpc
+    simulator = Simulator(HORIZON_DAYS, plant, market, config, mpc_controller)
+    plotter = Plotter(config, controller, simulator)
 
     # controller.rigid_baseline()
-    # controller.optimize_baseline()
-    # controller.optimize()
-    # controller.save_to_json()
+    controller.optimize_baseline()
+    controller.optimize_bidding()
+    controller.save_to_json()
 
-    # plotter.save_ocp_plots()
+    plotter.save_ocp_plots()
+
+
+    # simulator.Simulate_mpc()
+
+    # plotter.save_mpc_plots()
 
 
 if __name__ == "__main__":

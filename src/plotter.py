@@ -154,8 +154,8 @@ class Plotter():
         foldername = self.foldername
 
         t = self.controller.t
-        u_bid = self.simulator.u_bid.flatten()
-        u_base = self.simulator.u_base.flatten()
+        u_bid = self.controller.u_bid.flatten()
+        u_base = self.controller.u_base.flatten()
         u_mpc = self.simulator.u_mpc.flatten()
 
         x_bid = self.simulator.x_bid

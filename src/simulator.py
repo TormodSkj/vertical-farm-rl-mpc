@@ -22,12 +22,6 @@ class Simulator():
     u_mpc: np.array
     bids_mpc: np.array
 
-    x_bid: np.array
-    u_bid: np.array
-    B_bid: np.array
-    x_base: np.array
-    u_base: np.array
-
 
     def __init__(self, timehorizon, plantmodel, market, config, controller):
         self.T = timehorizon
@@ -40,22 +34,7 @@ class Simulator():
         self.t = np.linspace(0, self.T, self.N)
 
         self.bids_mpc = np.zeros((4, self.N))
-
-        self.generate_reference()
         
-
-    def generate_reference(self):
-
-        self.controller.optimize_baseline()
-        self.controller.optimize()
-
-        self.x_bid = self.controller.x_bid
-        self.u_bid = np.array(self.controller.u_bid)
-        self.B_bid = self.controller.B_bid
-
-        self.x_base = self.controller.x_base
-        self.u_base = self.controller.u_base
-
 
     def Simulate_mpc(self):
 

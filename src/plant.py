@@ -56,13 +56,17 @@ class PlantModel:
     C_conv_PPFD = C_conv*A_crop/(eta_light*1000)    # Conversion factor between PPFD and power. Expressed in kW
     P_cap_max = C_PPFD_max*C_conv_PPFD              # Vertical farm power capacity [MW]
 
+    C_DLI_max = 20  # [accumulated light * 10^6]
+    # C_DLI_min = 0.9*16.2*10**6                    # Only used for variable DLI schemes
+
 
     def derivative(self, x: ca.MX.sym, u: ca.MX.sym)->ca.MX.sym:
         
         #Extract state
-        x_sdw = x[0]
-        x_nsdw = x[1]
-        PPFD = u[0]
+        x_sdw   = x[0]
+        x_nsdw  = x[1]
+        # x_DLI   = x[2]
+        PPFD    = u[0]
 
         
         #Common constants
@@ -93,9 +97,9 @@ class PlantModel:
 
         #Derivatives
         x_sdw_dot = r_gr * x_sdw
-        # x_nsdw_dot = c_a * f_phot - x_sdw_dot - f_resp - (1-c_b)/c_b * r_gr * x_sdw       Slightly inefficient implementation
-        x_nsdw_dot = self.c_a * f_phot - f_resp - 1/self.c_b * x_sdw_dot                              #More efficient implementation
-
+        # x_nsdw_dot = c_a * f_phot - x_sdw_dot - f_resp - (1-c_b)/c_b * r_gr * x_sdw   # Slightly inefficient implementation
+        x_nsdw_dot = self.c_a * f_phot - f_resp - 1/self.c_b * x_sdw_dot                # More efficient implementation
+        # x_DLI_dot = PPFD
 
         return ca.vertcat(x_sdw_dot, x_nsdw_dot)
     

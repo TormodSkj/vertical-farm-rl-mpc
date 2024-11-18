@@ -57,7 +57,7 @@ class Controller():
     eps_bid: float
     elapsedtime_base: float
 
-    def __init__(self, timehorizon, plantmodel, market, config, baseline: str):
+    def __init__(self, timehorizon, plantmodel, market, config, baseline: str, surpress_output = False):
         self.surpress_output = False
         self.T = timehorizon   
         self.N = timehorizon * QUARTER_HOURS_PER_DAY
@@ -81,11 +81,11 @@ class Controller():
 
         # Start the bidding and baseline solvers with the init x state
         bidding_z0 = ca.DM.zeros((self.N + 1)*self.model.nx + self.N*4 + 1, 1)  
-        bidding_z0[0:2] = self.x_init  # enforce init state
+        bidding_z0[0:self.model.nx] = self.x_init  # enforce init state
         self.bidding_z_init = bidding_z0
 
         baseline_z0 = ca.DM.zeros((self.N + 1)*self.model.nx + self.N*self.model.nu + 1)  
-        baseline_z0[0:2] = self.x_init  # enforce init state
+        baseline_z0[0:self.model.nx] = self.x_init  # enforce init state
         self.baseline_z_init = baseline_z0
         
  
@@ -96,7 +96,7 @@ class Controller():
 
 
 
-    def optimize(self):
+    def optimize_bidding(self):
         
         start_time = time.time()
 
@@ -128,13 +128,13 @@ class Controller():
 
         # Initialize cost function and constraints
         J = self.bidding_objective_function(B, Eps)                         # Cost function
-        g = []                        # Equality constraint list
-        h = []                        # Inequality constraint list
+        g_eq = []                        # Equality constraint list
+        g_ineq = []                        # Inequality constraint list
 
         # Initial state constraint
-        g.append(X[:, 0] - self.x_init)                  # Enforce the initial condition
-        g.append(B[:, 0] - self.Bid_0.as_array())    # Enforce bids for Q0
-        g.append(B[:, 1] - self.Bid_1.as_array())    # Enforce bids for Q1
+        g_eq.append(X[:, 0] - self.x_init)                  # Enforce the initial condition
+        g_eq.append(B[:, 0] - self.Bid_0.as_array())    # Enforce bids for Q0
+        g_eq.append(B[:, 1] - self.Bid_1.as_array())    # Enforce bids for Q1
 
         # Define the dynamic and control constraints
         for k in range(0,N):
@@ -144,27 +144,34 @@ class Controller():
             if(k==0):
                 u_tilde = 1000*(B[1,k]*B_a_dn_0 - B[0,k]*B_a_up_0)/C_conv_PPFD
                 x_next = X[:, k] + dt*self.model.derivative(X[:, k], u_base[k] + u_tilde)
-                g.append(X[:, k+1] - x_next)
+                g_eq.append(X[:, k+1] - x_next)
             else:
                 u_tilde = 1000*(B[1,k]*self.market.Pr_a_dn(B[3,k]) - B[0,k]*self.market.Pr_a_up(B[2,k]))/C_conv_PPFD
                 x_next = X[:, k] + dt*self.model.derivative(X[:, k], u_base[k] + u_tilde)
-                g.append(X[:, k+1] - x_next)
+                g_eq.append(X[:, k+1] - x_next)
             
         
         # Final freshweight constraint
-        h.append(self.model.freshweight(X[:,-1]) + Eps - self.model.Final_fw_sht) 
+        g_ineq.append(self.model.freshweight(X[:,-1]) + Eps - self.model.Final_fw_sht) 
         
         # Upper and lower bounds on u
-        for k in range(0,N):
+        for k in range(N):
 
             u_tilde = 1000*(B[1,k]*self.market.Pr_a_dn(B[3,k]) - B[0,k]*self.market.Pr_a_up(B[2,k]))/C_conv_PPFD
 
-            h.append(u_base[k] + u_tilde)
-            h.append(self.model.C_PPFD_max - (u_base[k] + u_tilde))
+            # Inequality constraints g_ineq >= 0
+            g_ineq.append(u_base[k] + u_tilde)
+            g_ineq.append(self.model.C_PPFD_max - (u_base[k] + u_tilde))
 
-        n_eq = ca.vertcat(*g).size()[0]
-        n_ineq = ca.vertcat(*h).size()[0]
-        g = g + h #Sum together the equality and inequality constraints
+            # DLI adherence
+            # if (k % QUARTER_HOURS_PER_DAY == 0 and k!=0): 
+                # g_ineq.append(X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY] - self.model.C_DLI_min)
+                # g_ineq.append(self.model.C_DLI_max - X[2,k] + X[2,k-QUARTER_HOURS_PER_DAY])
+
+            
+        n_eq = ca.vertcat(*g_eq).size()[0]
+        n_ineq = ca.vertcat(*g_ineq).size()[0]
+        g_eq = g_eq + g_ineq #Sum together the equality and inequality constraints
 
         lbg = np.concatenate((np.zeros((1, n_eq + n_ineq))), axis=None)                         # \ Eq-constraints = 0
         ubg = np.concatenate((np.zeros((1, n_eq)), np.inf * np.ones((1, n_ineq))), axis=None)   # / Ineq-constraints >= 0
@@ -191,7 +198,7 @@ class Controller():
         ubz = ca.vertcat(ca.reshape(ubx, -1, 1), ca.reshape(ub_B, -1, 1), ca.reshape(ubeps, -1, 1))
 
         # Nonlinear problem definition
-        nlp = {'x': Z, 'f': J, 'g': ca.vertcat(*g)}
+        nlp = {'x': Z, 'f': J, 'g': ca.vertcat(*g_eq)}
 
         # Create the solver
         opts = {'ipopt.print_level': 0, 'print_time': 0}
@@ -292,8 +299,7 @@ class Controller():
 
     def optimize_baseline(self):
         '''
-        Temporary function to get a generic baseline lighting schedule.
-        This schedule assumes 18 hours on, 6 hours off.
+        Optimizes the baseline light schedule purely based on spot price
         '''
 
         start_time = time.time()
@@ -315,23 +321,30 @@ class Controller():
         Eps = ca.MX.sym('Eps')                          # Slack variable (scalar)
 
         J = self.baseline_obj_function(U, Eps)         # Cost function
-        g = []                                          # Equality constraint list
-        h = []                                          # Inequality constraint list
+        g_eq = []                                          # Equality constraint list
+        g_ineq = []                                          # Inequality constraint list
 
         # Initial state constraint
-        g.append(X[:, 0] - self.x_init)                                       # Enforce the initial condition
-        h.append(self.model.freshweight(X[:,-1]) + Eps - self.model.Final_fw_sht)   # Enforce final weight condition
+        g_eq.append(X[:, 0] - self.x_init)
+        # Final weight constraint
+        g_ineq.append(self.model.freshweight(X[:,-1]) + Eps - self.model.Final_fw_sht)   
 
         # Define the dynamic and control constraints
         for k in range(N):
             #Using basic forward euler #TODO Evaluate other integration methods
 
+            # Equality constraints g_eq = 0
             x_next = X[:, k] + dt*self.model.derivative(X[:, k], U[:, k])
-            g.append(X[:, k+1] - x_next)
+            g_eq.append(X[:, k+1] - x_next)
             
+            # # Inequality constraints g_ineq >= 0
+            # if (k % QUARTER_HOURS_PER_DAY == 0 and not k==0):
+            #     # g_ineq.append(X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY] - self.model.C_DLI_min)
+            #     g_ineq.append(self.model.C_DLI_max - X[2,k] + X[2,k-QUARTER_HOURS_PER_DAY])
 
-        n_eq = ca.vertcat(*g).size()[0]
-        n_ineq = ca.vertcat(*h).size()[0]
+
+        n_eq = ca.vertcat(*g_eq).size()[0]
+        n_ineq = ca.vertcat(*g_ineq).size()[0]
         lbg = np.concatenate((np.zeros((1, n_eq + n_ineq))), axis=None)
         ubg = np.concatenate((np.zeros((1, n_eq)), np.inf * np.ones((1, n_ineq))), axis=None)
 
@@ -350,10 +363,10 @@ class Controller():
         Z =   ca.vertcat(ca.reshape(X, -1, 1),   ca.reshape(U, -1, 1),   Eps)
         lbz = ca.vertcat(ca.reshape(lbx, -1, 1), ca.reshape(lbu, -1, 1), ca.reshape(lbeps, -1, 1))
         ubz = ca.vertcat(ca.reshape(ubx, -1, 1), ca.reshape(ubu, -1, 1), ca.reshape(ubeps, -1, 1))
-        g = g + h #Sum together the equality and inequality constraints
+        g_eq = g_eq + g_ineq #Sum together the equality and inequality constraints
 
         # Nonlinear problem definition
-        nlp = {'x': Z, 'f': J, 'g': ca.vertcat(*g)}
+        nlp = {'x': Z, 'f': J, 'g': ca.vertcat(*g_eq)}
 
         # Create the solver
         opts = {'ipopt.print_level': 0, 'print_time': 0}
