@@ -16,6 +16,12 @@ class Market:
 
     C_eur2nok = 11.76               # € -> NOK conversion rate as of nov 14 2024
 
+
+
+    n_given_bids = 2            # Number of time intervals with previously submitted bids
+    n_given_activations = 1     # Number of time intervals with received activations
+
+
     def __init__(self, time_horizon, seed, bidding_zone, date):
         self.N = time_horizon * QUARTER_HOURS_PER_DAY
         self.seed = seed

@@ -1,5 +1,5 @@
 from controller import Controller
-from plant import PlantModel
+from model import *
 from market import Market
 from config import Config
 from plotter import Plotter
@@ -9,8 +9,8 @@ from simulator import Simulator
 
 
 SIM_NAME = "casadi_ocp"
-HORIZON_DAYS = 1
-FINAL_WEIGHT = 9
+HORIZON_DAYS = 7
+FINAL_WEIGHT = 80
 
 SIMULATION_DATE = '2023-12-01'
 BIDDING_ZONE    = 'NO4'
@@ -26,13 +26,20 @@ def main():
     
     mpc_controller = Controller(HORIZON_DAYS, plant, market, config, "opt", surpress_output = True)     # Instance of controller used in mpc
     simulator = Simulator(HORIZON_DAYS, plant, market, config, mpc_controller)
-    plotter = Plotter(config, controller, simulator)
+
+    battery = BatteryModel(x_init = np.array([200]))
+    battery_controller = Controller(HORIZON_DAYS, battery, market, config, "opt")
+
+
+    # battery_controller.optimize_baseline()
+    # battery_controller.optimize_bidding()
 
     # controller.rigid_baseline()
     controller.optimize_baseline()
     controller.optimize_bidding()
     controller.save_to_json()
 
+    plotter = Plotter(config, controller, simulator)
     plotter.save_ocp_plots()
 
 

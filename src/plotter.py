@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 from config import Config
 from controller import Controller
-from plant import PlantModel
+from model import *
 from market import Market
 from simulator import Simulator
 
@@ -39,12 +39,8 @@ class Plotter():
         u_opt = self.controller.u_bid
         u_base = self.controller.u_base
 
-        x_opt = self.controller.x_bid
-        x1_opt = x_opt[0,1:]
-        x2_opt = x_opt[1,1:]
+        x_bid = self.controller.x_bid
         x_base = self.controller.x_base
-        x1_base = x_base[0,1:]
-        x2_base = x_base[1,1:]
 
         B_bid = self.controller.B_bid
         b_p_up = B_bid[0,:]
@@ -54,22 +50,26 @@ class Plotter():
         b_a_up = self.controller.market.Pr_a_up(b_c_up)
         b_a_dn = self.controller.market.Pr_a_dn(b_c_dn)
 
-        eps = self.controller.eps_bid
-
-
 
         # BEGIN PLOTTING (or more like saving plots, but you get it)
         ##################################################
-        plt.figure(1)
-        plt.plot(t, x1_opt, "r", label="Structural dry weight (g/m^2)") 
-        plt.plot(t, x2_opt, "b", label="Non-structural dry weight (g/m^2)")
-        plt.plot(t, controller.model.freshweight(x_opt[:,1:]), "g", label="Freshweight shoot (g/plant)")
-        plt.plot(t, controller.model.freshweight(x_base[:,1:]), color='purple', linestyle=':', label="Baseline freshweight shoot (g/plant)")
-        plt.axhline(y=controller.model.Final_fw_sht, color='orange', linestyle=':', label="Required Freshweight (g/plant)")
-        plt.ylabel("Weight")
-        plt.xlabel("Time (days)")
-        plt.legend()
+        
+        if self.controller.model.title == "Vertical Farm":
+            plt.figure(1)
+            plt.plot(t, controller.model.freshweight(x_bid[:,1:]), "g", label="Freshweight shoot (g/plant)")
+            plt.plot(t, controller.model.freshweight(x_base[:,1:]), color='purple', linestyle=':', label="Baseline freshweight shoot (g/plant)")
+            plt.axhline(y=controller.model.Final_fw_sht, color='gray', linestyle=':', label="Required Freshweight (g/plant)")
+            plt.ylabel("Weight (grams)")
+            plt.xlabel("Time (days)")
+            plt.legend()
 
+        if self.controller.model.title == "Battery":
+            plt.figure(1)
+            plt.plot(t, x_bid[:,1:], label="Bidding state of charge")
+            plt.plot(t, x_base[:,1:], label="Baseline state of charge")
+            plt.ylabel(self.controller.model.x_unit)
+            plt.xlabel("Time (days)")
+            plt.legend()
 
         filename = "Combined_ocp_x"
         plt.savefig(config.plot_path + foldername + "/" + filename + ".png")
@@ -78,7 +78,7 @@ class Plotter():
         plt.figure(2)
         plt.plot(t, u_opt, label="U") 
         plt.plot(t, u_base, label="Baseline U") 
-        plt.ylabel("Light level (PPFD)")
+        plt.ylabel(self.controller.model.u_unit)
         plt.xlabel("Time (days)")
         plt.legend()
 
@@ -176,10 +176,7 @@ class Plotter():
         b_c_up = B_bid[2,:]
         b_c_dn = B_bid[3,:]
         b_a_up = self.controller.market.Pr_a_up(b_c_up)
-        b_a_dn = self.controller.market.Pr_a_dn(b_c_dn)
-
-        eps = self.controller.eps_bid
-        
+        b_a_dn = self.controller.market.Pr_a_dn(b_c_dn)        
 
 
         # BEGIN PLOTTING (or more like saving plots, but you get it)

@@ -1,7 +1,7 @@
 import casadi as ca
 import numpy as np
 from market import Market, Bid
-from plant import PlantModel
+from model import *
 from config import Config
 from utils import print_cost_comparison_table, print_bidding_table
 import time
@@ -26,11 +26,11 @@ class Controller():
     t:  np.array
 
     p_spot:     np.array
-    Bid_0:      Bid
-    Bid_1:      Bid
     x_init:     np.array
-    A_up:       float
-    A_down:     float
+
+    bids:       list[Bid]
+    A_up:       list[bool]
+    A_down:     list[bool]
 
     bidding_z_init: ca.DM
     baseline_z_init: ca.DM
@@ -38,16 +38,15 @@ class Controller():
 
     sol_base: dict
     f_base: float
-    eps_base: float
     u_base: np.array
     x_base: np.array
+    eps_base: float
     elapsedtime_base: float
 
     f_opt: float
     u_opt: np.array
     x_opt: np.array
     B_opt: np.array
-    Eps_opt: float
 
     sol_bid: dict
     f_bid: float
@@ -69,18 +68,21 @@ class Controller():
         
         self.p_spot = self.market.get_spotprice()
 
+        self.bids = []
+        for i in range(self.market.n_given_bids):
+            self.bids.append(Bid())
 
-        # Set previous 2 bids By default inits at 0
-        self.Bid_0 = Bid()
-        self.Bid_1 = Bid()
-        self.A_up = 0
-        self.A_down = 0
+        self.A_up, self.A_down = [],[]
+        for i in range(self.market.n_given_activations):
+            self.A_up.append(0)
+            self.A_down.append(0)
+
 
         # Set initial state
         self.x_init = self.model.x_init
 
         # Start the bidding and baseline solvers with the init x state
-        bidding_z0 = ca.DM.zeros((self.N + 1)*self.model.nx + self.N*4 + 1, 1)  
+        bidding_z0 = ca.DM.zeros((self.N + 1)*self.model.nx + self.N*4 + 1)  
         bidding_z0[0:self.model.nx] = self.x_init  # enforce init state
         self.bidding_z_init = bidding_z0
 
@@ -100,105 +102,52 @@ class Controller():
         
         start_time = time.time()
 
-        # Inform controller of any current activations
-        B_a_up_0 = self.A_up
-        B_a_dn_0 = self.A_down
-
 
         N = self.N
         T = self.T
         dt = self.dt
 
         # State and control dimensions
-        nx = self.model.nx            # Dimension of state x (x1, x2)
-        nu = self.model.nu            # Dimension of control u (scalar)
-        C_conv_PPFD = self.model.C_conv_PPFD    # Conversion from Light level to power [PPFD -> MW]
+        nx = self.model.nx                      # Dimension of state x (x1, x2)
+        nu = self.model.nu                      # Dimension of control u (scalar)
 
         # Create decision variables for the optimization problem
         X = ca.MX.sym('X', nx, N+1)             # States over time (2x(N+1) vector)
-        # U = ca.MX.sym('U', nu, N)             # Controls over time (1xN vector)
         B = ca.MX.sym('B', 4, N)                # Bids over time (Vol_up, Vol_down, Price_up, Price_down) (4xN vector)
-        Eps = ca.MX.sym('Eps')                  # Slack variable (scalar)
+        Eps = ca.MX.sym('Eps', 1, 1)            # Slack variable for feasibility
 
-
-        # Get spot price and baseline
-        p_spot = self.p_spot
-        u_base = self.u_base
-
+        U = self.model.get_u(self, B)           # Express U in terms of bidding outcomes
 
         # Initialize cost function and constraints
-        J = self.bidding_objective_function(B, Eps)                         # Cost function
-        g_eq = []                        # Equality constraint list
-        g_ineq = []                        # Inequality constraint list
+        J = self.model.bidding_objective_function(self, X, U, B)\
+                          + self.model.final_cost(self, X, U, Eps)  # Cost function
 
-        # Initial state constraint
-        g_eq.append(X[:, 0] - self.x_init)                  # Enforce the initial condition
-        g_eq.append(B[:, 0] - self.Bid_0.as_array())    # Enforce bids for Q0
-        g_eq.append(B[:, 1] - self.Bid_1.as_array())    # Enforce bids for Q1
 
-        # Define the dynamic and control constraints
-        for k in range(0,N):
-            # Model equalities
-            # Using basic forward euler #TODO Evaluate other methods
+        g_eq, g_ineq = [], []
+        g_eq, g_ineq = self.model.get_process_constraints(self, g_eq, g_ineq, X, U, Eps)
+        g_eq, g_ineq = self.model.get_bidding_constraints(self, g_eq, g_ineq, B)
 
-            if(k==0):
-                u_tilde = 1000*(B[1,k]*B_a_dn_0 - B[0,k]*B_a_up_0)/C_conv_PPFD
-                x_next = X[:, k] + dt*self.model.derivative(X[:, k], u_base[k] + u_tilde)
-                g_eq.append(X[:, k+1] - x_next)
-            else:
-                u_tilde = 1000*(B[1,k]*self.market.Pr_a_dn(B[3,k]) - B[0,k]*self.market.Pr_a_up(B[2,k]))/C_conv_PPFD
-                x_next = X[:, k] + dt*self.model.derivative(X[:, k], u_base[k] + u_tilde)
-                g_eq.append(X[:, k+1] - x_next)
-            
         
-        # Final freshweight constraint
-        g_ineq.append(self.model.freshweight(X[:,-1]) + Eps - self.model.Final_fw_sht) 
-        
-        # Upper and lower bounds on u
-        for k in range(N):
-
-            u_tilde = 1000*(B[1,k]*self.market.Pr_a_dn(B[3,k]) - B[0,k]*self.market.Pr_a_up(B[2,k]))/C_conv_PPFD
-
-            # Inequality constraints g_ineq >= 0
-            g_ineq.append(u_base[k] + u_tilde)
-            g_ineq.append(self.model.C_PPFD_max - (u_base[k] + u_tilde))
-
-            # DLI adherence
-            # if (k % QUARTER_HOURS_PER_DAY == 0 and k!=0): 
-                # g_ineq.append(X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY] - self.model.C_DLI_min)
-                # g_ineq.append(self.model.C_DLI_max - X[2,k] + X[2,k-QUARTER_HOURS_PER_DAY])
-
-            
+        # format constraints
         n_eq = ca.vertcat(*g_eq).size()[0]
         n_ineq = ca.vertcat(*g_ineq).size()[0]
-        g_eq = g_eq + g_ineq #Sum together the equality and inequality constraints
-
+        g = g_eq + g_ineq #Sum together the equality and inequality constraints
         lbg = np.concatenate((np.zeros((1, n_eq + n_ineq))), axis=None)                         # \ Eq-constraints = 0
         ubg = np.concatenate((np.zeros((1, n_eq)), np.inf * np.ones((1, n_ineq))), axis=None)   # / Ineq-constraints >= 0
 
-        # Define bounds on x and u
-        lbx = 0* np.ones((nx, N+1))         # Lower bound for x (x >= 0)
-        ubx = np.inf * np.ones((nx, N+1))   # Upper bound for x (no upper bound)
 
-        lb_B = 0 * np.ones((4, N))
-        ub_B = np.vstack((C_conv_PPFD * u_base/1000,                             # Bid vol up
-                          C_conv_PPFD * (self.model.C_PPFD_max - u_base)/1000,   # Bid vol down
-                          1000 * np.ones((1, N)),                                # Bid price up. Arbitrary limit of 1000€ / MW 
-                        #   100*p_spot*1000/self.market.C_eur2nok,               # Bid price up
-                        #   p_spot*1000/self.market.C_eur2nok))                  # Bid price down limited to spot price in eur/MW.  might be arbitrary
-                          1000 * np.ones((1, N))))                               # Bid price down. Arbitrary limit of 1000€ / MW 
-        # ub_B = 0 * np.ones((4, N)) # TODO Uncomment to set all bids to 0
-
-        lbeps = 0
-        ubeps = np.inf
+        # Extract state and bidding bounds
+        lbx, ubx = self.model.get_state_bounds(self)
+        lb_B, ub_B = self.model.get_bidding_bounds(self)
+        lb_eps, ub_eps = 0, np.inf
 
         # Flatten decision variables and bounds
-        Z   = ca.vertcat(ca.reshape(X,   -1, 1), ca.reshape(B,    -1, 1), Eps)
-        lbz = ca.vertcat(ca.reshape(lbx, -1, 1), ca.reshape(lb_B, -1, 1), ca.reshape(lbeps, -1, 1))
-        ubz = ca.vertcat(ca.reshape(ubx, -1, 1), ca.reshape(ub_B, -1, 1), ca.reshape(ubeps, -1, 1))
+        Z   = ca.vertcat(ca.reshape(X,   -1, 1), ca.reshape(B,    -1, 1), ca.reshape(Eps,    -1, 1))
+        lbz = ca.vertcat(ca.reshape(lbx, -1, 1), ca.reshape(lb_B, -1, 1), ca.reshape(lb_eps, -1, 1))
+        ubz = ca.vertcat(ca.reshape(ubx, -1, 1), ca.reshape(ub_B, -1, 1), ca.reshape(ub_eps, -1, 1))
 
         # Nonlinear problem definition
-        nlp = {'x': Z, 'f': J, 'g': ca.vertcat(*g_eq)}
+        nlp = {'x': Z, 'f': J, 'g': ca.vertcat(*g)}
 
         # Create the solver
         opts = {'ipopt.print_level': 0, 'print_time': 0}
@@ -215,14 +164,11 @@ class Controller():
         self.B_bid = np.array(sol['x'][(nx*(N+1)):(nx*(N+1) + 4*N)].reshape((4, N)))
         self.eps_bid = float(sol['x'][-1])
 
-        self.u_bid = u_base + 1000*(np.multiply(self.B_bid[1,:], self.market.Pr_a_dn(self.B_bid[3,:]))\
-                                     - np.multiply(self.B_bid[0,:], self.market.Pr_a_up(self.B_bid[2,:])))/C_conv_PPFD
-        
+        self.u_bid = self.model.get_u(self, self.B_bid)
         
         end_time = time.time()
         self.elapsedtime_bid = end_time - start_time
 
-        
 
         if not self.surpress_output: 
             print('Bids optimized')
@@ -231,35 +177,71 @@ class Controller():
         
 
 
-    def bidding_objective_function(self, B, eps):
-        
+    def optimize_baseline(self):
+        '''
+        Optimizes the baseline light schedule purely based on spot price
+        '''
+        start_time = time.time()
+
+
         N = self.N
-        p_spot = self.p_spot
+        T = self.T
 
-        Bp_up = B[0,:]
-        Bp_dn = B[1,:]
-        Bc_up = B[2,:]
-        Bc_dn = B[3,:]
+        # State and control dimensions
+        nx = self.model.nx                              # Dimension of state x (x1, x2)
+        nu = self.model.nu                              # Dimension of control u (scalar)
 
-        L = 0
+        # Create decision variables for the optimization problem
+        X = ca.MX.sym('X', nx, N+1)                     # States over time ((N+1)x1 vector)
+        U = ca.MX.sym('U', nu, N)                       # Controls over time (Nx1 vector)
+        Eps = ca.MX.sym('Eps', 1, 1)                    # Slack variable for feasibility
 
-        # for k in range(0, N): #from k = 2, to N-1. 
-        #     L += (1000*p_spot[k] - self.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * self.market.Pr_a_dn(Bc_dn[k])\
-        #           - (1000*p_spot[k] + self.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * self.market.Pr_a_up(Bc_up[k])
-        
-        for k in range(0, N): #from k = 2, to N-1. 
-            L += p_spot[k] * self.model.C_conv_PPFD * self.u_base[k] \
-                  + (1000*p_spot[k] - self.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * self.market.Pr_a_dn(Bc_dn[k])\
-                  - (1000*p_spot[k] + self.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * self.market.Pr_a_up(Bc_up[k])
+        J = self.model.baseline_obj_function(self, X, U)\
+                     + self.model.final_cost(self, X, U, Eps)         # Cost function
 
-        L = L/4
+        # Get bounds
+        lbx, ubx = self.model.get_state_bounds(self)
+        lbu, ubu = self.model.get_input_bounds(self)
+        lb_eps, ub_eps = 0, np.inf
 
-        L += eps * 10**10
-
-        return L
+        # Get constraints
+        g_eq, g_ineq = [],[]
+        g_eq, g_ineq = self.model.get_process_constraints(self, g_eq, g_ineq, X, U, Eps)
+        g = g_eq + g_ineq 
 
 
-    import numpy as np
+        # Flatten decision variables and bounds
+        Z =   ca.vertcat(ca.reshape(X, -1, 1),   ca.reshape(U, -1, 1),   ca.reshape(Eps,    -1, 1))
+        lbz = ca.vertcat(ca.reshape(lbx, -1, 1), ca.reshape(lbu, -1, 1), ca.reshape(lb_eps, -1, 1))
+        ubz = ca.vertcat(ca.reshape(ubx, -1, 1), ca.reshape(ubu, -1, 1), ca.reshape(ub_eps, -1, 1))
+
+        # Format constraints
+        n_eq = ca.vertcat(*g_eq).size()[0]
+        n_ineq = ca.vertcat(*g_ineq).size()[0]
+        lbg = np.concatenate((np.zeros((1, n_eq + n_ineq))), axis=None)
+        ubg = np.concatenate((np.zeros((1, n_eq)), np.inf * np.ones((1, n_ineq))), axis=None)
+
+        # Nonlinear problem definition
+        nlp = {'x': Z, 'f': J, 'g': ca.vertcat(*g)}
+
+        # Create the solver
+        opts = {'ipopt.print_level': 0, 'print_time': 0}
+        solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
+
+        sol = solver(x0=self.baseline_z_init, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
+
+        # Extract solution
+        self.sol_base   = sol
+        self.f_base     = float(sol['f'])
+        self.x_base     = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
+        self.u_base     = np.array(sol['x'][(nx*(N+1)):(nx*(N+1)+N*nu)].reshape((nu, N)))[0,:]
+        self.eps_base   = float(sol['x'][-1])
+
+        end_time = time.time()
+        self.elapsedtime_base = end_time - start_time
+        if not self.surpress_output: print('Baseline optimized')
+        return 0
+
 
     def rigid_baseline(self):
         '''
@@ -297,111 +279,6 @@ class Controller():
         return 0
     
 
-    def optimize_baseline(self):
-        '''
-        Optimizes the baseline light schedule purely based on spot price
-        '''
-
-        start_time = time.time()
-
-        u_base_ub = 1*self.model.C_PPFD_max
-        u_base_lb = 0*self.model.C_PPFD_max
-
-        N = self.N
-        T = self.T
-        dt = self.dt
-
-        # State and control dimensions
-        nx = self.model.nx                              # Dimension of state x (x1, x2)
-        nu = self.model.nu                              # Dimension of control u (scalar)
-
-        # Create decision variables for the optimization problem
-        X = ca.MX.sym('X', nx, N+1)                     # States over time ((N+1)x1 vector)
-        U = ca.MX.sym('U', nu, N)                       # Controls over time (Nx1 vector)
-        Eps = ca.MX.sym('Eps')                          # Slack variable (scalar)
-
-        J = self.baseline_obj_function(U, Eps)         # Cost function
-        g_eq = []                                          # Equality constraint list
-        g_ineq = []                                          # Inequality constraint list
-
-        # Initial state constraint
-        g_eq.append(X[:, 0] - self.x_init)
-        # Final weight constraint
-        g_ineq.append(self.model.freshweight(X[:,-1]) + Eps - self.model.Final_fw_sht)   
-
-        # Define the dynamic and control constraints
-        for k in range(N):
-            #Using basic forward euler #TODO Evaluate other integration methods
-
-            # Equality constraints g_eq = 0
-            x_next = X[:, k] + dt*self.model.derivative(X[:, k], U[:, k])
-            g_eq.append(X[:, k+1] - x_next)
-            
-            # # Inequality constraints g_ineq >= 0
-            # if (k % QUARTER_HOURS_PER_DAY == 0 and not k==0):
-            #     # g_ineq.append(X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY] - self.model.C_DLI_min)
-            #     g_ineq.append(self.model.C_DLI_max - X[2,k] + X[2,k-QUARTER_HOURS_PER_DAY])
-
-
-        n_eq = ca.vertcat(*g_eq).size()[0]
-        n_ineq = ca.vertcat(*g_ineq).size()[0]
-        lbg = np.concatenate((np.zeros((1, n_eq + n_ineq))), axis=None)
-        ubg = np.concatenate((np.zeros((1, n_eq)), np.inf * np.ones((1, n_ineq))), axis=None)
-
-
-        # Define bounds on x and u
-        lbx = 0* np.ones((nx, N+1))             # Lower bound for x (x >= 0)
-        ubx = np.inf * np.ones((nx, N+1))       # Upper bound for x (no upper bound)
-
-        lbu = u_base_lb * np.ones((nu, N))      # Lower bound for u (u >= 0)
-        ubu = u_base_ub * np.ones((nu, N))      # Upper bound for u (u <= Max PPFD 250)
-
-        lbeps = 0
-        ubeps = np.inf
-
-        # Flatten decision variables and bounds
-        Z =   ca.vertcat(ca.reshape(X, -1, 1),   ca.reshape(U, -1, 1),   Eps)
-        lbz = ca.vertcat(ca.reshape(lbx, -1, 1), ca.reshape(lbu, -1, 1), ca.reshape(lbeps, -1, 1))
-        ubz = ca.vertcat(ca.reshape(ubx, -1, 1), ca.reshape(ubu, -1, 1), ca.reshape(ubeps, -1, 1))
-        g_eq = g_eq + g_ineq #Sum together the equality and inequality constraints
-
-        # Nonlinear problem definition
-        nlp = {'x': Z, 'f': J, 'g': ca.vertcat(*g_eq)}
-
-        # Create the solver
-        opts = {'ipopt.print_level': 0, 'print_time': 0}
-        solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
-
-
-        sol = solver(x0=self.baseline_z_init, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
-
-        # Extract solution
-        self.sol_base = sol
-        self.x_base = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
-        self.u_base = np.array(sol['x'][(nx*(N+1)):(nx*(N+1)+N*nu)].reshape((nu, N)))[0,:]
-        self.f_base = np.sum(np.multiply(self.p_spot, self.u_base))*self.model.C_conv_PPFD/4 # Scale down from p_spot*u to p_spot*u*C_conv_ppfd/4
-        self.eps_base = float(sol['x'][-1])
-
-        end_time = time.time()
-        self.elapsedtime_base = end_time - start_time
-        if not self.surpress_output: print('Baseline optimized')
-        return 0
-
-
-    def baseline_obj_function(self, U, eps):
-        N = self.N
-        p_spot = self.p_spot
-
-        L = 0
-        for k in range(N):
-            L += p_spot[k] * U[k] * self.model.C_conv_PPFD/4
-                  
-        L += eps * 10**10
-
-        return L
-
-
-
     def save_to_json(self):
         # Convert arrays to lists for JSON serialization
         data_to_save = {
@@ -436,25 +313,18 @@ class Controller():
         bidding_earnings_dn = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(b_a_dn, b_p_dn), b_c_dn)
         bidding_earnings = np.sum(bidding_earnings_up) + np.sum(bidding_earnings_dn)
 
-        u_tilde = 1000*(np.multiply(b_a_dn, b_p_dn) - np.multiply(b_a_up, b_p_up))/self.model.C_conv_PPFD
-
-        bidding_costs = np.sum(np.multiply(self.p_spot, (self.u_base + u_tilde)))*self.model.C_conv_PPFD/4
-
-        bidding_eps_penalty = self.eps_bid * 10**10
+        bidding_costs = self.model.bidding_objective_function(self, self.x_bid, self.u_bid, self.B_bid)
 
         f_opt = bidding_costs - bidding_earnings
 
-
-        baseline_costs = np.sum(np.multiply(self.u_base, self.p_spot)) * self.model.C_conv_PPFD / 4
-        baseline_eps_penalty = self.eps_base * 10**10
-
+        baseline_costs = self.model.baseline_obj_function(self, self.x_base, self.u_base)
 
 
         print("")
-        print(f"Baseline f-val minus eps: {float(self.sol_base['f']) - self.eps_base*10**10}")
-        print(f"Bidding f-val minus eps: {float(self.sol_bid['f']) - self.eps_bid*10**10}")
+        print(f"Baseline f-val: {float(self.sol_base['f'])}")
+        print(f"Bidding f-val: {float(self.sol_bid['f'])}")
 
-        print(f"Obj function f-val: {self.bidding_objective_function(self.B_bid, self.eps_bid)}")
+        print(f"Obj function f-val: {self.model.bidding_objective_function(self, self.x_bid, self.u_bid, self.B_bid)}")
 
         print(f"Calculated earnings: {np.sum(bidding_earnings)}")
         print(f"Calculated costs: {np.sum(bidding_costs)}")
@@ -466,7 +336,6 @@ class Controller():
         cost_data = {
             'Cost of power': [baseline_costs, bidding_costs],
             'Cost of bidding': [0, -bidding_earnings],
-            'Epsilon penalty': [baseline_eps_penalty, bidding_eps_penalty]
         }
 
         print_cost_comparison_table("Baseline", "Bidding", cost_data)
@@ -486,7 +355,7 @@ class Controller():
 
         bidding_data = {
             'Avg bid size': [np.average(filtered_b_p_up), np.average(filtered_b_p_dn), "MW"],
-            'Avg feasible bid price': [np.average(filtered_b_c_up), np.average(filtered_b_c_dn), "€/MW"],
+            'Avg bid price': [np.average(filtered_b_c_up), np.average(filtered_b_c_dn), "€/MW"],
             'Avg activation rate': [np.average(filtered_b_a_up), np.average(filtered_b_a_dn), "%"],
             'Chance of activation given demand': [np.average(filtered_b_a_up)/self.market.Pr_D_up(), np.average(filtered_b_a_dn)/self.market.Pr_D_up(), "%"],
             'Submitted bids': [len(filtered_b_a_up), len(filtered_b_a_dn), "-"]
@@ -505,8 +374,6 @@ class Controller():
 
 
         self.f_opt = f_opt
-
-        print(f"Missing fresh weight: {self.eps_bid}g per plant")
 
 
         f_base = self.f_base

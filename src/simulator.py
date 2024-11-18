@@ -1,6 +1,6 @@
 import numpy as np
 from market import Market, Bid
-from plant import PlantModel
+from model import *
 from config import Config
 from controller import Controller
 from globals import *
