@@ -8,7 +8,7 @@ from globals import *
 from simulator import Simulator
 
 
-SIM_NAME = "DLI_test_2"
+SIM_NAME = "casadi_ocp"
 HORIZON_DAYS = 2
 FINAL_WEIGHT = 12
 
@@ -19,7 +19,7 @@ def main():
 
     x_init = np.array([5, 1])   # Specify init vector [structural and non structural dry weight in grams]
 
-    config = Config(SIM_NAME)
+    config = Config(SIM_NAME, filetype="pdf")
     plant = PlantModel(x_init, FINAL_WEIGHT)
     market = Market(HORIZON_DAYS, 1133, BIDDING_ZONE, SIMULATION_DATE)
     controller = Controller(HORIZON_DAYS, plant, market, config, "opt")         #Baseline: 'opt' / 'rigid'

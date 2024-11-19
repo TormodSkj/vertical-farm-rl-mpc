@@ -6,9 +6,12 @@ class Config():
     sim_path:   str
     sim_name:   str
 
-    def __init__(self, simulation_name="custom"):
+    plot_file_type: str
+
+    def __init__(self, simulation_name="custom", filetype="pdf"):
 
         self.sim_name = simulation_name
+        self.plot_file_type = filetype
 
         # Get project root path
         self.path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..')) + "/"

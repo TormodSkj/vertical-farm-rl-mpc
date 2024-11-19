@@ -72,7 +72,7 @@ class Plotter():
             plt.legend()
 
         filename = "Combined_ocp_x"
-        plt.savefig(config.plot_path + foldername + "/" + filename + ".png")
+        plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
         
         ##################################################
         plt.figure(2)
@@ -84,7 +84,7 @@ class Plotter():
 
 
         filename = "Combined_ocp_u"
-        plt.savefig(config.plot_path + foldername + "/" + filename + ".png")
+        plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
         ##################################################
         plt.figure(3)
@@ -95,7 +95,7 @@ class Plotter():
         plt.legend()
 
         filename = "Combined_ocp_b_p"
-        plt.savefig(config.plot_path + foldername + "/" + filename + ".png")
+        plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
         ##################################################
         plt.figure(4)
@@ -116,7 +116,7 @@ class Plotter():
 
         fig.tight_layout()
         filename = "Combined_ocp_b_c"
-        plt.savefig(config.plot_path + foldername + "/" + filename + ".png")
+        plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
         ##################################################
         plt.figure(6)
@@ -127,7 +127,7 @@ class Plotter():
         plt.legend()
 
         filename = "Combined_ocp_b_a"
-        plt.savefig(config.plot_path + foldername + "/" + filename + ".png")
+        plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
         ##################################################
         plt.figure(7)
@@ -138,7 +138,7 @@ class Plotter():
 
 
         filename = "Combined_ocp_p_spot"
-        plt.savefig(config.plot_path + foldername + "/" + filename + ".png")
+        plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
 
 
@@ -193,7 +193,7 @@ class Plotter():
 
         
         filename = "Combined_ocp_x"
-        plt.savefig(config.plot_path + foldername + "/MPC_" + filename + ".png")
+        plt.savefig(config.plot_path + foldername + "/MPC_" + filename + "." + config.plot_file_type, format=config.plot_file_type)
         ##################################################
 
 
@@ -207,4 +207,4 @@ class Plotter():
 
 
         filename = "Combined_ocp_u"
-        plt.savefig(config.plot_path + foldername + "/MPC_" + filename + ".png")
+        plt.savefig(config.plot_path + foldername + "/MPC_" + filename + "." + config.plot_file_type, format=config.plot_file_type)

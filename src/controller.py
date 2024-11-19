@@ -3,7 +3,7 @@ import numpy as np
 from market import Market, Bid
 from model import *
 from config import Config
-from utils import print_cost_comparison_table, print_bidding_table, generate_table
+from utils import generate_table
 import time
 import os
 import json
@@ -338,7 +338,7 @@ class Controller():
         ]
 
         cost_table = generate_table(cost_data, header=['Baseline', 'Bidding'], sumrow=True, diffcol=True)
-        print(f'DLI DATA: \n {cost_table}\n')
+        print(f'COST DATA: \n {cost_table}\n')
 
         
         DLI = [np.sum(self.u_base[int(k):int(k)+QUARTER_HOURS_PER_DAY])*1e-6*SECONDS_PER_QUARTER_HOUR for k in np.linspace(0, self.N - QUARTER_HOURS_PER_DAY, self.T*self.model.DLI_res+1)]
