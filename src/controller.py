@@ -3,11 +3,12 @@ import numpy as np
 from market import Market, Bid
 from model import *
 from config import Config
-from utils import print_cost_comparison_table, print_bidding_table
+from utils import print_cost_comparison_table, print_bidding_table, generate_table
 import time
 import os
 import json
 from globals import *
+from tabulate import tabulate
 
 class Controller():
     """The controller is tasked with finding an optimal 
@@ -331,16 +332,26 @@ class Controller():
         print(f"Calculated total cost from bidding: {f_opt}")
         print("")
 
+        cost_data = [
+            ['Cost of power', baseline_costs, bidding_costs],
+            ['Cost of bidding', 0, -bidding_earnings]
+        ]
 
-                
-        cost_data = {
-            'Cost of power': [baseline_costs, bidding_costs],
-            'Cost of bidding': [0, -bidding_earnings],
-        }
+        cost_table = generate_table(cost_data, header=['Baseline', 'Bidding'], sumrow=True, diffcol=True)
+        print(f'DLI DATA: \n {cost_table}\n')
 
-        print_cost_comparison_table("Baseline", "Bidding", cost_data)
-        print("")
         
+        DLI = [np.sum(self.u_base[int(k):int(k)+QUARTER_HOURS_PER_DAY])*1e-6*SECONDS_PER_QUARTER_HOUR for k in np.linspace(0, self.N - QUARTER_HOURS_PER_DAY, self.T*self.model.DLI_res+1)]
+        
+
+        table_data = [
+            ['Avg DLI', np.average(DLI)],
+            ['Max DLI', np.max(DLI)],
+            ['Min DLI', np.min(DLI)],
+        ]
+
+        print(f'DLI DATA: \n {generate_table(table_data)}\n')
+
         b_a_up = np.array(self.market.Pr_a_up(b_c_up))
         b_a_dn = np.array(self.market.Pr_a_dn(b_c_dn))
         up_bids = np.where(b_a_up.flatten() > 1e-6)
@@ -353,16 +364,16 @@ class Controller():
         filtered_b_a_up = 100*b_a_up[up_bids]
         filtered_b_a_dn = 100*b_a_dn[dn_bids]
 
-        bidding_data = {
-            'Avg bid size': [np.average(filtered_b_p_up), np.average(filtered_b_p_dn), "MW"],
-            'Avg bid price': [np.average(filtered_b_c_up), np.average(filtered_b_c_dn), "€/MW"],
-            'Avg activation rate': [np.average(filtered_b_a_up), np.average(filtered_b_a_dn), "%"],
-            'Chance of activation given demand': [np.average(filtered_b_a_up)/self.market.Pr_D_up(), np.average(filtered_b_a_dn)/self.market.Pr_D_up(), "%"],
-            'Submitted bids': [len(filtered_b_a_up), len(filtered_b_a_dn), "-"]
-        }
+        bidding_data = [
+            ['Avg bid size', np.average(filtered_b_p_up), np.average(filtered_b_p_dn), "MW"], 
+            ['Avg bid price', np.average(filtered_b_c_up), np.average(filtered_b_c_dn), "€/MW"], 
+            ['Avg activation rate', np.average(filtered_b_a_up), np.average(filtered_b_a_dn), "%"], 
+            ['Chance of activation given demand', np.average(filtered_b_a_up)/self.market.Pr_D_up(), np.average(filtered_b_a_dn)/self.market.Pr_D_up(), "%"],
+            ['Submitted bids', len(filtered_b_a_up), len(filtered_b_a_dn), "-"]
+        ]
+        bidding_header = ['Attribute', 'Up-regulation', 'Down-regulation', 'Unit']
 
-        print_bidding_table(bidding_data)
-        print("")
+        print(f'DLI DATA: \n {generate_table(bidding_data, header = bidding_header)}\n')
 
 
         

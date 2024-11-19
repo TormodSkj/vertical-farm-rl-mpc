@@ -8,9 +8,9 @@ from globals import *
 from simulator import Simulator
 
 
-SIM_NAME = "casadi_ocp"
-HORIZON_DAYS = 7
-FINAL_WEIGHT = 80
+SIM_NAME = "DLI_test_2"
+HORIZON_DAYS = 2
+FINAL_WEIGHT = 12
 
 SIMULATION_DATE = '2023-12-01'
 BIDDING_ZONE    = 'NO4'

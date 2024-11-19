@@ -1,6 +1,7 @@
 import numpy as np
 import casadi as ca
 from market import Market, Bid
+from globals import *
 
 class PlantModel:
 
@@ -11,7 +12,8 @@ class PlantModel:
     
     def __init__(self, x_init, Final_fw_sht):
         self.Final_fw_sht = Final_fw_sht
-        self.x_init = x_init
+        self.x_init = np.zeros(self.nx)
+        self.x_init[:len(x_init)] = x_init
         self.x_sdw_init = x_init[0]
         self.x_nsdw_init = x_init[1]
     
@@ -24,8 +26,8 @@ class PlantModel:
     title  = "Vertical Farm"
     labels = ["Structural dry weight (g/m^2)", 
               "Non-structural dry weight (g/m^2)"]
-    x_unit = "Weight"
-    u_unit = "Light level [PPFD]"
+    x_unit = "Weight (g/m^2)"
+    u_unit = "PPFD (umol/m^2/s)"
 
 
 
@@ -66,17 +68,18 @@ class PlantModel:
     C_conv_PPFD = C_conv*A_crop/(eta_light*1000)    # Conversion factor between PPFD and power. Expressed in kW
     P_cap_max = C_PPFD_max*C_conv_PPFD              # Vertical farm power capacity [MW]
 
-    C_DLI_max = 20  # [accumulated light * 10^6]
-    # C_DLI_min = 0.9*16.2*10**6                    # Only used for variable DLI schemes
+    DLI_max = 17                    # Calculated from ideal PPFD and ideal radiation time
+    DLI_res = 4                     # DLI enforcement rate. 4 = enforce over last 24h every 6h (24/4)
+    # DLI_min = 0.9*16.2*10**6      # Only used for variable DLI schemes
 
 
     def derivative(self, x: ca.MX.sym, u: ca.MX.sym)->ca.MX.sym:
         
         #Extract state
-        x_sdw   = x[0]
-        x_nsdw  = x[1]
+        x_sdw   = x[0]      # structural dry weight
+        x_nsdw  = x[1]      # non-structural dry weight
         # x_DLI   = x[2]
-        PPFD    = u[0]
+        PPFD    = u[0]      # umol/m^2/s
 
         
         #Common constants
@@ -102,14 +105,13 @@ class PlantModel:
         f_phot_max = alpha * U_par * f_sat / (alpha * U_par + f_sat)                        #Maximum photosynthetic rate
         f_phot = f_phot_max * CAC                                                           #Gross canopy photosynthesis
         f_resp = (self.c_resp_sht*(1-c_T) + self.c_resp_rt*c_T)*x_sdw * self.c_Q_10_gr**((T_crop-25)/10)   #Maintenance respiration rate
-        x_dw_plant = (x_sdw + x_nsdw) / self.PCD                                                 #X dont worry plant <3
-        x_fw_sht = x_dw_plant * (1-c_T)/self.c_d                                                 #Fresh weight per plant
+        # x_dw_plant = (x_sdw + x_nsdw) / self.PCD                                                 #X dont worry plant <3
+        # x_fw_sht = x_dw_plant * (1-c_T)/self.c_d                                                 #Fresh weight per plant
 
         #Derivatives
         x_sdw_dot = r_gr * x_sdw
         # x_nsdw_dot = c_a * f_phot - x_sdw_dot - f_resp - (1-c_b)/c_b * r_gr * x_sdw   # Slightly inefficient implementation
         x_nsdw_dot = self.c_a * f_phot - f_resp - 1/self.c_b * x_sdw_dot                # More efficient implementation
-        # x_DLI_dot = PPFD
 
         return ca.vertcat(x_sdw_dot, x_nsdw_dot)
     
@@ -202,10 +204,12 @@ class PlantModel:
             g_ineq.append(U[k])
             g_ineq.append(self.C_PPFD_max - U[k])
 
-            # DLI adherence
-            # if (k % QUARTER_HOURS_PER_DAY == 0 and k!=0): 
-                # g_ineq.append(X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY] - self.model.C_DLI_min)
-                # g_ineq.append(self.model.C_DLI_max - X[2,k] + X[2,k-QUARTER_HOURS_PER_DAY])
+
+            # DLI constraint
+            if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
+                
+                DLI = U[k-QUARTER_HOURS_PER_DAY:k]*1e-6 # Convert from umol/m^2/s to mol/m^2/s
+                g_ineq.append(self.DLI_max - ca.sum2(DLI)*SECONDS_PER_QUARTER_HOUR)
 
 
 
@@ -227,7 +231,7 @@ class PlantModel:
 
             U = np.append(U, u_bar[k] + u_tilde)
 
-        return U
+        return ca.vertcat(*U)
 
 
 
