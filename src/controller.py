@@ -36,10 +36,18 @@ class Controller():
     bidding_z_init: ca.DM
     baseline_z_init: ca.DM
 
+    runs: dict
+
+
+    u_base: np.array
+
+
+
+    '''
+
 
     sol_base: dict
     f_base: float
-    u_base: np.array
     x_base: np.array
     eps_base: float
     elapsedtime_base: float
@@ -57,6 +65,8 @@ class Controller():
     eps_bid: float
     elapsedtime_base: float
 
+    '''
+
     def __init__(self, timehorizon, plantmodel, market, config, baseline: str, surpress_output = False):
         self.surpress_output = False
         self.T = timehorizon   
@@ -66,6 +76,8 @@ class Controller():
         self.market = market
         self.config = config
         self.t = np.linspace(0, self.T, self.N)
+
+        self.runs = {}
         
         self.p_spot = self.market.get_spotprice()
 
@@ -159,17 +171,15 @@ class Controller():
 
         # Extract solution
 
-        self.sol_bid = sol
-        self.f_bid = float(sol['f'])
-        self.x_bid = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
-        self.B_bid = np.array(sol['x'][(nx*(N+1)):(nx*(N+1) + 4*N)].reshape((4, N)))
-        self.eps_bid = float(sol['x'][-1])
-
-        self.u_bid = self.model.get_u(self, self.B_bid)
+        sol = sol
+        x = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
+        B = np.array(sol['x'][(nx*(N+1)):(nx*(N+1) + 4*N)].reshape((4, N)))
+        u = np.array(self.model.get_u(self, B))
         
         end_time = time.time()
-        self.elapsedtime_bid = end_time - start_time
-
+        sol['elapsed_time'] = end_time - start_time
+        
+        self.save_run('Bidding', sol, x, u, B=B)
 
         if not self.surpress_output: 
             print('Bids optimized')
@@ -232,14 +242,19 @@ class Controller():
         sol = solver(x0=self.baseline_z_init, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
 
         # Extract solution
-        self.sol_base   = sol
-        self.f_base     = float(sol['f'])
-        self.x_base     = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
-        self.u_base     = np.array(sol['x'][(nx*(N+1)):(nx*(N+1)+N*nu)].reshape((nu, N)))[0,:]
-        self.eps_base   = float(sol['x'][-1])
+        f     = float(sol['f'])
+        x     = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
+        u     = np.array(sol['x'][(nx*(N+1)):(nx*(N+1)+N*nu)].reshape((nu, N)))[0,:]
+        eps   = float(sol['x'][-1])
 
         end_time = time.time()
-        self.elapsedtime_base = end_time - start_time
+        elapsed_time = end_time - start_time
+
+        sol['elapsed_time'] = elapsed_time
+        
+        self.save_run('Baseline', sol, x, u)
+        self.u_base = u
+
         if not self.surpress_output: print('Baseline optimized')
         return 0
 
@@ -277,16 +292,140 @@ class Controller():
 
         self.x_base = X
         self.u_base = u_base
+
         return 0
-    
+
+    def save_run(self, run_id, sol, x, u, B = None):
+
+        timeseries_data = {
+            't'     : self.t,
+            'x'     : x,
+            'u'     : u
+        }
+        
+        f       = float(sol['f'])
+        eps     = float(sol['x'][-1])
+
+        DLI = [np.sum(u[int(k):int(k)+QUARTER_HOURS_PER_DAY])*1e-6*SECONDS_PER_QUARTER_HOUR for k in np.linspace(0, self.N - QUARTER_HOURS_PER_DAY, self.T*self.model.DLI_res+1)]
+
+        metrics_data = {
+            'elapsed_time'  : sol['elapsed_time'],
+            'f'             : f,
+            'eps'           : eps,
+            'DLI_avg'       : np.average(DLI),
+            'DLI_max'       : np.max(DLI),
+            'DLI_min'       : np.min(DLI),
+        }
+
+        if B is None:
+            costs = self.model.baseline_obj_function(self, x, u)
+            metrics_data['Costs'] = costs
+            metrics_data['Earnings'] = 0
+            metrics_data['Total'] = costs - 0
+        else:
+            b_p_up = B[0,:]
+            b_p_dn = B[1,:]
+            b_c_up = B[2,:]
+            b_c_dn = B[3,:]
+            b_a_up = self.market.Pr_a_up(b_c_up)
+            b_a_dn = self.market.Pr_a_dn(b_c_dn)
+
+
+            timeseries_data['P_up'] = b_p_up
+            timeseries_data['P_dn'] = b_p_dn
+            timeseries_data['C_up'] = b_c_up
+            timeseries_data['C_dn'] = b_c_dn
+
+
+            bidding_earnings_up = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(b_a_up, b_p_up), b_c_up)
+            bidding_earnings_dn = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(b_a_dn, b_p_dn), b_c_dn)
+            bidding_earnings = np.sum(bidding_earnings_up) + np.sum(bidding_earnings_dn)
+
+            bidding_costs = self.model.bidding_objective_function(self, x, u, B)
+            bidding_total = bidding_costs - bidding_earnings
+
+            metrics_data['Costs'] = bidding_costs
+            metrics_data['Earnings'] = bidding_earnings
+            metrics_data['Total'] = bidding_total
+
+
+            b_a_up = np.array(self.market.Pr_a_up(b_c_up))
+            b_a_dn = np.array(self.market.Pr_a_dn(b_c_dn))
+            up_bids = np.where(b_a_up.flatten() > 1e-6)
+            dn_bids = np.where(b_a_dn.flatten() > 1e-6)
+
+            filtered_b_p_up = b_p_up[up_bids]
+            filtered_b_p_dn = b_p_dn[dn_bids]
+            filtered_b_c_up = b_c_up[up_bids]
+            filtered_b_c_dn = b_c_dn[dn_bids]
+            filtered_b_a_up = 100*b_a_up[up_bids]
+            filtered_b_a_dn = 100*b_a_dn[dn_bids]
+
+            metrics_data['Avg bid vol up']          = np.average(filtered_b_p_up)
+            metrics_data['Avg bid vol down']        = np.average(filtered_b_p_dn)
+            metrics_data['Avg bid price up']        = np.average(filtered_b_c_up)
+            metrics_data['Avg bid price down']      = np.average(filtered_b_c_dn)
+            metrics_data['Avg bid activation up']   = np.average(filtered_b_a_up)
+            metrics_data['Avg bid activation down'] = np.average(filtered_b_a_dn)
+            metrics_data['n bids up']               = len(filtered_b_a_up)
+            metrics_data['n bids down']             = len(filtered_b_a_dn)
+            
+
+        # Storing runs in dictionaries
+        self.runs[run_id] = {
+            "timeseries": timeseries_data,
+            "metrics": metrics_data
+        }
+
+
+    def save_all_runs_to_json(self):
+        """
+        Save all runs and their data to a JSON file.
+        """
+        # Filepath
+        sim_name = self.config.sim_name
+        sim_save_path = os.path.join(self.config.sim_path, f"{sim_name}.json")
+
+        # Ensure the target json file exists
+        os.makedirs(self.config.sim_path, exist_ok=True)
+
+        # Convert data for JSON serialization
+        def convert_np_arrays(obj):
+            """
+            Recursively convert np.array to lists in a nested dictionary or list.
+            """
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {key: convert_np_arrays(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_np_arrays(item) for item in obj]
+            else:
+                return obj
+
+        # Convert the entire runs dictionary
+        runs_dict = convert_np_arrays(self.runs)
+
+        # Save the data for all runs
+        with open(sim_save_path, "w") as json_file:
+            json.dump(runs_dict, json_file, indent=4)
+
+        print(f"All runs data saved successfully to {sim_save_path}")
+
+
 
     def save_to_json(self):
         # Convert arrays to lists for JSON serialization
         data_to_save = {
-            "u_base": np.array(self.u_base).tolist(),  
-            "x_base": np.array(self.x_base).tolist(),
-            "u_bid": np.array(self.u_bid).tolist(),
-            "x_bid": np.array(self.x_bid).tolist(),
+            'timeseries': {
+                "u_base": np.array(self.u_base).tolist(),  
+                "x_base": np.array(self.x_base).tolist(),
+                "u_bid": np.array(self.u_bid).tolist(),
+                "x_bid": np.array(self.x_bid).tolist(),
+            },
+            'metrics': {
+
+            }
         }
 
         # Filepath
@@ -303,96 +442,64 @@ class Controller():
 
     def status_report(self):
 
-        b_p_up = self.B_bid[0,:]
-        b_p_dn = self.B_bid[1,:]
-        b_c_up = self.B_bid[2,:]
-        b_c_dn = self.B_bid[3,:]
-        b_a_up = self.market.Pr_a_up(b_c_up)
-        b_a_dn = self.market.Pr_a_dn(b_c_dn)
+        bidding_costs = self.runs['Bidding']['metrics']['Costs']
+        bidding_earnings = self.runs['Bidding']['metrics']['Earnings']
+        bidding_total = self.runs['Bidding']['metrics']['Total']
 
-        bidding_earnings_up = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(b_a_up, b_p_up), b_c_up)
-        bidding_earnings_dn = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(b_a_dn, b_p_dn), b_c_dn)
-        bidding_earnings = np.sum(bidding_earnings_up) + np.sum(bidding_earnings_dn)
-
-        bidding_costs = self.model.bidding_objective_function(self, self.x_bid, self.u_bid, self.B_bid)
-
-        f_opt = bidding_costs - bidding_earnings
-
-        baseline_costs = self.model.baseline_obj_function(self, self.x_base, self.u_base)
+        baseline_costs = self.runs['Baseline']['metrics']['Costs']
+        baseline_earnings = self.runs['Baseline']['metrics']['Earnings']
+        baseline_total = self.runs['Baseline']['metrics']['Total']
 
 
         print("")
-        print(f"Baseline f-val: {float(self.sol_base['f'])}")
-        print(f"Bidding f-val: {float(self.sol_bid['f'])}")
-
-        print(f"Obj function f-val: {self.model.bidding_objective_function(self, self.x_bid, self.u_bid, self.B_bid)}")
-
-        print(f"Calculated earnings: {np.sum(bidding_earnings)}")
-        print(f"Calculated costs: {np.sum(bidding_costs)}")
-        print(f"Calculated total cost from bidding: {f_opt}")
+        print(f"Baseline f-val: {self.runs['Baseline']['metrics']['f']}")
+        print(f"Bidding f-val: {self.runs['Baseline']['metrics']['f']}")
+        print(f"Calculated earnings: {bidding_earnings}")
+        print(f"Calculated costs: {bidding_costs}")
+        print(f"Calculated total cost from bidding: {bidding_total}")
         print("")
 
         cost_data = [
             ['Cost of power', baseline_costs, bidding_costs],
-            ['Cost of bidding', 0, -bidding_earnings]
+            ['Cost of bidding', baseline_earnings, -bidding_earnings]
         ]
 
         cost_table = generate_table(cost_data, header=['Baseline', 'Bidding'], sumrow=True, diffcol=True)
         print(f'COST DATA: \n {cost_table}\n')
 
         
-        DLI = [np.sum(self.u_base[int(k):int(k)+QUARTER_HOURS_PER_DAY])*1e-6*SECONDS_PER_QUARTER_HOUR for k in np.linspace(0, self.N - QUARTER_HOURS_PER_DAY, self.T*self.model.DLI_res+1)]
-        
-
         table_data = [
-            ['Avg DLI', np.average(DLI)],
-            ['Max DLI', np.max(DLI)],
-            ['Min DLI', np.min(DLI)],
+            ['Avg DLI', self.runs['Baseline']['metrics']['DLI_avg'], self.runs['Bidding']['metrics']['DLI_avg']],
+            ['Max DLI', self.runs['Baseline']['metrics']['DLI_max'], self.runs['Bidding']['metrics']['DLI_max']],
+            ['Min DLI', self.runs['Baseline']['metrics']['DLI_min'], self.runs['Bidding']['metrics']['DLI_min']],
         ]
 
         print(f'DLI DATA: \n {generate_table(table_data)}\n')
 
-        b_a_up = np.array(self.market.Pr_a_up(b_c_up))
-        b_a_dn = np.array(self.market.Pr_a_dn(b_c_dn))
-        up_bids = np.where(b_a_up.flatten() > 1e-6)
-        dn_bids = np.where(b_a_dn.flatten() > 1e-6)
-
-        filtered_b_p_up = b_p_up[up_bids]
-        filtered_b_p_dn = b_p_dn[dn_bids]
-        filtered_b_c_up = b_c_up[up_bids]
-        filtered_b_c_dn = b_c_dn[dn_bids]
-        filtered_b_a_up = 100*b_a_up[up_bids]
-        filtered_b_a_dn = 100*b_a_dn[dn_bids]
-
         bidding_data = [
-            ['Avg bid size', np.average(filtered_b_p_up), np.average(filtered_b_p_dn), "MW"], 
-            ['Avg bid price', np.average(filtered_b_c_up), np.average(filtered_b_c_dn), "€/MW"], 
-            ['Avg activation rate', np.average(filtered_b_a_up), np.average(filtered_b_a_dn), "%"], 
-            ['Chance of activation given demand', np.average(filtered_b_a_up)/self.market.Pr_D_up(), np.average(filtered_b_a_dn)/self.market.Pr_D_up(), "%"],
-            ['Submitted bids', len(filtered_b_a_up), len(filtered_b_a_dn), "-"]
+            ['Avg bid size',                        self.runs['Bidding']['metrics']['Avg bid vol up'],                              self.runs['Bidding']['metrics']['Avg bid vol down'],                                "MW"], 
+            ['Avg bid price',                       self.runs['Bidding']['metrics']['Avg bid price up'],                            self.runs['Bidding']['metrics']['Avg bid price down'],                              "€/MW"], 
+            ['Avg activation rate',                 self.runs['Bidding']['metrics']['Avg bid activation up'],                       self.runs['Bidding']['metrics']['Avg bid activation down'],                         "%"], 
+            ['Chance of activation given demand',   self.runs['Bidding']['metrics']['Avg bid activation up']/self.market.Pr_D_up(), self.runs['Bidding']['metrics']['Avg bid activation down']/self.market.Pr_D_up(),   "%"],
+            ['Submitted bids',                      self.runs['Bidding']['metrics']['n bids up'],                                   self.runs['Bidding']['metrics']['n bids down'],                                     "-"]
         ]
-        bidding_header = ['Attribute', 'Up-regulation', 'Down-regulation', 'Unit']
+        bidding_header = ['', 'Up-regulation', 'Down-regulation', 'Unit']
 
         print(f'DLI DATA: \n {generate_table(bidding_data, header = bidding_header)}\n')
 
-
         
         # Print solve times
-        minutes, seconds = divmod(self.elapsedtime_base, 60)
+        minutes, seconds = divmod(self.runs['Baseline']['metrics']['elapsed_time'], 60)
         print(f"Baseline opt solved in: {int(minutes)} minutes and {seconds:.2f} seconds. ")
-        minutes, seconds = divmod(self.elapsedtime_bid, 60)
+        minutes, seconds = divmod(self.runs['Bidding']['metrics']['elapsed_time'], 60)
         print(f"Bidding opt solved in: {int(minutes)} minutes and {seconds:.2f} seconds. \n")
 
 
-        self.f_opt = f_opt
-
-
-        f_base = self.f_base
+        f_opt = bidding_total
+        f_base = baseline_total
         print(f"\nCost of base: {f_base}")
         print(f"Cost after bidding: {f_opt}")
         print(f"Cost reduction from bidding: {f_base - f_opt}")
         print(f"Reduction in percentage: {100*(f_base - f_opt)/(f_base)} \n")
-
-
 
 

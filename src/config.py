@@ -7,6 +7,7 @@ class Config():
     sim_name:   str
 
     plot_file_type: str
+    plot_format = (10, 6)
 
     def __init__(self, simulation_name="custom", filetype="pdf"):
 

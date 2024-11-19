@@ -8,7 +8,7 @@ from globals import *
 from simulator import Simulator
 
 
-SIM_NAME = "casadi_ocp"
+SIM_NAME = "json_test"
 HORIZON_DAYS = 2
 FINAL_WEIGHT = 12
 
@@ -37,7 +37,8 @@ def main():
     # controller.rigid_baseline()
     controller.optimize_baseline()
     controller.optimize_bidding()
-    controller.save_to_json()
+    # controller.save_to_json()
+    controller.save_all_runs_to_json()
 
     plotter = Plotter(config, controller, simulator)
     plotter.save_ocp_plots()
