@@ -254,6 +254,8 @@ class Controller():
         This schedule assumes 18 hours on, 6 hours off.
         '''
 
+        start_time = time.time()
+
         N = self.N
 
         # 18 hours on, 6 hours off in 15 minute intervals
@@ -280,10 +282,21 @@ class Controller():
             dt = self.dt
             X[:,k+1] = X[:,k] + dt*np.array(self.model.derivative(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
 
+        sol ={}
+        x = X
+        u = u_base
 
-        self.x_base = X
-        self.u_base = u_base
+        end_time = time.time()
+        elapsed_time = end_time - start_time
 
+        sol['elapsed_time'] = elapsed_time
+        sol['f'] = self.model.baseline_obj_function(self, x, u)
+        sol['x'] = np.hstack((x.flatten(), u, 0))
+        
+        self.save_run('Baseline', sol, x, u)
+        self.u_base = u
+
+        if not self.surpress_output: print('Generated rigid baseline')
         return 0
 
     def save_run(self, run_id, sol, x, u, B = None):
@@ -297,16 +310,14 @@ class Controller():
         f       = float(sol['f'])
         eps     = float(sol['x'][-1])
 
-        DLI = [np.sum(u[int(k):int(k)+QUARTER_HOURS_PER_DAY])*1e-6*SECONDS_PER_QUARTER_HOUR for k in np.linspace(0, self.N - QUARTER_HOURS_PER_DAY, self.T*self.model.DLI_res+1)]
 
         metrics_data = {
             'elapsed_time'  : sol['elapsed_time'],
             'f'             : f,
-            'eps'           : eps,
-            'DLI_avg'       : np.average(DLI),
-            'DLI_max'       : np.max(DLI),
-            'DLI_min'       : np.min(DLI),
+            'eps'           : eps
         }
+
+        metrics_data = self.model.get_metrics(self, run_id, metrics_data, x, u, B)
 
         if B is None:
             costs = self.model.baseline_obj_function(self, x, u)
@@ -446,17 +457,9 @@ class Controller():
         cost_table = generate_table(cost_data, header=['Baseline', 'Bidding'], sumrow=True, diffcol=True)
         print(f'COST DATA: \n {cost_table}\n')
 
-        
-        baseline_metrics = self.runs['runs']['Baseline']['metrics']
-        bidding_metrics = self.runs['runs']['Bidding']['metrics']
 
-        table_data = [
-            ['Avg DLI', baseline_metrics['DLI_avg'], bidding_metrics['DLI_avg']],
-            ['Max DLI', baseline_metrics['DLI_max'], bidding_metrics['DLI_max']],
-            ['Min DLI', baseline_metrics['DLI_min'], bidding_metrics['DLI_min']],
-        ]
-
-        print(f'DLI DATA: \n {generate_table(table_data)}\n')
+        metrics_table = get_metrics_table(self.runs['runs'])
+        print(f'METRICS DATA: \n {metrics_table}\n')
 
         bidding_result_up = self.runs['Bidding result']['Up-regulation']
         bidding_result_dn = self.runs['Bidding result']['Down-regulation']

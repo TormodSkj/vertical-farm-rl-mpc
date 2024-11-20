@@ -24,7 +24,7 @@ class PlantModel:
         self.specs = {
             'type'                  : self.name,
             'x0'                    : x_init,
-            'final fresh weight'    : Final_fw_sht,
+            'Fresh weight goal'     : Final_fw_sht,
             'Max DLI'               : self.DLI_max,
             'DLI resolution'        : self.DLI_res,
             'Total growht area'     : self.A_crop,
@@ -251,10 +251,6 @@ class PlantModel:
         return ca.vertcat(*U)
 
 
-
-
-
-
     def get_bidding_bounds(self, controller):
 
         N = controller.N
@@ -289,6 +285,18 @@ class PlantModel:
         ubu = self.C_PPFD_max * np.ones((self.nu, N))                     # Upper bound for u (u <= Max PPFD 250)
 
         return lbu, ubu
+    
+
+    def get_metrics(self, controller, run_id, metrics_data, x, u, B):
+
+        DLI = [np.sum(u[int(k):int(k)+QUARTER_HOURS_PER_DAY])*1e-6*SECONDS_PER_QUARTER_HOUR for k in np.linspace(0, controller.N - QUARTER_HOURS_PER_DAY, controller.T*self.DLI_res+1)]
+
+        metrics_data['DLI_avg'] = np.average(DLI)
+        metrics_data['DLI_max'] = np.max(DLI)
+        metrics_data['DLI_min'] = np.min(DLI)
+        metrics_data['Final fresh weight'] = float(self.freshweight(x[:,-1]))
+
+        return metrics_data
     
 
 
@@ -468,3 +476,16 @@ class BatteryModel:
         ubu = self.u_max * np.ones((self.nu, N))    # Upper bound for u = 10
 
         return lbu, ubu
+    
+
+    def get_metrics(self, controller, metrics_data, x, u, B):
+
+        # TODO Add custom metrics you want to track and display here
+
+        return metrics_data
+    
+
+
+
+
+

@@ -86,3 +86,33 @@ def convert_np_arrays(obj):
     else:
         return obj
 
+
+def get_metrics_table(runs):
+    '''
+    Takes in a dict of runs containing metrics dicts. 
+    Each run has its own metrics dict, which will be unraveled and displayed here
+    '''
+    
+    any_run = next(iter(runs.values()))
+    any_metrics = any_run['metrics']
+    n_metrics = len(any_metrics)
+
+    metrics_table = []
+
+    for metric in any_metrics:      # Keys are the same for all metrics dicts regardless of run
+
+        metrics_row = [metric]
+        for run in runs:
+            
+            metrics_row.append(runs[run]['metrics'][metric])
+
+        metrics_table.append(metrics_row)
+    
+
+    return generate_table(metrics_table, header = list(runs.keys()), sumrow=False, diffcol=True)
+
+
+
+
+
+

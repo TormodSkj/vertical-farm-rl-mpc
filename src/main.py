@@ -9,8 +9,8 @@ from simulator import Simulator
 
 
 SIM_NAME = "sandbox"
-HORIZON_DAYS = 20
-FINAL_WEIGHT = 200
+HORIZON_DAYS = 2
+FINAL_WEIGHT = 12
 
 SIMULATION_DATE = '2023-12-01'
 BIDDING_ZONE    = 'NO4'
