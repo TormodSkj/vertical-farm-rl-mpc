@@ -62,27 +62,40 @@ def generate_table(table_data, header = None, sumrow=False, diffcol=False):
 
 def generate_hash(specs):
 
-    return 0
-
-    converted_specs = convert_np_arrays(specs)
+    converted_specs = convert_np_arrays_to_lists(specs)
 
     # Serialize specs consistently
-    specs_str = json.dumps(specs, sort_keys=True)
+    specs_str = json.dumps(converted_specs, sort_keys=True)
     # Compute and return SHA-256 hash
     return hashlib.sha256(specs_str.encode()).hexdigest()
 
     
 # Convert data for JSON serialization
-def convert_np_arrays(obj):
+def convert_np_arrays_to_lists(obj):
     """
     Recursively convert np.array to lists in a nested dictionary or list.
     """
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     elif isinstance(obj, dict):
-        return {key: convert_np_arrays(value) for key, value in obj.items()}
+        return {key: convert_np_arrays_to_lists(value) for key, value in obj.items()}
     elif isinstance(obj, list):
-        return [convert_np_arrays(item) for item in obj]
+        return [convert_np_arrays_to_lists(item) for item in obj]
+    else:
+        return obj
+    
+
+# Convert data to ensure lists become np.array
+def convert_lists_to_np_arrays(obj):
+    """
+    Recursively convert lists to np.array in a nested dictionary or list.
+    """
+    if isinstance(obj, list):
+        return np.array(obj)
+    elif isinstance(obj, dict):
+        return {key: convert_lists_to_np_arrays(value) for key, value in obj.items()}
+    elif isinstance(obj, np.ndarray):
+        return obj  # Keep np.array as-is
     else:
         return obj
 

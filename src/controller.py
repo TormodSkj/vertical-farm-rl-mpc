@@ -38,9 +38,10 @@ class Controller():
     baseline_z_init: ca.DM
 
     runs:   dict
+    search_cache: bool
     u_base: np.array
 
-    def __init__(self, timehorizon, plantmodel, market, config, surpress_output = False):
+    def __init__(self, timehorizon, plantmodel, market, config, baseline = 'opt', surpress_output = False, search_cache = True):
         self.surpress_output = surpress_output
         self.T = timehorizon   
         self.N = timehorizon * QUARTER_HOURS_PER_DAY
@@ -48,26 +49,28 @@ class Controller():
         self.model = plantmodel  
         self.market = market
         self.config = config
-        self.t = np.linspace(0, self.T, self.N)
+        self.search_cache = search_cache
 
         specs_data = {
             'controller': 
                 {
                     'time horizon'          : self.T,
                     'N'                     : self.N,
+                    'baseline'              : baseline
                 },
             'process model'     : self.model.specs,
             'market'            : self.market.specs
         }
         self.runs = {
-            'Name'              : self.config.sim_name,
+            'name'              : self.config.sim_name,
             'timestamp'         : datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'specs'             : specs_data,
-            'Bidding result'    : None,
+            'bidding result'    : None,
             'runs'              : {}
             }
         self.hash = generate_hash(self.runs['specs'])
 
+        self.t = np.linspace(0, self.T, self.N)
         self.p_spot = self.market.get_spotprice()
 
         self.bids = []
@@ -104,6 +107,18 @@ class Controller():
         
         start_time = time.time()
 
+        hash = generate_hash(self.runs['specs'])
+        if self.search_cache:
+            if self.load_from_json(hash): 
+                # Identical run located. Using its solution instead
+                if not self.surpress_output: self.status_report()
+                return 0
+            
+            if not self.surpress_output: print('No matching run found. Generating bidding strategy')
+        
+
+        # Just check if there is a basline before proceeding
+        assert self.runs['specs']['controller']['baseline'], "Baseline was not generated"   
 
         N = self.N
         T = self.T
@@ -176,6 +191,25 @@ class Controller():
         return 0
         
 
+    def generate_baseline(self):
+
+        hash = generate_hash(self.runs['specs'])
+        if self.search_cache:
+            if self.load_from_json(hash): 
+                return 0
+            if not self.surpress_output: print('No matching run found. Generating baseline')
+        
+
+        if(self.runs['specs']['controller']['baseline'] == 'opt'):
+            self.optimize_baseline()
+
+        elif(self.runs['specs']['controller']['baseline'] == 'rigid'):
+            self.rigid_baseline()
+        else:
+            assert False, "No valid baseline mode was selected. \'opt\' or \'rigid\' "
+
+        return 0
+
 
     def optimize_baseline(self):
         '''
@@ -243,6 +277,7 @@ class Controller():
         
         self.save_run('Baseline', sol, x, u)
         self.u_base = u
+        self.runs['specs']['controller']['baseline'] = 'opt'
 
         if not self.surpress_output: print('Baseline optimized')
         return 0
@@ -295,6 +330,7 @@ class Controller():
         
         self.save_run('Baseline', sol, x, u)
         self.u_base = u
+        self.runs['specs']['controller']['baseline'] = 'rigid'
 
         if not self.surpress_output: print('Generated rigid baseline')
         return 0
@@ -379,7 +415,7 @@ class Controller():
                 }
             }
 
-            self.runs['Bidding result'] = bidding_data
+            self.runs['bidding result'] = bidding_data
             
 
         # Storing runs in dictionaries
@@ -401,7 +437,7 @@ class Controller():
         os.makedirs(self.config.sim_path, exist_ok=True)
 
         # Convert the entire runs dictionary
-        runs_dict = convert_np_arrays(self.runs)
+        runs_dict = convert_np_arrays_to_lists(self.runs)
         runs_dict['hash'] = self.hash
 
         # Save the data for all runs
@@ -409,26 +445,36 @@ class Controller():
             json.dump(runs_dict, json_file, indent=4)
 
 
-    def load_from_json(self):
+    def load_from_json(self, hash):
         """
         Load completed runs from saved JSON files and populate `completed_runs`.
         """
-        for file_name in os.listdir(self.sim_path):
-            if file_name.endswith(".json"):
-                file_path = os.path.join(self.sim_path, file_name)
-                with open(file_path, "r") as json_file:
-                    run_data = json.load(json_file)
-                
-                # Extract the hash from the JSON content
-                specs_hash = run_data.get('hash')
-                
-                if specs_hash is None:
-                    print(f"Warning: No hash found in file {file_name}. Skipping.")
-                    continue
+        for file_name in os.listdir(self.config.sim_path):
+            if not file_name.endswith(".json"): continue
+
+            file_path = os.path.join(self.config.sim_path, file_name)
+            with open(file_path, "r") as json_file:
+                loaded_data = json.load(json_file)
+            
+            # Extract the hash from the JSON content
+            specs_hash = loaded_data.get('hash')
+            
+            if specs_hash is None:
+                continue
+
+            if specs_hash == hash:
                 
                 # Store the run data keyed by the extracted hash
-                self.runs['runs'] = run_data
-                print(f"Loaded simulation run with hash: {specs_hash}")
+                conv_loaded_data = convert_lists_to_np_arrays(loaded_data)
+                self.runs['bidding result'] = conv_loaded_data['bidding result']
+                self.runs['runs'] = conv_loaded_data['runs']
+                if not self.surpress_output: print(f"Loaded simulation \'{loaded_data['name']}\' from {loaded_data['timestamp']}")
+                return True
+                
+        return False
+
+
+
 
     def status_report(self):
 
@@ -461,8 +507,8 @@ class Controller():
         metrics_table = get_metrics_table(self.runs['runs'])
         print(f'METRICS DATA: \n {metrics_table}\n')
 
-        bidding_result_up = self.runs['Bidding result']['Up-regulation']
-        bidding_result_dn = self.runs['Bidding result']['Down-regulation']
+        bidding_result_up = self.runs['bidding result']['Up-regulation']
+        bidding_result_dn = self.runs['bidding result']['Down-regulation']
         
         bidding_data = [
             ['Avg bid size',                        bidding_result_up['Avg bid size'],                                  bidding_result_dn['Avg bid size'],                               "MW"], 
