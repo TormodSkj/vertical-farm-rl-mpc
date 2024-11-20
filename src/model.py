@@ -5,10 +5,14 @@ from globals import *
 
 class PlantModel:
 
+    name = 'Lettuce shoot'
+
     Final_fw_sht:   float       # Final plant shoot fresh weight requirement    [g]
     x_init:         np.array    # Initial dry weights per m^2                   [g/m^2]
     x_sdw_init:     float       # Initial structural dry weight per m^2         [g/m^2]
     x_nsdw_init:    float       # Initial non-structural dry weight per m^2     [g/m^2]
+
+    specs: dict
     
     def __init__(self, x_init, Final_fw_sht):
         self.Final_fw_sht = Final_fw_sht
@@ -16,6 +20,19 @@ class PlantModel:
         self.x_init[:len(x_init)] = x_init
         self.x_sdw_init = x_init[0]
         self.x_nsdw_init = x_init[1]
+
+        self.specs = {
+            'type'                  : self.name,
+            'x0'                    : x_init,
+            'final fresh weight'    : Final_fw_sht,
+            'Max DLI'               : self.DLI_max,
+            'DLI resolution'        : self.DLI_res,
+            'Total growht area'     : self.A_crop,
+            'Ambient temp'          : self.T_crop,
+            'CO2 concentration'     : self.co2_in,
+            'Max PPFD'              : self.C_PPFD_max
+        } 
+
     
     nx = 2
     nu = 1
@@ -277,11 +294,21 @@ class PlantModel:
 
 class BatteryModel:
 
-    
+    name = 'Battery'
+
     x_init:         np.array    # Initial state of charge
     
     def __init__(self, x_init):
         self.x_init = x_init
+
+        self.specs = {
+            'type'      : self.name,
+            'x0'        : x_init,
+            'SOC max'   : self.SOC_max,
+            'SOC min'   : self.SOC_min,
+            'u_max'     : self.u_max,
+            'u_min'     : self.u_min
+        } 
     
     nx = 1
     nu = 1

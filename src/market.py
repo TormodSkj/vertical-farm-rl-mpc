@@ -16,10 +16,16 @@ class Market:
 
     C_eur2nok = 11.76               # € -> NOK conversion rate as of nov 14 2024
 
+    mu_dn = 30          # € / MW
+    sigma_dn = 7        # € / MW
+    mu_up = 50         # € / MW
+    sigma_up = 10      # € / MW
 
 
     n_given_bids = 2            # Number of time intervals with previously submitted bids
     n_given_activations = 1     # Number of time intervals with received activations
+
+    specs: dict
 
 
     def __init__(self, time_horizon, seed, bidding_zone, date):
@@ -27,6 +33,17 @@ class Market:
         self.seed = seed
         self.bidding_zone = bidding_zone
         self.date = date
+
+        self.specs = {
+            'bidding zone'          : self.bidding_zone,
+            'simdate'               : self.date,
+            'bidding zone'          : self.bidding_zone,
+            'eur to nok'            : self.C_eur2nok,
+            'activation mu up'      : self.mu_up,
+            'activation sigma up'   : self.sigma_up,
+            'activation mu down'    : self.mu_dn,
+            'activation sigma down' : self.sigma_dn,
+        }
     
 
     def generate_spotprice(self):
@@ -79,20 +96,16 @@ class Market:
 
     def Pr_a_dn(self, Bc_dn):
         #TODO Find real numbers here
-        mu_dn = 30         # € / MW
-        sigma_dn = 7      # € / MW
         
-        Bc_dn_norm = (Bc_dn - mu_dn)/sigma_dn
+        Bc_dn_norm = (Bc_dn - self.mu_dn)/self.sigma_dn
 
         # return norm.cdf(-Bc_dn_norm)
         return self.Pr_D_dn() * (1.0 + ca.erf(-Bc_dn_norm / ca.sqrt(2.0))) / 2.0
 
     def Pr_a_up(self, Bc_up):
         #TODO Find real numbers here
-        mu_up = 50         # € / MW
-        sigma_up = 10      # € / MW
         
-        Bc_up_norm = (Bc_up - mu_up)/sigma_up
+        Bc_up_norm = (Bc_up - self.mu_up)/self.sigma_up
 
         # return norm.cdf(-Bc_up_norm)
         return self.Pr_D_up() * (1.0 + ca.erf(-Bc_up_norm / ca.sqrt(2.0))) / 2.0

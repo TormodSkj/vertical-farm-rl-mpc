@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 from tabulate import tabulate
 import os
 import numpy as np
+import json
+import hashlib
 
 def plotting(t, timeseries, filename, folder = 'plots'):
     #Function to plot timeseries to a given file.
@@ -55,4 +57,21 @@ def generate_table(table_data, header = None, sumrow=False, diffcol=False):
         return tabulate(table_data, headers=header, tablefmt="grid", floatfmt=".2f")
     else:
         return tabulate(table_data, tablefmt="grid", floatfmt=".2f")
+
+
+
+def generate_hash(specs):
+
+    return 0
+
+    # ERROR: ndarray is not JSON serializable
+
+
+    # Serialize specs consistently
+    specs_str = json.dumps(specs, sort_keys=True)
+    # Compute and return SHA-256 hash
+    return hashlib.sha256(specs_str.encode()).hexdigest()
+
+    
+
 

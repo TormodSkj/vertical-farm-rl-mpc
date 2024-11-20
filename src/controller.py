@@ -3,12 +3,13 @@ import numpy as np
 from market import Market, Bid
 from model import *
 from config import Config
-from utils import generate_table
+from utils import *
 import time
 import os
 import json
 from globals import *
 from tabulate import tabulate
+from datetime import datetime
 
 class Controller():
     """The controller is tasked with finding an optimal 
@@ -36,36 +37,8 @@ class Controller():
     bidding_z_init: ca.DM
     baseline_z_init: ca.DM
 
-    runs: dict
-
-
+    runs:   dict
     u_base: np.array
-
-
-
-    '''
-
-
-    sol_base: dict
-    f_base: float
-    x_base: np.array
-    eps_base: float
-    elapsedtime_base: float
-
-    f_opt: float
-    u_opt: np.array
-    x_opt: np.array
-    B_opt: np.array
-
-    sol_bid: dict
-    f_bid: float
-    u_bid: np.array
-    x_bid: np.array
-    B_bid: np.array
-    eps_bid: float
-    elapsedtime_base: float
-
-    '''
 
     def __init__(self, timehorizon, plantmodel, market, config, baseline: str, surpress_output = False):
         self.surpress_output = False
@@ -77,8 +50,24 @@ class Controller():
         self.config = config
         self.t = np.linspace(0, self.T, self.N)
 
-        self.runs = {}
-        
+        specs_data = {
+            'controller': 
+                {
+                    'time horizon'          : self.T,
+                    'N'                     : self.N,
+                },
+            'process model'     : self.model.specs,
+            'market'            : self.market.specs
+        }
+        self.runs = {
+            'Name'              : self.config.sim_name,
+            'timestamp'         : datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'specs'             : specs_data,
+            'Bidding result'    : None,
+            'runs'              : {}
+            }
+        self.hash = generate_hash(self.runs['specs'])
+
         self.p_spot = self.market.get_spotprice()
 
         self.bids = []
@@ -361,24 +350,33 @@ class Controller():
             filtered_b_a_up = 100*b_a_up[up_bids]
             filtered_b_a_dn = 100*b_a_dn[dn_bids]
 
-            metrics_data['Avg bid vol up']          = np.average(filtered_b_p_up)
-            metrics_data['Avg bid vol down']        = np.average(filtered_b_p_dn)
-            metrics_data['Avg bid price up']        = np.average(filtered_b_c_up)
-            metrics_data['Avg bid price down']      = np.average(filtered_b_c_dn)
-            metrics_data['Avg bid activation up']   = np.average(filtered_b_a_up)
-            metrics_data['Avg bid activation down'] = np.average(filtered_b_a_dn)
-            metrics_data['n bids up']               = len(filtered_b_a_up)
-            metrics_data['n bids down']             = len(filtered_b_a_dn)
+
+            bidding_data = {
+                'Up-regulation'     : {
+                    'Bids submitted'            : len(filtered_b_a_up),
+                    'Avg bid size'              : np.average(filtered_b_p_up),
+                    'Avg bid price'             : np.average(filtered_b_c_up),
+                    'Avg activation rate'       : np.average(filtered_b_a_up)
+                },
+                'Down-regulation'   : {
+                    'Bids submitted'            : len(filtered_b_a_dn),
+                    'Avg bid size'              : np.average(filtered_b_p_dn),
+                    'Avg bid price'             : np.average(filtered_b_c_dn),
+                    'Avg activation rate'       : np.average(filtered_b_a_dn)
+                }
+            }
+
+            self.runs['Bidding result'] = bidding_data
             
 
         # Storing runs in dictionaries
-        self.runs[run_id] = {
-            "timeseries": timeseries_data,
-            "metrics": metrics_data
+        self.runs['runs'][run_id] = {
+            "metrics"       : metrics_data,
+            "timeseries"    : timeseries_data
         }
 
 
-    def save_all_runs_to_json(self):
+    def save_to_json(self):
         """
         Save all runs and their data to a JSON file.
         """
@@ -405,55 +403,48 @@ class Controller():
 
         # Convert the entire runs dictionary
         runs_dict = convert_np_arrays(self.runs)
+        runs_dict['hash'] = self.hash
 
         # Save the data for all runs
         with open(sim_save_path, "w") as json_file:
             json.dump(runs_dict, json_file, indent=4)
 
-        print(f"All runs data saved successfully to {sim_save_path}")
 
-
-
-    def save_to_json(self):
-        # Convert arrays to lists for JSON serialization
-        data_to_save = {
-            'timeseries': {
-                "u_base": np.array(self.u_base).tolist(),  
-                "x_base": np.array(self.x_base).tolist(),
-                "u_bid": np.array(self.u_bid).tolist(),
-                "x_bid": np.array(self.x_bid).tolist(),
-            },
-            'metrics': {
-
-            }
-        }
-
-        # Filepath
-        sim_name = self.config.sim_name
-        sim_save_path = os.path.join(self.config.sim_path, f"{sim_name}.json")
-
-        # Ensure the target json file exists
-        os.makedirs(self.config.sim_path, exist_ok=True)
-
-        # Save the file
-        with open(sim_save_path, "w") as json_file:
-            json.dump(data_to_save, json_file, indent=4)
-
+    def load_from_json(self):
+        """
+        Load completed runs from saved JSON files and populate `completed_runs`.
+        """
+        for file_name in os.listdir(self.sim_path):
+            if file_name.endswith(".json"):
+                file_path = os.path.join(self.sim_path, file_name)
+                with open(file_path, "r") as json_file:
+                    run_data = json.load(json_file)
+                
+                # Extract the hash from the JSON content
+                specs_hash = run_data.get('hash')
+                
+                if specs_hash is None:
+                    print(f"Warning: No hash found in file {file_name}. Skipping.")
+                    continue
+                
+                # Store the run data keyed by the extracted hash
+                self.runs['runs'] = run_data
+                print(f"Loaded simulation run with hash: {specs_hash}")
 
     def status_report(self):
 
-        bidding_costs = self.runs['Bidding']['metrics']['Costs']
-        bidding_earnings = self.runs['Bidding']['metrics']['Earnings']
-        bidding_total = self.runs['Bidding']['metrics']['Total']
+        bidding_costs = self.runs['runs']['Bidding']['metrics']['Costs']
+        bidding_earnings = self.runs['runs']['Bidding']['metrics']['Earnings']
+        bidding_total = self.runs['runs']['Bidding']['metrics']['Total']
 
-        baseline_costs = self.runs['Baseline']['metrics']['Costs']
-        baseline_earnings = self.runs['Baseline']['metrics']['Earnings']
-        baseline_total = self.runs['Baseline']['metrics']['Total']
+        baseline_costs = self.runs['runs']['Baseline']['metrics']['Costs']
+        baseline_earnings = self.runs['runs']['Baseline']['metrics']['Earnings']
+        baseline_total = self.runs['runs']['Baseline']['metrics']['Total']
 
 
         print("")
-        print(f"Baseline f-val: {self.runs['Baseline']['metrics']['f']}")
-        print(f"Bidding f-val: {self.runs['Baseline']['metrics']['f']}")
+        print(f"Baseline f-val: {self.runs['runs']['Baseline']['metrics']['f']}")
+        print(f"Bidding f-val: {self.runs['runs']['Baseline']['metrics']['f']}")
         print(f"Calculated earnings: {bidding_earnings}")
         print(f"Calculated costs: {bidding_costs}")
         print(f"Calculated total cost from bidding: {bidding_total}")
@@ -468,20 +459,26 @@ class Controller():
         print(f'COST DATA: \n {cost_table}\n')
 
         
+        baseline_metrics = self.runs['runs']['Baseline']['metrics']
+        bidding_metrics = self.runs['runs']['Bidding']['metrics']
+
         table_data = [
-            ['Avg DLI', self.runs['Baseline']['metrics']['DLI_avg'], self.runs['Bidding']['metrics']['DLI_avg']],
-            ['Max DLI', self.runs['Baseline']['metrics']['DLI_max'], self.runs['Bidding']['metrics']['DLI_max']],
-            ['Min DLI', self.runs['Baseline']['metrics']['DLI_min'], self.runs['Bidding']['metrics']['DLI_min']],
+            ['Avg DLI', baseline_metrics['DLI_avg'], bidding_metrics['DLI_avg']],
+            ['Max DLI', baseline_metrics['DLI_max'], bidding_metrics['DLI_max']],
+            ['Min DLI', baseline_metrics['DLI_min'], bidding_metrics['DLI_min']],
         ]
 
         print(f'DLI DATA: \n {generate_table(table_data)}\n')
 
+        bidding_result_up = self.runs['Bidding result']['Up-regulation']
+        bidding_result_dn = self.runs['Bidding result']['Down-regulation']
+        
         bidding_data = [
-            ['Avg bid size',                        self.runs['Bidding']['metrics']['Avg bid vol up'],                              self.runs['Bidding']['metrics']['Avg bid vol down'],                                "MW"], 
-            ['Avg bid price',                       self.runs['Bidding']['metrics']['Avg bid price up'],                            self.runs['Bidding']['metrics']['Avg bid price down'],                              "€/MW"], 
-            ['Avg activation rate',                 self.runs['Bidding']['metrics']['Avg bid activation up'],                       self.runs['Bidding']['metrics']['Avg bid activation down'],                         "%"], 
-            ['Chance of activation given demand',   self.runs['Bidding']['metrics']['Avg bid activation up']/self.market.Pr_D_up(), self.runs['Bidding']['metrics']['Avg bid activation down']/self.market.Pr_D_up(),   "%"],
-            ['Submitted bids',                      self.runs['Bidding']['metrics']['n bids up'],                                   self.runs['Bidding']['metrics']['n bids down'],                                     "-"]
+            ['Avg bid size',                        bidding_result_up['Avg bid size'],                                  bidding_result_dn['Avg bid size'],                               "MW"], 
+            ['Avg bid price',                       bidding_result_up['Avg bid price'],                                 bidding_result_dn['Avg bid price'],                              "€/MW"], 
+            ['Avg activation rate',                 bidding_result_up['Avg activation rate'],                           bidding_result_dn['Avg activation rate'],                        "%"], 
+            ['Chance of activation given demand',   bidding_result_up['Avg activation rate']/self.market.Pr_D_up(),     bidding_result_dn['Avg activation rate']/self.market.Pr_D_up(),  "%"],
+            ['Submitted bids',                      bidding_result_up['Bids submitted'],                                bidding_result_dn['Bids submitted'],                             "-"]
         ]
         bidding_header = ['', 'Up-regulation', 'Down-regulation', 'Unit']
 
@@ -489,9 +486,9 @@ class Controller():
 
         
         # Print solve times
-        minutes, seconds = divmod(self.runs['Baseline']['metrics']['elapsed_time'], 60)
+        minutes, seconds = divmod(self.runs['runs']['Baseline']['metrics']['elapsed_time'], 60)
         print(f"Baseline opt solved in: {int(minutes)} minutes and {seconds:.2f} seconds. ")
-        minutes, seconds = divmod(self.runs['Bidding']['metrics']['elapsed_time'], 60)
+        minutes, seconds = divmod(self.runs['runs']['Bidding']['metrics']['elapsed_time'], 60)
         print(f"Bidding opt solved in: {int(minutes)} minutes and {seconds:.2f} seconds. \n")
 
 

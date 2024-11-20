@@ -35,20 +35,23 @@ class Plotter():
         # Get plotting details
         foldername = self.foldername
 
-        t = self.controller.t
-        u_bid = self.controller.runs['Bidding']['timeseries']['u']
-        u_base = self.controller.u_base
+        bid_ts  = self.controller.runs['runs']['Bidding']['timeseries']
+        base_ts = self.controller.runs['runs']['Baseline']['timeseries']
 
-        x_bid = self.controller.runs['Bidding']['timeseries']['x']
-        x_base = self.controller.runs['Baseline']['timeseries']['x']
-
-        
-        b_p_up = self.controller.runs['Bidding']['timeseries']['P_up']
-        b_p_dn = self.controller.runs['Bidding']['timeseries']['P_dn']
-        b_c_up = self.controller.runs['Bidding']['timeseries']['C_up']
-        b_c_dn = self.controller.runs['Bidding']['timeseries']['C_dn']
-        b_a_up = self.controller.market.Pr_a_up(b_c_up)
-        b_a_dn = self.controller.market.Pr_a_dn(b_c_dn)
+        t       = self.controller.t
+        u_bid   = bid_ts['u']
+        u_base  = base_ts['u']
+    
+        x_bid   = bid_ts['x']
+        x_base  = base_ts['x']
+    
+            
+        b_p_up  = bid_ts['P_up']
+        b_p_dn  = bid_ts['P_dn']
+        b_c_up  = bid_ts['C_up']
+        b_c_dn  = bid_ts['C_dn']
+        b_a_up  = self.controller.market.Pr_a_up(b_c_up)
+        b_a_dn  = self.controller.market.Pr_a_dn(b_c_dn)
 
 
         # BEGIN PLOTTING (or more like saving plots, but you get it)
