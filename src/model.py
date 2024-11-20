@@ -431,7 +431,7 @@ class BatteryModel:
 
             U = np.append(U, u_bar[k] + u_tilde)
 
-        return U
+        return ca.vertcat(*U)
 
 
 

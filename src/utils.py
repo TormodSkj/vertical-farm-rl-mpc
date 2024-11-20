@@ -64,8 +64,7 @@ def generate_hash(specs):
 
     return 0
 
-    # ERROR: ndarray is not JSON serializable
-
+    converted_specs = convert_np_arrays(specs)
 
     # Serialize specs consistently
     specs_str = json.dumps(specs, sort_keys=True)
@@ -73,5 +72,17 @@ def generate_hash(specs):
     return hashlib.sha256(specs_str.encode()).hexdigest()
 
     
-
+# Convert data for JSON serialization
+def convert_np_arrays(obj):
+    """
+    Recursively convert np.array to lists in a nested dictionary or list.
+    """
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {key: convert_np_arrays(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_np_arrays(item) for item in obj]
+    else:
+        return obj
 

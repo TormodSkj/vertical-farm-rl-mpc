@@ -9,8 +9,8 @@ from simulator import Simulator
 
 
 SIM_NAME = "sandbox"
-HORIZON_DAYS = 2
-FINAL_WEIGHT = 12
+HORIZON_DAYS = 20
+FINAL_WEIGHT = 200
 
 SIMULATION_DATE = '2023-12-01'
 BIDDING_ZONE    = 'NO4'
@@ -22,20 +22,20 @@ def main():
     config = Config(SIM_NAME, filetype="pdf")
     plant = PlantModel(x_init, FINAL_WEIGHT)
     market = Market(HORIZON_DAYS, 1133, BIDDING_ZONE, SIMULATION_DATE)
-    controller = Controller(HORIZON_DAYS, plant, market, config, "opt")         #Baseline: 'opt' / 'rigid'
+    controller = Controller(HORIZON_DAYS, plant, market, config)         #Baseline: 'opt' / 'rigid'
     
-    mpc_controller = Controller(HORIZON_DAYS, plant, market, config, "opt", surpress_output = True)     # Instance of controller used in mpc
+    mpc_controller = Controller(HORIZON_DAYS, plant, market, config, surpress_output = True)     # Instance of controller used in mpc
     simulator = Simulator(HORIZON_DAYS, plant, market, config, mpc_controller)
 
     battery = BatteryModel(x_init = np.array([200]))
-    battery_controller = Controller(HORIZON_DAYS, battery, market, config, "opt")
+    battery_controller = Controller(HORIZON_DAYS, battery, market, config)
 
 
     # battery_controller.optimize_baseline()
     # battery_controller.optimize_bidding()
 
-    # controller.rigid_baseline()
-    controller.optimize_baseline()
+    controller.rigid_baseline()
+    # controller.optimize_baseline()
     controller.optimize_bidding()
     controller.save_to_json()
 

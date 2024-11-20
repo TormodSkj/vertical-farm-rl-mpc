@@ -40,8 +40,8 @@ class Controller():
     runs:   dict
     u_base: np.array
 
-    def __init__(self, timehorizon, plantmodel, market, config, baseline: str, surpress_output = False):
-        self.surpress_output = False
+    def __init__(self, timehorizon, plantmodel, market, config, surpress_output = False):
+        self.surpress_output = surpress_output
         self.T = timehorizon   
         self.N = timehorizon * QUARTER_HOURS_PER_DAY
         self.dt = SECONDS_PER_QUARTER_HOUR   
@@ -258,11 +258,13 @@ class Controller():
 
         # 18 hours on, 6 hours off in 15 minute intervals
         intervals_per_hour = 4   # 4 intervals (15 minutes) per hour
-        hours_on = 18
-        hours_off = 6
+        hours_on = 16
+        hours_off = 8
+
+        RIGID_INTY = 0.8 * self.model.C_PPFD_max
 
         # Create a pattern for one full day (96 intervals for 24 hours)
-        day_schedule = np.array([self.model.C_PPFD_max/2] * (hours_on * intervals_per_hour) + [0] * (hours_off * intervals_per_hour))
+        day_schedule = np.array([RIGID_INTY] * (hours_on * intervals_per_hour) + [0] * (hours_off * intervals_per_hour))
 
         # Repeat the daily schedule enough times to cover N intervals
         full_schedule = np.tile(day_schedule, int(np.ceil(N / len(day_schedule))))[:N]
@@ -386,20 +388,6 @@ class Controller():
 
         # Ensure the target json file exists
         os.makedirs(self.config.sim_path, exist_ok=True)
-
-        # Convert data for JSON serialization
-        def convert_np_arrays(obj):
-            """
-            Recursively convert np.array to lists in a nested dictionary or list.
-            """
-            if isinstance(obj, np.ndarray):
-                return obj.tolist()
-            elif isinstance(obj, dict):
-                return {key: convert_np_arrays(value) for key, value in obj.items()}
-            elif isinstance(obj, list):
-                return [convert_np_arrays(item) for item in obj]
-            else:
-                return obj
 
         # Convert the entire runs dictionary
         runs_dict = convert_np_arrays(self.runs)
