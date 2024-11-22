@@ -13,6 +13,10 @@ class PlantModel:
     x_nsdw_init:    float       # Initial non-structural dry weight per m^2     [g/m^2]
 
     specs: dict
+
+
+    nx = 3
+    nu = 1
     
     def __init__(self, x_init, Final_fw_sht):
         self.Final_fw_sht = Final_fw_sht
@@ -25,7 +29,9 @@ class PlantModel:
             'type'                  : self.name,
             'x0'                    : x_init,
             'Fresh weight goal'     : Final_fw_sht,
+            'Ideal DLI'             : self.IDEAL_DLI,
             'Max DLI'               : self.DLI_max,
+            'Min DLI'               : self.DLI_min,
             'DLI resolution'        : self.DLI_res,
             'Total growht area'     : self.A_crop,
             'Ambient temp'          : self.T_crop,
@@ -33,24 +39,35 @@ class PlantModel:
             'Max PPFD'              : self.C_PPFD_max
         } 
 
+
+    #Vertical farm specs
+    T_crop = 24     #Indoor ambient temperature [C]
+    co2_in = 1200   #CO2 consentration of indoor air [PPM]
+
+
+    A_crop = 15000                                  # Total growth area [m^2]
+    C_PPFD_max = 250                                # Max lighting capacity (or max tolerated light level for the plants) [mol / m^2/s]
+    C_conv = 0.217                                  # W / PPFD
+    eta_light = 0.8                                 # LED efficiency coefficient
+    C_conv_PPFD = C_conv*A_crop/(eta_light*1000)    # Conversion factor between PPFD and power. Expressed in kW
+    P_cap_max = C_PPFD_max*C_conv_PPFD              # Vertical farm power capacity [MW]
+
+
+    PHOTOPERIOD = 16    # Hours of light in a day
+    LIGHT_INTY  = 200   # Light intensity for the photoactive hours
+    IDEAL_DLI   = PHOTOPERIOD * LIGHT_INTY * SECONDS_PER_HOUR * 1e-6       # Equates to 11.52
+
+    DLI_max = 1.1 * IDEAL_DLI       # Calculated from ideal PPFD and ideal photoperiod
+    DLI_min = 0.9 * IDEAL_DLI       # Only used for variable DLI schemes
+    DLI_res = 2                     # DLI enforcement rate. 4 = enforce over last 24h every 6h (24/4)
+
     
-    nx = 2
-    nu = 1
-
-
     # state labels and units (for plotting)
-
     title  = "Vertical Farm"
     labels = ["Structural dry weight (g/m^2)", 
               "Non-structural dry weight (g/m^2)"]
     x_unit = "Weight (g/m^2)"
     u_unit = "PPFD (umol/m^2/s)"
-
-
-
-    #Indoor climate assumptions
-    T_crop = 24     #Indoor ambient temperature [C]
-    co2_in = 1200   #CO2 consentration of indoor air [PPM]
 
 
     #Constants
@@ -73,21 +90,10 @@ class PlantModel:
     l = 0.11                #Mean leaf diameter
     u_inf = 0.15            #Uninhibited air speed
     c_p = 0.217             #Conversion factor from PPFD to PAR
-    eta_light = 0.8         #LED efficiency
     c_d = 0.05              #Dry matter content
     PCD = 25                #Plant crop density
     
    
-    #Vertical farm specs
-    A_crop = 15000                                  # Total growth area [m^2]
-    C_PPFD_max = 250                                # Max lighting capacity (or max tolerated light level for the plants) [mol / m^2/s]
-    C_conv = 0.217                                  # W / PPFD
-    C_conv_PPFD = C_conv*A_crop/(eta_light*1000)    # Conversion factor between PPFD and power. Expressed in kW
-    P_cap_max = C_PPFD_max*C_conv_PPFD              # Vertical farm power capacity [MW]
-
-    DLI_max = 17                    # Calculated from ideal PPFD and ideal radiation time
-    DLI_res = 4                     # DLI enforcement rate. 4 = enforce over last 24h every 6h (24/4)
-    # DLI_min = 0.9*16.2*10**6      # Only used for variable DLI schemes
 
 
     def derivative(self, x: ca.MX.sym, u: ca.MX.sym)->ca.MX.sym:
@@ -95,7 +101,7 @@ class PlantModel:
         #Extract state
         x_sdw   = x[0]      # structural dry weight
         x_nsdw  = x[1]      # non-structural dry weight
-        # x_DLI   = x[2]
+        # x_LI   = x[2]
         PPFD    = u[0]      # umol/m^2/s
 
         
@@ -129,8 +135,9 @@ class PlantModel:
         x_sdw_dot = r_gr * x_sdw
         # x_nsdw_dot = c_a * f_phot - x_sdw_dot - f_resp - (1-c_b)/c_b * r_gr * x_sdw   # Slightly inefficient implementation
         x_nsdw_dot = self.c_a * f_phot - f_resp - 1/self.c_b * x_sdw_dot                # More efficient implementation
+        x_LI_dot = PPFD*1e-6
 
-        return ca.vertcat(x_sdw_dot, x_nsdw_dot)
+        return ca.vertcat(x_sdw_dot, x_nsdw_dot, x_LI_dot)
     
 
     def freshweight(self, x):
@@ -176,14 +183,15 @@ class PlantModel:
 
         L = 0
         for k in range(N):
-            L += p_spot[k] * U[k] * self.C_conv_PPFD/4
+            L += p_spot[k] * U[k] * self.C_conv_PPFD
+                  
+        L = L/4
                   
         return L
 
-    def final_cost(self, controller, X, U, Eps):
+    def terminal_cost(self, controller, X, U, Eps):
 
         return Eps * 10**6
-
 
     def get_bidding_constraints(self, controller, g_eq, g_ineq, B):
 
@@ -214,19 +222,24 @@ class PlantModel:
             g_eq.append(X[:, k+1] - x_next)
 
 
+        ''' Inequality constraints: g_ineq[k] > 0 for all k '''
+
         # Upper and lower bounds on u
         for k in range(N):
-
-            # Inequality constraints g_ineq >= 0
             g_ineq.append(U[k])
             g_ineq.append(self.C_PPFD_max - U[k])
 
 
-            # DLI constraint
+        # DLI constraint
+        for k in range(N+1):
             if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
+                # k = 96 +24, +48, +72 ...
+
+                LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
+                # LI = ca.sum2(U[k-QUARTER_HOURS_PER_DAY:k])*1e-6*SECONDS_PER_QUARTER_HOUR # Convert from umol/m^2/s to mol/m^2/s
                 
-                DLI = U[k-QUARTER_HOURS_PER_DAY:k]*1e-6 # Convert from umol/m^2/s to mol/m^2/s
-                g_ineq.append(self.DLI_max - ca.sum2(DLI)*SECONDS_PER_QUARTER_HOUR)
+                g_ineq.append(self.DLI_max - LI)
+                g_ineq.append(LI - self.DLI_min)
 
 
 
@@ -250,7 +263,6 @@ class PlantModel:
 
         return ca.vertcat(*U)
 
-
     def get_bidding_bounds(self, controller):
 
         N = controller.N
@@ -265,7 +277,6 @@ class PlantModel:
 
         return lb_B, ub_B
     
-
     def get_state_bounds(self, controller):
 
         N = controller.N
@@ -289,7 +300,15 @@ class PlantModel:
 
     def get_metrics(self, controller, run_id, metrics_data, x, u, B):
 
-        DLI = [np.sum(u[int(k):int(k)+QUARTER_HOURS_PER_DAY])*1e-6*SECONDS_PER_QUARTER_HOUR for k in np.linspace(0, controller.N - QUARTER_HOURS_PER_DAY, controller.T*self.DLI_res+1)]
+        # DLI = [np.sum(u[int(k):int(k)+QUARTER_HOURS_PER_DAY])*1e-6*SECONDS_PER_QUARTER_HOUR for k in np.linspace(0, controller.N - QUARTER_HOURS_PER_DAY, controller.T*self.DLI_res)]
+
+        DLI = []
+
+        for k in range(controller.N+1):
+            if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
+                # k = 96 +24, +48, +72 ...
+                DLI.append(x[2,k] - x[2,k-QUARTER_HOURS_PER_DAY])
+
 
         metrics_data['DLI_avg'] = np.average(DLI)
         metrics_data['DLI_max'] = np.max(DLI)
@@ -381,7 +400,7 @@ class BatteryModel:
                   
         return L
 
-    def final_cost(self, controller, X, U, Eps):
+    def terminal_cost(self, controller, X, U, Eps):
 
         return 0
 

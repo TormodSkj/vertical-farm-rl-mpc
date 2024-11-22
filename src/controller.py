@@ -58,7 +58,7 @@ class Controller():
                     'N'                     : self.N,
                     'baseline'              : baseline
                 },
-            'process model'     : self.model.specs,
+            'model'             : self.model.specs,
             'market'            : self.market.specs
         }
         self.runs = {
@@ -137,7 +137,7 @@ class Controller():
 
         # Initialize cost function and constraints
         J = self.model.bidding_objective_function(self, X, U, B)\
-                          + self.model.final_cost(self, X, U, Eps)  # Cost function
+                       + self.model.terminal_cost(self, X, U, Eps)  # Cost function
 
 
         g_eq, g_ineq = [], []
@@ -178,7 +178,7 @@ class Controller():
         sol = sol
         x = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
         B = np.array(sol['x'][(nx*(N+1)):(nx*(N+1) + 4*N)].reshape((4, N)))
-        u = np.array(self.model.get_u(self, B))
+        u = np.array(self.model.get_u(self, B)).flatten()
         
         end_time = time.time()
         sol['elapsed_time'] = end_time - start_time
@@ -231,7 +231,7 @@ class Controller():
         Eps = ca.MX.sym('Eps', 1, 1)                    # Slack variable for feasibility
 
         J = self.model.baseline_obj_function(self, X, U)\
-                     + self.model.final_cost(self, X, U, Eps)         # Cost function
+                     + self.model.terminal_cost(self, X, U, Eps)         # Cost function
 
         # Get bounds
         lbx, ubx = self.model.get_state_bounds(self)
@@ -377,18 +377,17 @@ class Controller():
 
             bidding_earnings_up = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(b_a_up, b_p_up), b_c_up)
             bidding_earnings_dn = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(b_a_dn, b_p_dn), b_c_dn)
-            bidding_earnings = np.sum(bidding_earnings_up) + np.sum(bidding_earnings_dn)
+            bidding_earnings    = np.sum(bidding_earnings_up) + np.sum(bidding_earnings_dn)
 
-            bidding_costs = self.model.bidding_objective_function(self, x, u, B)
+            bidding_costs = self.model.baseline_obj_function(self, x, u)
             bidding_total = bidding_costs - bidding_earnings
 
-            metrics_data['Costs'] = bidding_costs
-            metrics_data['Earnings'] = bidding_earnings
-            metrics_data['Total'] = bidding_total
+            metrics_data['Costs']       = bidding_costs
+            metrics_data['Earnings']    = bidding_earnings
+            metrics_data['Total']       = bidding_total
 
-
-            b_a_up = np.array(self.market.Pr_a_up(b_c_up))
-            b_a_dn = np.array(self.market.Pr_a_dn(b_c_dn))
+            b_a_up  = np.array(self.market.Pr_a_up(b_c_up))
+            b_a_dn  = np.array(self.market.Pr_a_dn(b_c_dn))
             up_bids = np.where(b_a_up.flatten() > 1e-6)
             dn_bids = np.where(b_a_dn.flatten() > 1e-6)
 
@@ -429,6 +428,10 @@ class Controller():
         """
         Save all runs and their data to a JSON file.
         """
+
+        # Add spot price to data
+        self.runs['spotprice'] = self.p_spot
+
         # Filepath
         sim_name = self.config.sim_name
         sim_save_path = os.path.join(self.config.sim_path, f"{sim_name}.json")
@@ -501,11 +504,11 @@ class Controller():
         ]
 
         cost_table = generate_table(cost_data, header=['Baseline', 'Bidding'], sumrow=True, diffcol=True)
-        print(f'COST DATA: \n {cost_table}\n')
+        print(f'COST DATA: \n{cost_table}\n')
 
 
         metrics_table = get_metrics_table(self.runs['runs'])
-        print(f'METRICS DATA: \n {metrics_table}\n')
+        print(f'METRICS DATA: \n{metrics_table}\n')
 
         bidding_result_up = self.runs['bidding result']['Up-regulation']
         bidding_result_dn = self.runs['bidding result']['Down-regulation']
@@ -519,7 +522,7 @@ class Controller():
         ]
         bidding_header = ['', 'Up-regulation', 'Down-regulation', 'Unit']
 
-        print(f'DLI DATA: \n {generate_table(bidding_data, header = bidding_header)}\n')
+        print(f'DLI DATA: \n{generate_table(bidding_data, header = bidding_header)}\n')
 
         
         # Print solve times
@@ -531,9 +534,9 @@ class Controller():
 
         f_opt = bidding_total
         f_base = baseline_total
-        print(f"\nCost of base: {f_base}")
-        print(f"Cost after bidding: {f_opt}")
-        print(f"Cost reduction from bidding: {f_base - f_opt}")
-        print(f"Reduction in percentage: {100*(f_base - f_opt)/(f_base)} \n")
+        # print(f"\nCost of base: {f_base}")
+        # print(f"Cost after bidding: {f_opt}")
+        # print(f"Cost reduction from bidding: {f_base - f_opt}")
+        print(f"Cost reduction in percentage: {100*(f_base - f_opt)/(f_base)} \n")
 
 

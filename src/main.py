@@ -8,12 +8,16 @@ from globals import *
 from simulator import Simulator
 
 
-SIM_NAME = "sandbox"
-HORIZON_DAYS = 2
-FINAL_WEIGHT = 12
+SIM_NAME = "NO1_Jan1_2024"
+HORIZON_DAYS = 20
+FINAL_WEIGHT = 16.8
+# FINAL_WEIGHT = 30
+FINAL_WEIGHT = 163
 
-SIMULATION_DATE = '2023-12-01'
-BIDDING_ZONE    = 'NO4'
+SIMULATION_DATE = '2024-01-01'
+BIDDING_ZONE    = 'NO1'
+
+baseline = 'opt'
 
 def main():
 
@@ -22,9 +26,9 @@ def main():
     config = Config(SIM_NAME, filetype="pdf")
     plant = PlantModel(x_init, FINAL_WEIGHT)
     market = Market(HORIZON_DAYS, 1133, BIDDING_ZONE, SIMULATION_DATE)
-    controller = Controller(HORIZON_DAYS, plant, market, config, baseline='opt', search_cache = True)         #Baseline: 'opt' / 'rigid'
+    controller = Controller(HORIZON_DAYS, plant, market, config, baseline=baseline, search_cache = True)         #Baseline: 'opt' / 'rigid'
     
-    mpc_controller = Controller(HORIZON_DAYS, plant, market, config, 'opt', surpress_output = True)     # Instance of controller used in mpc
+    mpc_controller = Controller(HORIZON_DAYS, plant, market, config, baseline='opt', surpress_output = True)     # Instance of controller used in mpc
     simulator = Simulator(HORIZON_DAYS, plant, market, config, mpc_controller)
 
     battery = BatteryModel(x_init = np.array([200]))
