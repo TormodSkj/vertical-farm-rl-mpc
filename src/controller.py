@@ -17,6 +17,7 @@ class Controller():
     the required fresh weight mass"""
 
     surpress_output: bool
+    import_file: str
 
     model: PlantModel
     market: Market
@@ -41,7 +42,9 @@ class Controller():
     search_cache: bool
     u_base: np.array
 
-    def __init__(self, timehorizon, plantmodel, market, config, baseline = 'opt', surpress_output = False, search_cache = True):
+    def __init__(self, timehorizon, plantmodel, market, config, 
+                 baseline = 'opt', surpress_output = False, search_cache = True, 
+                 import_file = ''):
         self.surpress_output = surpress_output
         self.T = timehorizon   
         self.N = timehorizon * QUARTER_HOURS_PER_DAY
@@ -50,13 +53,13 @@ class Controller():
         self.market = market
         self.config = config
         self.search_cache = search_cache
+        self.import_file = import_file
 
         specs_data = {
             'controller': 
                 {
                     'time horizon'          : self.T,
                     'N'                     : self.N,
-                    'baseline'              : baseline
                 },
             'model'             : self.model.specs,
             'market'            : self.market.specs
@@ -105,15 +108,15 @@ class Controller():
 
     def optimize_bidding(self):
         
+        # 
         start_time = time.time()
 
         hash = generate_hash(self.runs['specs'])
         if self.search_cache:
-            if self.load_from_json(hash): 
+            if self.load_from_json(hash, 'Bidding'): 
                 # Identical run located. Using its solution instead
-                if not self.surpress_output: self.status_report()
                 return 0
-            
+            # No identical run located, or the needed run wasn't already produced. Optimizing from scratch
             if not self.surpress_output: print('No matching run found. Generating bidding strategy')
         
 
@@ -185,31 +188,9 @@ class Controller():
         
         self.save_run('Bidding', sol, x, u, B=B)
 
-        if not self.surpress_output: 
-            print('Bids optimized')
-            self.status_report()
+        if not self.surpress_output: print('Bids optimized')
         return 0
         
-
-    def generate_baseline(self):
-
-        hash = generate_hash(self.runs['specs'])
-        if self.search_cache:
-            if self.load_from_json(hash): 
-                return 0
-            if not self.surpress_output: print('No matching run found. Generating baseline')
-        
-
-        if(self.runs['specs']['controller']['baseline'] == 'opt'):
-            self.optimize_baseline()
-
-        elif(self.runs['specs']['controller']['baseline'] == 'rigid'):
-            self.rigid_baseline()
-        else:
-            assert False, "No valid baseline mode was selected. \'opt\' or \'rigid\' "
-
-        return 0
-
 
     def optimize_baseline(self):
         '''
@@ -217,6 +198,14 @@ class Controller():
         '''
         start_time = time.time()
 
+        hash = generate_hash(self.runs['specs'])
+        if self.search_cache:
+            if self.load_from_json(hash, 'Baseline'): 
+                # Identical run located. Using its solution instead
+                return 0
+            # If no identical run was located, generate baseline instead
+            if not self.surpress_output: print('No matching run found. Generating baseline light schedule')
+        
 
         N = self.N
         T = self.T
@@ -328,7 +317,7 @@ class Controller():
         sol['f'] = self.model.baseline_obj_function(self, x, u)
         sol['x'] = np.hstack((x.flatten(), u, 0))
         
-        self.save_run('Baseline', sol, x, u)
+        self.save_run('Rigid', sol, x, u)
         self.u_base = u
         self.runs['specs']['controller']['baseline'] = 'rigid'
 
@@ -365,8 +354,8 @@ class Controller():
             b_p_dn = B[1,:]
             b_c_up = B[2,:]
             b_c_dn = B[3,:]
-            b_a_up = self.market.Pr_a_up(b_c_up)
-            b_a_dn = self.market.Pr_a_dn(b_c_dn)
+            b_a_up = self.market.Pr_a_up(self.p_spot, b_c_up)
+            b_a_dn = self.market.Pr_a_dn(self.p_spot, b_c_dn)
 
 
             timeseries_data['P_up'] = b_p_up
@@ -386,8 +375,8 @@ class Controller():
             metrics_data['Earnings']    = bidding_earnings
             metrics_data['Total']       = bidding_total
 
-            b_a_up  = np.array(self.market.Pr_a_up(b_c_up))
-            b_a_dn  = np.array(self.market.Pr_a_dn(b_c_dn))
+            b_a_up  = np.array(self.market.Pr_a_up(self.p_spot, b_c_up))
+            b_a_dn  = np.array(self.market.Pr_a_dn(self.p_spot,b_c_dn))
             up_bids = np.where(b_a_up.flatten() > 1e-6)
             dn_bids = np.where(b_a_dn.flatten() > 1e-6)
 
@@ -448,10 +437,11 @@ class Controller():
             json.dump(runs_dict, json_file, indent=4)
 
 
-    def load_from_json(self, hash):
+    def load_from_json(self, hash, run_name):
         """
         Load completed runs from saved JSON files and populate `completed_runs`.
         """
+        
         for file_name in os.listdir(self.config.sim_path):
             if not file_name.endswith(".json"): continue
 
@@ -469,74 +459,114 @@ class Controller():
                 
                 # Store the run data keyed by the extracted hash
                 conv_loaded_data = convert_lists_to_np_arrays(loaded_data)
-                self.runs['bidding result'] = conv_loaded_data['bidding result']
-                self.runs['runs'] = conv_loaded_data['runs']
-                if not self.surpress_output: print(f"Loaded simulation \'{loaded_data['name']}\' from {loaded_data['timestamp']}")
+
+                if run_name not in conv_loaded_data['runs']:
+                    return False
+                
+                self.runs['runs'][run_name] = conv_loaded_data['runs'][run_name]
+                if run_name == 'Bidding': self.runs['bidding result'] = conv_loaded_data['bidding result']
+
+                if not self.surpress_output: print(f"Loaded run {run_name} from simulation \'{loaded_data['name']}\' dated {loaded_data['timestamp']}")
                 return True
                 
         return False
 
+    def import_baseline(self):
+        '''
+        Imports an already made light schedule as the baseline
+        '''
+        start_time = time.time()
+        N = self.N
+
+        # Open and load the JSON file
+        import_path = os.path.join(self.config.data_path, self.import_file)
+        with open(import_path, "r") as json_file:
+            light_schedule = json.load(json_file)
+        
+
+        # Transform from hourly to quarter hourly basis
+        # Scale from percentage based schedule to light intensity
+        u_base = self.model.C_PPFD_max/100*np.repeat(light_schedule, 4)     
+
+        assert len(u_base) == self.N, f"Imported light schedule not correct length. Len: {len(u_base)}, N: {N}"
+
+        x0 = self.x_init
+        X = np.zeros((self.model.nx, N+1))
+        X[:,0] = x0.reshape(1,-1)
+        for k in range(N):
+            #Forward euler
+            dt = self.dt
+            X[:,k+1] = X[:,k] + dt*np.array(self.model.derivative(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
+
+        sol ={}
+        x = X
+        u = u_base
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+
+        sol['elapsed_time'] = elapsed_time
+        sol['f'] = self.model.baseline_obj_function(self, x, u)
+        sol['x'] = np.hstack((x.flatten(), u, 0))
+        
+        self.save_run('Imported', sol, x, u)
+        self.u_base = u
+
+        if not self.surpress_output: print('Imported light schedule')
+        return 0
 
 
 
     def status_report(self):
 
-        bidding_costs = self.runs['runs']['Bidding']['metrics']['Costs']
-        bidding_earnings = self.runs['runs']['Bidding']['metrics']['Earnings']
-        bidding_total = self.runs['runs']['Bidding']['metrics']['Total']
 
-        baseline_costs = self.runs['runs']['Baseline']['metrics']['Costs']
-        baseline_earnings = self.runs['runs']['Baseline']['metrics']['Earnings']
-        baseline_total = self.runs['runs']['Baseline']['metrics']['Total']
-
-
-        print("")
-        print(f"Baseline f-val: {self.runs['runs']['Baseline']['metrics']['f']}")
-        print(f"Bidding f-val: {self.runs['runs']['Baseline']['metrics']['f']}")
-        print(f"Calculated earnings: {bidding_earnings}")
-        print(f"Calculated costs: {bidding_costs}")
-        print(f"Calculated total cost from bidding: {bidding_total}")
-        print("")
+        costs = [self.runs['runs'][run]['metrics']['Costs'] for run in self.runs['runs']]
+        earnings = [self.runs['runs'][run]['metrics']['Earnings'] for run in self.runs['runs']]
+        totals = [self.runs['runs'][run]['metrics']['Total'] for run in self.runs['runs']]
+        cost_reduction_percent = [(totals[0] - totals[i])/totals[0] * 100 for i in range(len(totals))]
 
         cost_data = [
-            ['Cost of power', baseline_costs, bidding_costs],
-            ['Cost of bidding', baseline_earnings, -bidding_earnings]
+            ['Costs'] + costs,
+            ['Earnings'] + earnings,
+            ['Totals'] + totals,
+            ['Total percentage cost reduction'] + cost_reduction_percent,
         ]
 
-        cost_table = generate_table(cost_data, header=['Baseline', 'Bidding'], sumrow=True, diffcol=True)
+        cost_table = generate_table(cost_data, header=[run for run in self.runs['runs']])
         print(f'COST DATA: \n{cost_table}\n')
 
 
         metrics_table = get_metrics_table(self.runs['runs'])
         print(f'METRICS DATA: \n{metrics_table}\n')
 
-        bidding_result_up = self.runs['bidding result']['Up-regulation']
-        bidding_result_dn = self.runs['bidding result']['Down-regulation']
-        
-        bidding_data = [
-            ['Avg bid size',                        bidding_result_up['Avg bid size'],                                  bidding_result_dn['Avg bid size'],                               "MW"], 
-            ['Avg bid price',                       bidding_result_up['Avg bid price'],                                 bidding_result_dn['Avg bid price'],                              "€/MW"], 
-            ['Avg activation rate',                 bidding_result_up['Avg activation rate'],                           bidding_result_dn['Avg activation rate'],                        "%"], 
-            ['Chance of activation given demand',   bidding_result_up['Avg activation rate']/self.market.Pr_D_up(),     bidding_result_dn['Avg activation rate']/self.market.Pr_D_up(),  "%"],
-            ['Submitted bids',                      bidding_result_up['Bids submitted'],                                bidding_result_dn['Bids submitted'],                             "-"]
-        ]
-        bidding_header = ['', 'Up-regulation', 'Down-regulation', 'Unit']
 
-        print(f'DLI DATA: \n{generate_table(bidding_data, header = bidding_header)}\n')
+        if 'Bidding' in self.runs['runs']:
+            bidding_result_up = self.runs['bidding result']['Up-regulation']
+            bidding_result_dn = self.runs['bidding result']['Down-regulation']
+            
+            bidding_data = [
+                ['Avg bid size',                        bidding_result_up['Avg bid size'],                                  bidding_result_dn['Avg bid size'],                               "MW"], 
+                ['Avg bid price',                       bidding_result_up['Avg bid price'],                                 bidding_result_dn['Avg bid price'],                              "€/MW"], 
+                ['Avg activation rate',                 bidding_result_up['Avg activation rate'],                           bidding_result_dn['Avg activation rate'],                        "%"], 
+                ['Chance of activation given demand',   bidding_result_up['Avg activation rate']/self.market.Pr_D_up(),     bidding_result_dn['Avg activation rate']/self.market.Pr_D_up(),  "%"],
+                ['Submitted bids',                      bidding_result_up['Bids submitted'],                                bidding_result_dn['Bids submitted'],                             "-"]
+            ]
+            bidding_header = ['', 'Up-regulation', 'Down-regulation', 'Unit']
+
+            print(f'BIDDING REPORT: \n{generate_table(bidding_data, header = bidding_header)}\n')
 
         
         # Print solve times
-        minutes, seconds = divmod(self.runs['runs']['Baseline']['metrics']['elapsed_time'], 60)
-        print(f"Baseline opt solved in: {int(minutes)} minutes and {seconds:.2f} seconds. ")
-        minutes, seconds = divmod(self.runs['runs']['Bidding']['metrics']['elapsed_time'], 60)
-        print(f"Bidding opt solved in: {int(minutes)} minutes and {seconds:.2f} seconds. \n")
+        for run in self.runs['runs']:
+            minutes, seconds = divmod(self.runs['runs'][run]['metrics']['elapsed_time'], 60)
+            print(f"{run} solved in: {int(minutes)} minutes and {seconds:.2f} seconds. ")
+        
 
-
-        f_opt = bidding_total
-        f_base = baseline_total
+        # f_opt = bidding_total
+        # f_base = baseline_total
         # print(f"\nCost of base: {f_base}")
         # print(f"Cost after bidding: {f_opt}")
         # print(f"Cost reduction from bidding: {f_base - f_opt}")
-        print(f"Cost reduction in percentage: {100*(f_base - f_opt)/(f_base)} \n")
+        # print(f"Cost reduction in percentage: {100*(f_base - f_opt)/(f_base)} \n")
 
 

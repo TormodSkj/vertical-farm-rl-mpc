@@ -8,16 +8,17 @@ from globals import *
 from simulator import Simulator
 
 
-SIM_NAME = "NO1_Jan1_2024"
+SIM_NAME = "Real_price_cov"
 HORIZON_DAYS = 20
-FINAL_WEIGHT = 16.8
-# FINAL_WEIGHT = 30
+# FINAL_WEIGHT = 16.8
+# FINAL_WEIGHT = 84
 FINAL_WEIGHT = 163
 
 SIMULATION_DATE = '2024-01-01'
 BIDDING_ZONE    = 'NO1'
 
-baseline = 'opt'
+baseline = 'import'
+import_file = 'scaled_optimal_intensities.json'
 
 def main():
 
@@ -25,8 +26,8 @@ def main():
 
     config = Config(SIM_NAME, filetype="pdf")
     plant = PlantModel(x_init, FINAL_WEIGHT)
-    market = Market(HORIZON_DAYS, 1133, BIDDING_ZONE, SIMULATION_DATE)
-    controller = Controller(HORIZON_DAYS, plant, market, config, baseline=baseline, search_cache = True)         #Baseline: 'opt' / 'rigid'
+    market = Market(config, HORIZON_DAYS, 1133, BIDDING_ZONE, SIMULATION_DATE)
+    controller = Controller(HORIZON_DAYS, plant, market, config, baseline=baseline, search_cache = True, import_file = import_file)         #Baseline: 'opt' / 'rigid'
     
     mpc_controller = Controller(HORIZON_DAYS, plant, market, config, baseline='opt', surpress_output = True)     # Instance of controller used in mpc
     simulator = Simulator(HORIZON_DAYS, plant, market, config, mpc_controller)
@@ -38,8 +39,10 @@ def main():
     # battery_controller.optimize_baseline()
     # battery_controller.optimize_bidding()
 
-    controller.generate_baseline()
+    controller.import_baseline()
+    controller.optimize_baseline()
     controller.optimize_bidding()
+    controller.status_report()
     controller.save_to_json()
 
     plotter = Plotter(config, controller, simulator)

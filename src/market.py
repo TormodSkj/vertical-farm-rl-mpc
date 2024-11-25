@@ -4,6 +4,9 @@ import casadi as ca
 import pandas as pd
 from config import Config
 from globals import *
+import utils
+import json
+import os
 
 class Market:
 
@@ -12,14 +15,18 @@ class Market:
     bidding_zone: str
     date: str
     
-    config = Config()
+    config: Config
 
     C_eur2nok = 11.76               # € -> NOK conversion rate as of nov 14 2024
+    price_means: np.ndarray
+    price_cov: np.ndarray
 
     mu_dn = 30          # € / MW
-    sigma_dn = 7        # € / MW
-    mu_up = 50         # € / MW
-    sigma_up = 10      # € / MW
+    mu_up = 50          # € / MW
+
+
+    sigma_dn: float     # € / MW
+    sigma_up: float     # € / MW
 
 
     n_given_bids = 2            # Number of time intervals with previously submitted bids
@@ -28,22 +35,30 @@ class Market:
     specs: dict
 
 
-    def __init__(self, time_horizon, seed, bidding_zone, date):
+    def __init__(self, config, time_horizon, seed, bidding_zone, date):
+        self.config = config
         self.N = time_horizon * QUARTER_HOURS_PER_DAY
         self.seed = seed
         self.bidding_zone = bidding_zone
         self.date = date
 
+        self.analyze_price_covariances()
+        conditional_variance_up, conditional_variance_dn = utils.conditional_covariance(self.price_cov)
+        self.sigma_up = np.sqrt(conditional_variance_up)
+        self.sigma_dn = np.sqrt(conditional_variance_dn)
+
         self.specs = {
-            'bidding zone'          : self.bidding_zone,
-            'simdate'               : self.date,
-            'bidding zone'          : self.bidding_zone,
-            'eur to nok'            : self.C_eur2nok,
-            'activation mu up'      : self.mu_up,
-            'activation sigma up'   : self.sigma_up,
-            'activation mu down'    : self.mu_dn,
-            'activation sigma down' : self.sigma_dn,
-        }
+            'bidding zone'                  : self.bidding_zone,
+            'simdate'                       : self.date,
+            'bidding zone'                  : self.bidding_zone,
+            'eur to nok'                    : self.C_eur2nok,
+            'Avg activation price up'       : self.price_means.iloc[1],
+            'Avg activation price down'     : self.price_means.iloc[2],
+            'Cond covariance spot - up'     : self.conditional_variance_up,
+            'Cond covariance spot - Down'   : self.conditional_variance_dn,
+            }
+
+
     
 
     def generate_spotprice(self):
@@ -94,22 +109,27 @@ class Market:
         return P_spot
     
 
-    def Pr_a_dn(self, Bc_dn):
+    def Pr_a_up(self, p_spot, Bc_up):
         #TODO Find real numbers here
         
-        Bc_dn_norm = (Bc_dn - self.mu_dn)/self.sigma_dn
+        mu_up = utils.conditional_expectation(p_spot, self.price_means, self.price_cov)[0]
+        sigma_up = self.sigma_up
 
-        # return norm.cdf(-Bc_dn_norm)
-        return self.Pr_D_dn() * (1.0 + ca.erf(-Bc_dn_norm / ca.sqrt(2.0))) / 2.0
-
-    def Pr_a_up(self, Bc_up):
-        #TODO Find real numbers here
-        
-        Bc_up_norm = (Bc_up - self.mu_up)/self.sigma_up
+        Bc_up_norm = (Bc_up - mu_up)/sigma_up
 
         # return norm.cdf(-Bc_up_norm)
         return self.Pr_D_up() * (1.0 + ca.erf(-Bc_up_norm / ca.sqrt(2.0))) / 2.0
 
+    def Pr_a_dn(self, p_spot, Bc_dn):
+        #TODO Find real numbers here
+
+        mu_dn = utils.conditional_expectation(p_spot, self.price_means, self.price_cov)[1]
+        sigma_dn = self.sigma_dn
+        
+        Bc_dn_norm = (Bc_dn - mu_dn)/sigma_dn
+
+        # return norm.cdf(-Bc_dn_norm)
+        return self.Pr_D_dn() * (1.0 + ca.erf(-Bc_dn_norm / ca.sqrt(2.0))) / 2.0
 
 
     def Pr_D_dn(self):  
@@ -123,11 +143,78 @@ class Market:
         # TODO implement actual model from Erlend when that's ready
 
         return 1/3
+
+
+    def analyze_price_covariances(self):
+        """
+        Analyze price covariances or load precomputed results from a JSON file if it exists.
+        """
+        # Define the path to the JSON file
+        analysis_file = os.path.join(self.config.data_path, "price_analysis.json")
+
+        # Check if the JSON file exists
+        if os.path.exists(analysis_file):
+            print("Loading precomputed price analysis data from JSON file.")
+            try:
+                with open(analysis_file, 'r') as file:
+                    analysis_data = json.load(file)
+                # Load means and covariance matrix
+                self.price_means = pd.Series(analysis_data["means"])
+                self.price_cov = np.array(analysis_data["covariance_matrix"])
+            except Exception as e:
+                print(f"Error loading JSON file: {e}")
+                return -1  # Indicate an error
+        else:
+            print("Performing price analysis as no precomputed data found.")
+            # Paths to CSV files
+            spot_price_file = self.config.spotprice_data_path
+            mfrr_price_file = self.config.mfrr_data_path
+
+            # Column names to extract
+            spot_timestamp_col = "DatoTid"  # Spot price timestamp column
+            spot_price_col = "NO1"  # Spot price column of interest
+            mfrr_time_interval_col = "Time Interval"  # mFRR time interval column
+            mfrr_up_price_col = "Up price"  # mFRR up price column
+            mfrr_down_price_col = "Down Price"  # mFRR down price column
+
+            # Load data
+            spot_prices = utils.load_spot_prices(spot_price_file, spot_timestamp_col, spot_price_col)
+            mfrr_prices = utils.load_mfrr_prices(mfrr_price_file, mfrr_time_interval_col, mfrr_up_price_col, mfrr_down_price_col)
+
+            # Merge datasets
+            merged_data = utils.merge_and_align(spot_prices, mfrr_prices)
+
+            if merged_data.empty:
+                print("The merged dataset is empty. Please check the alignment of timestamps.")
+                return -1  # Indicate an error
+            else:
+                # Calculate covariance matrix
+                covariance_matrix = utils.calculate_covariance_matrix(merged_data, ['Spot Price', 'Up Price', 'Down Price'])
+                means = merged_data[['Spot Price', 'Up Price', 'Down Price']].mean()
+
+                # Save results
+                self.price_means = means
+                self.price_cov = covariance_matrix
+
+                # Ensure the directory exists
+                os.makedirs(self.config.data_path, exist_ok=True)
+                try:
+                    with open(analysis_file, 'w') as file:
+                        json.dump({
+                            "means": self.price_means.to_dict(),
+                            "covariance_matrix": self.price_cov.tolist()
+                        }, file)
+                    print("Price analysis data saved to JSON file.")
+                except Exception as e:
+                    print(f"Error saving JSON file: {e}")
+                    return -1  # Indicate an error
+
+        return 0
+
+
+
     
     
-
-
-
 class Bid():
 
     volume_up:      float

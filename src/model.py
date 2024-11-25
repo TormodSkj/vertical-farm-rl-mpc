@@ -170,8 +170,8 @@ class PlantModel:
         
         for k in range(0, N): #from k = 2, to N-1. 
             L += p_spot[k] * self.C_conv_PPFD * controller.u_base[k] \
-                  + (1000*p_spot[k] - controller.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * controller.market.Pr_a_dn(Bc_dn[k])\
-                  - (1000*p_spot[k] + controller.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * controller.market.Pr_a_up(Bc_up[k])
+                  + (1000*p_spot[k] - controller.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * controller.market.Pr_a_dn(p_spot[k], Bc_dn[k])\
+                  - (1000*p_spot[k] + controller.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * controller.market.Pr_a_up(p_spot[k], Bc_up[k])
 
         L = L/4
 
@@ -249,6 +249,7 @@ class PlantModel:
     def get_u(self, controller, B):
 
         N = controller.N
+        p_spot = controller.p_spot
         u_bar = controller.u_base
         U = np.array([])
 
@@ -257,7 +258,7 @@ class PlantModel:
             if(k<controller.market.n_given_activations):
                 u_tilde = 1000*(B[1,k]*controller.A_down[k] - B[0,k]*controller.A_up[k])/self.C_conv_PPFD
             else:
-                u_tilde = 1000*(B[1,k]*controller.market.Pr_a_dn(B[3,k]) - B[0,k]*controller.market.Pr_a_up(B[2,k]))/self.C_conv_PPFD
+                u_tilde = 1000*(B[1,k]*controller.market.Pr_a_dn(p_spot[k], B[3,k]) - B[0,k]*controller.market.Pr_a_up(p_spot[k], B[2,k]))/self.C_conv_PPFD
 
             U = np.append(U, u_bar[k] + u_tilde)
 
@@ -383,8 +384,8 @@ class BatteryModel:
         
         for k in range(0, N): #from k = 2, to N-1. 
             L += p_spot[k] * controller.u_base[k] \
-                  + (1000*p_spot[k] - controller.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * controller.market.Pr_a_dn(Bc_dn[k])\
-                  - (1000*p_spot[k] + controller.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * controller.market.Pr_a_up(Bc_up[k])
+                  + (1000*p_spot[k] - controller.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * controller.market.Pr_a_dn(p_spot, Bc_dn[k])\
+                  - (1000*p_spot[k] + controller.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * controller.market.Pr_a_up(p_spot, Bc_up[k])
 
         L = L/4
 
@@ -446,6 +447,7 @@ class BatteryModel:
     def get_u(self, controller, B):
 
         N = controller.N
+        p_spot = controller.p_spot
         u_bar = controller.u_base
         U = np.array([])
 
@@ -454,7 +456,7 @@ class BatteryModel:
             if(k<controller.market.n_given_activations):
                 u_tilde = 1000*(B[1,k]*controller.A_down[k] - B[0,k]*controller.A_up[k])
             else:
-                u_tilde = 1000*(B[1,k]*controller.market.Pr_a_dn(B[3,k]) - B[0,k]*controller.market.Pr_a_up(B[2,k]))
+                u_tilde = 1000*(B[1,k]*controller.market.Pr_a_dn(p_spot[k], B[3,k]) - B[0,k]*controller.market.Pr_a_up(p_spot[k], B[2,k]))
 
             U = np.append(U, u_bar[k] + u_tilde)
 
