@@ -41,6 +41,7 @@ def main():
     # battery_controller.optimize_baseline()
     # battery_controller.optimize_bidding()
 
+
     controller.import_baseline()
     controller.optimize_baseline()
     controller.optimize_bidding()
@@ -50,6 +51,7 @@ def main():
     plotter = Plotter(config, controller, simulator)
     plotter.save_ocp_plots()
 
+    # market.optimal_bidding_price_prediction(controller.p_spot)
 
     # simulator.Simulate_mpc()
 

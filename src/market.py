@@ -7,6 +7,7 @@ from globals import *
 import utils
 import json
 import os
+import time
 
 class Market:
 
@@ -209,6 +210,82 @@ class Market:
                     print(f"Error saving JSON file: {e}")
                     return -1  # Indicate an error
 
+        return 0
+
+
+
+    def optimal_bidding_price_prediction(self, p_spot):    
+
+        start_time = time.time()
+        print("Starting price prediction")
+
+
+
+        mu_up = utils.conditional_expectation(p_spot, self.price_means, self.price_cov)[0]
+        sigma_up = self.sigma_up
+        mu_dn = utils.conditional_expectation(p_spot, self.price_means, self.price_cov)[1]
+        sigma_dn = self.sigma_dn
+
+        # Create decision variables for the optimization problem
+        N = len(p_spot)
+        U = ca.MX.sym('U', 2, N)                       # Controls over time (Nx1 vector)
+
+        J = 0
+        
+        g = []
+        for k in range(N):
+            g.append(ca.erf(U[0,k]) + (2*sigma_up*U[0,k] + ca.sqrt(2)*mu_up[k])/(ca.sqrt(ca.pi)*sigma_up)*ca.exp(-ca.power(U[0,k], 2)) - 1)
+
+        for k in range(N):
+            g.append(ca.erf(U[1,k]) + (2*sigma_dn*U[1,k] + ca.sqrt(2)*mu_dn[k])/(ca.sqrt(ca.pi)*sigma_dn)*ca.exp(-ca.power(U[1,k], 2)) - 1)
+
+
+        # Get bounds
+        # lbx = np.zeros(1,2*N)
+        # ubx = np.inf * np.ones(1, 2*N)        
+        lbx = 0
+        ubx = 1000
+
+        # Flatten decision variables and bounds
+        Z =   ca.vertcat(ca.reshape(U, -1, 1))
+        lbz = ca.vertcat(ca.reshape(lbx, -1, 1))
+        ubz = ca.vertcat(ca.reshape(ubx, -1, 1))
+
+        # Format constraints
+        # n_g = ca.vertcat(*g).size()[0]
+        lbg = 0
+        ubg = 0
+
+        # Nonlinear problem definition
+        nlp = {'x': Z, 'f': J, 'g': ca.vertcat(*g)}
+
+        # Create the solver
+        opts = {'ipopt.print_level': 0, 'print_time': 0}
+        solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
+
+        u0 = np.hstack((-0.2*mu_up/(np.sqrt(2)*sigma_up), -0.2*mu_dn/(np.sqrt(2)*sigma_dn)))
+        sol = solver(x0 = u0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
+
+        # Extract solution
+        u     = np.array(sol['x'].reshape((2, N)))
+
+        u_up = u[0]
+        u_dn = u[1]
+
+        delta_up = np.sqrt(2)*sigma_up*u_up
+        delta_dn = np.sqrt(2)*sigma_dn*u_dn
+        
+        x_up = delta_up + mu_up
+        x_dn = delta_dn + mu_dn
+
+
+        print(f"Predicted optimal bidding prices: \n Up:   {x_up[range(0,N,24)]} \n Down: {x_dn[range(0,N,24)]}")
+        print(f"Predicted Avg bidding prices: \n Up:   {np.average(x_up)} \n Down: {np.average(x_dn)}")
+
+        print(f"Predicted optimal bidding price is on average: \n Up:   {np.average(delta_up)} compared to predicted clearing price \n Down: {np.average(delta_dn)} compared to clearing price")
+
+        end_time = time.time()
+        print(f"Completed prediction in {end_time-start_time:.2f} seconds")
         return 0
 
 
