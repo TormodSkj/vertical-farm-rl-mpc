@@ -54,8 +54,8 @@ class Market:
             'eur to nok'                    : self.C_eur2nok,
             'Avg activation price up'       : self.price_means.iloc[1],
             'Avg activation price down'     : self.price_means.iloc[2],
-            'Cond covariance spot - up'     : self.conditional_variance_up,
-            'Cond covariance spot - Down'   : self.conditional_variance_dn,
+            'Cond covariance spot - up'     : conditional_variance_up,
+            'Cond covariance spot - Down'   : conditional_variance_dn,
             }
 
 
@@ -172,7 +172,7 @@ class Market:
 
             # Column names to extract
             spot_timestamp_col = "DatoTid"  # Spot price timestamp column
-            spot_price_col = "NO1"  # Spot price column of interest
+            spot_price_col = 'NO1'  # Spot price column of interest
             mfrr_time_interval_col = "Time Interval"  # mFRR time interval column
             mfrr_up_price_col = "Up price"  # mFRR up price column
             mfrr_down_price_col = "Down Price"  # mFRR down price column

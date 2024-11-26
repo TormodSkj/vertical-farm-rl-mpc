@@ -67,7 +67,7 @@ class Plotter():
         # BEGIN PLOTTING (or more like saving plots, but you get it)
         ##################################################
         
-        if self.controller.model.title == "Vertical Farm":
+        if self.controller.model.title == "Vertical Farm" or self.controller.model.title == "Gjermund plant model":
             plt.figure(1, figsize=config.plot_format)
 
             for run_name in controller.runs['runs']:
