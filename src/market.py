@@ -24,11 +24,13 @@ class Market:
 
     mu_dn = 30          # € / MW
     mu_up = 50          # € / MW
-
-
     sigma_dn: float     # € / MW
     sigma_up: float     # € / MW
 
+    mean_prices_up: np.array
+    mean_prices_dn: np.array
+    opt_prices_up: np.array
+    opt_prices_dn: np.array
 
     n_given_bids = 2            # Number of time intervals with previously submitted bids
     n_given_activations = 1     # Number of time intervals with received activations
@@ -47,6 +49,11 @@ class Market:
         conditional_variance_up, conditional_variance_dn = utils.conditional_covariance(self.price_cov)
         self.sigma_up = np.sqrt(conditional_variance_up)
         self.sigma_dn = np.sqrt(conditional_variance_dn)
+        self.p_spot = self.get_spotprice()
+        self.mean_prices_up = utils.conditional_expectation(self.p_spot, self.price_means, self.price_cov)[0]
+        self.mean_prices_dn = utils.conditional_expectation(self.p_spot, self.price_means, self.price_cov)[1]
+        self.opt_prices_up = np.zeros((1,self.N))
+        self.opt_prices_dn = np.zeros((1,self.N))
 
         self.specs = {
             'bidding zone'                  : self.bidding_zone,
@@ -58,6 +65,7 @@ class Market:
             'Cond covariance spot - up'     : conditional_variance_up,
             'Cond covariance spot - Down'   : conditional_variance_dn,
             }
+            
 
 
     
@@ -219,29 +227,16 @@ class Market:
         start_time = time.time()
         print("Starting price prediction")
 
-
-
         mu_up = utils.conditional_expectation(p_spot, self.price_means, self.price_cov)[0]
-        sigma_up = self.sigma_up
         mu_dn = utils.conditional_expectation(p_spot, self.price_means, self.price_cov)[1]
-        sigma_dn = self.sigma_dn
 
         # Create decision variables for the optimization problem
         N = len(p_spot)
         X = ca.MX.sym('X', 2, N)
 
-
         J = 0
-        for k in range(N):
-            # u = (X[0,k] - mu_up[k])/(ca.sqrt(2) * sigma_up)
-            # G = (1 + ca.erf(u)) / 2
-            # J -= X[0,k]*(1-G)
-            J -= X[0,k] * self.Pr_a_up(p_spot[k], X[0,k])
-        for k in range(N):
-            # u = (X[1,k] - mu_dn[k])/(ca.sqrt(2) * sigma_dn)
-            # G = (1 + ca.erf(u)) / 2
-            # J -= X[1,k]*(1-G)
-            J -= X[1,k] * self.Pr_a_up(p_spot[k], X[1,k])
+        for k in range(N):  J -= X[0,k] * self.Pr_a_up(p_spot[k], X[0,k])
+        for k in range(N):  J -= X[1,k] * self.Pr_a_dn(p_spot[k], X[1,k])
         
         lbx = 0
         ubx = 1000
@@ -262,14 +257,12 @@ class Market:
         sol = solver(x0 = u0, lbx=lbz, ubx=ubz)
 
         # Extract solution
-        x     = np.array(sol['x'])
-
+        x    = np.array(sol['x'])
         x_up = x[:N]
         x_dn = x[N:]
 
-        delta_up = x_up - mu_up
-        delta_dn = x_dn - mu_dn
-
+        self.opt_prices_up = x_up
+        self.opt_prices_dn = x_dn
 
         # print(f"Predicted optimal bidding prices: \n Up:   {x_up[range(0,N,24)]} \n Down: {x_dn[range(0,N,24)]}")
         print(f"Predicted Avg bidding prices: \n Up:   {np.average(x_up):.2f} \n Down: {np.average(x_dn):.2f}")

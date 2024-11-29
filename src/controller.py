@@ -38,14 +38,17 @@ class Controller():
     bidding_z_init: ca.DM
     baseline_z_init: ca.DM
 
-    runs:   dict
-    search_cache: bool
-    u_base: np.array
+    runs:           dict
+    search_cache:   bool
+    warm_start:     bool
+    u_base:         np.array
+    x_base:         np.array
 
     def __init__(self, timehorizon, plantmodel, market, config, 
                  baseline = 'opt', surpress_output = False, search_cache = True, 
-                 import_file = ''):
+                 import_file = '', warm_start = True):
         self.surpress_output = surpress_output
+        self.warm_start = warm_start
         self.T = timehorizon   
         self.N = timehorizon * QUARTER_HOURS_PER_DAY
         self.dt = SECONDS_PER_QUARTER_HOUR   
@@ -140,7 +143,8 @@ class Controller():
 
         # Initialize cost function and constraints
         J = self.model.bidding_objective_function(self, X, U, B)\
-                       + self.model.terminal_cost(self, X, U, Eps)  # Cost function
+                       + self.model.terminal_cost(self, X, U, Eps)\
+                       + self.model.fluctuating_light_cost(self, U) # Cost function
 
 
         g_eq, g_ineq = [], []
@@ -173,8 +177,14 @@ class Controller():
         opts = {'ipopt.print_level': 0, 'print_time': 0}
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
 
+        z0 = self.bidding_z_init
+        if self.warm_start and 'Baseline' in self.runs['runs']: 
+            z0[:nx*(N+1)]                   = self.x_base.flatten()
+            z0[nx*(N+1):nx*(N+1)+4*N]       = ub_B.reshape(4*N,1)
+            z0[nx*(N+1)+2*N:nx*(N+1)+3*N]   = self.market.mean_prices_up
+            z0[nx*(N+1)+3*N:nx*(N+1)+4*N]   = self.market.mean_prices_dn
         
-        sol = solver(x0=self.bidding_z_init, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
+        sol = solver(x0=z0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
 
         # Extract solution
 
@@ -202,6 +212,8 @@ class Controller():
         if self.search_cache:
             if self.load_from_json(hash, 'Baseline'): 
                 # Identical run located. Using its solution instead
+                self.x_base = self.runs['runs']['Baseline']['timeseries']['x']
+                self.u_base = self.runs['runs']['Baseline']['timeseries']['u']
                 return 0
             # If no identical run was located, generate baseline instead
             if not self.surpress_output: print('No matching run found. Generating baseline light schedule')
@@ -220,7 +232,8 @@ class Controller():
         Eps = ca.MX.sym('Eps', 1, 1)                    # Slack variable for feasibility
 
         J = self.model.baseline_obj_function(self, X, U)\
-                     + self.model.terminal_cost(self, X, U, Eps)         # Cost function
+                     + self.model.terminal_cost(self, X, U, Eps)\
+                     + self.model.fluctuating_light_cost(self, U)         # Cost function
 
         # Get bounds
         lbx, ubx = self.model.get_state_bounds(self)
@@ -266,6 +279,7 @@ class Controller():
         
         self.save_run('Baseline', sol, x, u)
         self.u_base = u
+        self.x_base = x
         self.runs['specs']['controller']['baseline'] = 'opt'
 
         if not self.surpress_output: print('Baseline optimized')

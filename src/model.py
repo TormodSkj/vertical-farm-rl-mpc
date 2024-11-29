@@ -92,18 +92,17 @@ class PlantModel:
     c_p = 0.217             #Conversion factor from PPFD to PAR
     c_d = 0.05              #Dry matter content
     PCD = 25                #Plant crop density
-    
-   
+    c_fl = 7.43e-4          # Growth loss due to fluctuations in light
 
 
-    def derivative(self, x: ca.MX.sym, u: ca.MX.sym)->ca.MX.sym:
+    def derivative(self, x: ca.MX.sym, u: ca.MX.sym, u_last: ca.MX.sym)->ca.MX.sym:
         
         #Extract state
         x_sdw   = x[0]      # structural dry weight
         x_nsdw  = x[1]      # non-structural dry weight
         # x_LI   = x[2]
         PPFD    = u[0]      # umol/m^2/s
-
+        PPFD_last = u_last[0]
         
         #Common constants
         T_crop = self.T_crop
@@ -126,6 +125,7 @@ class PlantModel:
         r_co2 = r_bnd + r_stm + r_car                                                       #Canopy resistance 
         f_sat = self.rho_c * (self.co2_in - Gamma)/r_co2                                              #Light saturated vlaue of max photosynthesis
         f_phot_max = alpha * U_par * f_sat / (alpha * U_par + f_sat)                        #Maximum photosynthetic rate
+        # f_phot_max = f_phot_max * ca.exp(-ca.power(self.c_fl*(PPFD - PPFD_last), 2))
         f_phot = f_phot_max * CAC                                                           #Gross canopy photosynthesis
         f_resp = (self.c_resp_sht*(1-c_T) + self.c_resp_rt*c_T)*x_sdw * self.c_Q_10_gr**((T_crop-25)/10)   #Maintenance respiration rate
         # x_dw_plant = (x_sdw + x_nsdw) / self.PCD                                                 #X dont worry plant <3
@@ -188,6 +188,15 @@ class PlantModel:
         L = L/4
                   
         return L
+    
+    def fluctuating_light_cost(self, controller, U):
+
+        L = 0
+        for k in range(1, controller.N):
+            L += self.c_fl * ca.power(U[k] - U[k-1], 2)
+
+        return L
+
 
     def terminal_cost(self, controller, X, U, Eps):
 
@@ -218,7 +227,7 @@ class PlantModel:
         # Define the dynamic and control constraints
         for k in range(0,N):
             # Model equalities
-            x_next = X[:, k] + dt*self.derivative(X[:, k], U[k])
+            x_next = X[:, k] + dt*self.derivative(X[:, k], U[k], U[min(k-1, 0)])
             g_eq.append(X[:, k+1] - x_next)
 
 

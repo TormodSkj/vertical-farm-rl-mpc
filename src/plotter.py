@@ -52,8 +52,8 @@ class Plotter():
             b_a_up  = np.array(self.controller.market.Pr_a_up(p_spot, b_c_up)).flatten()
             b_a_dn  = np.array(self.controller.market.Pr_a_dn(p_spot, b_c_dn)).flatten()
             
-            # Filter out the unreasonably high low bid activations
-            activation_th = 1e-6
+            # Filter out the unreasonably low bid activations
+            activation_th = 0.01
             filtered_b_c_up = np.where(b_a_up > activation_th, b_c_up, 0).flatten()
             filtered_b_c_dn = np.where(b_a_dn > activation_th, b_c_dn, 0).flatten()
 
@@ -133,29 +133,17 @@ class Plotter():
         if 'Bidding' in controller.runs['runs']:
             ##################################################
             plt.figure(3, figsize=config.plot_format)
+            fig, ax = plt.subplots(1, 1, figsize=config.plot_format, sharex=True)
 
-            fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=config.plot_format, sharex=True)
+            lb_B, ub_B = self.controller.model.get_bidding_bounds(self.controller)
 
-            # plt.step(t, b_p_up, label="Bidding volume up") 
-            # plt.step(t, b_p_dn, label="Bidding volume down")
-            # Bidding price up
-            ax1.step(t, b_p_up, label="Bidding volume up", color="blue")
-            ax1.set_ylabel("Power (MW)")
-            ax1.legend(loc="upper right")
-
-            # Bidding price down
-            ax2.step(t, b_p_dn, label="Bidding volume down", color="red")
-            ax2.set_ylabel("Power (MW)")
-            ax2.set_xlabel("Time")
-            ax2.legend(loc="upper right")
-
-            # Bidding price max
-            # ax3.step(t, np.maximum(b_p_dn, b_p_up), label="Max bidding volume", color="orange")
-            ax3.fill_between(t, 0, np.where(b_p_up > b_p_dn, b_p_up, 0), color='blue', alpha=0.3, label='Up-regulation', step='post')
-            ax3.fill_between(t, 0, np.where(b_p_dn > b_p_up, b_p_dn, 0), color='red', alpha=0.3, label='down-regulation', step='post')
-            ax3.set_ylabel("Power (MW)")
-            ax3.set_xlabel("Time")
-            ax3.legend(loc="upper right")
+            # ax.step(t, -ub_B[0,:], color='grey', label='Up-regulation volume limit')
+            # ax.step(t, ub_B[1,:], color='grey', label='Down-regulation volume limit')
+            ax.fill_between(t, -b_p_up, 0, color='blue', alpha=0.4, label='Up-regulation', step='post')
+            ax.fill_between(t, 0, b_p_dn, color='red', alpha=0.4, label='down-regulation', step='post')
+            ax.set_ylabel("Power (MW)")
+            ax.set_xlabel("Time")
+            ax.legend(loc="upper right")
 
             filename = "bidding_volume"
             plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
@@ -164,36 +152,16 @@ class Plotter():
             plt.figure(4)
 
             # Create a figure with two subplots sharing the same x-axis
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=config.plot_format, sharex=True)
+            fig, ax = plt.subplots(1, 1, figsize=config.plot_format, sharex=True)
 
             # Plot for Bidding Price Up
-            ax1.step(t, filtered_b_c_up, label="Bidding Price Up", color="blue", where='mid')
-            ax1.set_ylabel("Bidding Price Up (€/MW)", color="blue")
-            ax1.tick_params(axis='y', labelcolor="blue")
-            ax1.legend(loc="upper left")
+            ax.fill_between(t, 0, filtered_b_c_up, label="Bidding Price Up", color="blue", step='post', alpha=0.4)
+            ax.fill_between(t, 0,filtered_b_c_dn, label="Bidding Price Down", color="red", step='post', alpha=0.4)
+            ax.step(t, p_spot*1000/self.controller.market.C_eur2nok, label="Spot price", color="grey", linestyle="--", where='mid')
+            ax.set_ylabel("Bidding Price (€/MW)", color="blue")
+            ax.tick_params(axis='y', labelcolor="blue")
+            ax.legend(loc="upper left")
 
-            # Twin y-axis for Spot Price on the first subplot
-            ax1_twin = ax1.twinx()
-            ax1_twin.step(t, p_spot, label="Spot Price", color="grey", linestyle="--", where='mid')
-            ax1_twin.set_ylabel("Spot Price (NOK/kW)", color="grey")
-            ax1_twin.tick_params(axis='y', labelcolor="grey")
-            ax1_twin.legend(loc="upper right")
-
-            # Plot for Bidding Price Down
-            ax2.step(t, filtered_b_c_dn, label="Bidding Price Down", color="red", where='mid')
-            ax2.set_ylabel("Bidding Price Down (€/MW)", color="red")
-            ax2.tick_params(axis='y', labelcolor="red")
-            ax2.legend(loc="upper left")
-
-            # Twin y-axis for Spot Price on the second subplot
-            ax2_twin = ax2.twinx()
-            ax2_twin.step(t, p_spot, label="Spot Price", color="grey", linestyle="--", where='mid')
-            ax2_twin.set_ylabel("Spot Price (NOK/kW)", color="grey")
-            ax2_twin.tick_params(axis='y', labelcolor="grey")
-            ax2_twin.legend(loc="upper right")
-
-            # Set the common x-axis label and title
-            ax2.set_xlabel("Time")
             fig.suptitle("Bidding Prices and Spot Prices in €/MW")
 
             # Adjust layout to avoid overlap
@@ -205,8 +173,10 @@ class Plotter():
 
             ##################################################
             plt.figure(6, figsize=config.plot_format)
-            plt.step(t, b_a_up, label="Up-activation")
-            plt.step(t, b_a_dn, label="Down-activation")
+            plt.fill_between(t, 0, b_a_up, color='blue', label="Up-activation", alpha=0.4)
+            plt.fill_between(t, 0, b_a_dn, color='red', label="Down-activation", alpha=0.4)
+            # plt.step(t, b_a_up, label="Up-activation")
+            # plt.step(t, b_a_dn, label="Down-activation")
             plt.ylabel("Probability of activations")
             plt.xlabel("Time (days)")
             plt.legend()

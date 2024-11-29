@@ -127,7 +127,8 @@ def test_phot_curve():
     config = Config()
     
     plt.plot(u_list, f_list)
-    plt.xlabel("Hour")
+    plt.xlabel("PPFD")
+    plt.ylabel('Photosynthetic rate')
 
     filename = "Phot_curve"
     foldername = "testing"

@@ -8,11 +8,12 @@ from globals import *
 from simulator import Simulator
 
 
-SIM_NAME = "NO3_Jan1_2024"
-HORIZON_DAYS = 20
+SIM_NAME = "MPC_test"
+HORIZON_DAYS = 7
 # FINAL_WEIGHT = 16.8
 # FINAL_WEIGHT = 84
-FINAL_WEIGHT = 163
+FINAL_WEIGHT = 45
+# FINAL_WEIGHT = 163
 # FINAL_WEIGHT = 117.34
 
 SIMULATION_DATE = '2024-01-01'
@@ -29,7 +30,7 @@ def main():
     plant = PlantModel(x_init, FINAL_WEIGHT)
     # plant = Photosynthesis(x_init, FINAL_WEIGHT)
     market = Market(config, HORIZON_DAYS, 1133, BIDDING_ZONE, SIMULATION_DATE)
-    controller = Controller(HORIZON_DAYS, plant, market, config, baseline=baseline, search_cache = True, import_file = import_file)         #Baseline: 'opt' / 'rigid'
+    controller = Controller(HORIZON_DAYS, plant, market, config, baseline=baseline, search_cache = False, warm_start=True, import_file = import_file)         #Baseline: 'opt' / 'rigid'
     
     mpc_controller = Controller(HORIZON_DAYS, plant, market, config, baseline='opt', surpress_output = True)     # Instance of controller used in mpc
     simulator = Simulator(HORIZON_DAYS, plant, market, config, mpc_controller)
@@ -42,7 +43,7 @@ def main():
     # battery_controller.optimize_bidding()
 
 
-    controller.import_baseline()
+    # controller.import_baseline()
     controller.optimize_baseline()
     controller.optimize_bidding()
     controller.status_report()
@@ -51,7 +52,7 @@ def main():
     plotter = Plotter(config, controller, simulator)
     plotter.save_ocp_plots()
 
-    market.optimal_bidding_price_prediction(controller.p_spot)
+    # market.optimal_bidding_price_prediction(controller.p_spot)
 
     # simulator.Simulate_mpc()
 
