@@ -51,7 +51,7 @@ def main():
     plotter = Plotter(config, controller, simulator)
     plotter.save_ocp_plots()
 
-    # market.optimal_bidding_price_prediction(controller.p_spot)
+    market.optimal_bidding_price_prediction(controller.p_spot)
 
     # simulator.Simulate_mpc()
 
