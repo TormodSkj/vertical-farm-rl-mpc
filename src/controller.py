@@ -41,14 +41,16 @@ class Controller():
     runs:           dict
     search_cache:   bool
     warm_start:     bool
+    calculate_fw:   bool
     u_base:         np.array
     x_base:         np.array
 
     def __init__(self, timehorizon, plantmodel, market, config, 
                  baseline = 'opt', surpress_output = False, search_cache = True, 
-                 import_file = '', warm_start = True):
+                 import_file = '', warm_start = True, calculate_fw = True):
         self.surpress_output = surpress_output
         self.warm_start = warm_start
+        self.calculate_fw = True
         self.T = timehorizon   
         self.N = timehorizon * QUARTER_HOURS_PER_DAY
         self.dt = SECONDS_PER_QUARTER_HOUR   
@@ -124,7 +126,7 @@ class Controller():
         
 
         # Just check if there is a basline before proceeding
-        assert self.runs['specs']['controller']['baseline'], "Baseline was not generated"   
+        assert 'Baseline' in self.runs['runs'] or 'Rigid' in self.runs['runs'], "Baseline was not generated"   
 
         N = self.N
         T = self.T
@@ -264,7 +266,12 @@ class Controller():
         opts = {'ipopt.print_level': 0, 'print_time': 0}
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
 
-        sol = solver(x0=self.baseline_z_init, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
+        z0 = self.baseline_z_init
+        if self.warm_start and 'Rigid' in self.runs['runs']: 
+            z0[:nx*(N+1)]                   = self.x_base.flatten()
+            z0[nx*(N+1):(nx*(N+1)+N*nu)]    = self.u_base.flatten()
+
+        sol = solver(x0=z0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
 
         # Extract solution
         f     = float(sol['f'])
@@ -333,7 +340,9 @@ class Controller():
         
         self.save_run('Rigid', sol, x, u)
         self.u_base = u
-        self.runs['specs']['controller']['baseline'] = 'rigid'
+        self.x_base = x
+        self.model.Final_fw_sht = float(self.model.freshweight(x[:,-1]))
+        # self.runs['specs']['controller']['baseline'] = 'rigid'
 
         if not self.surpress_output: print('Generated rigid baseline')
         return 0

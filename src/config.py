@@ -35,4 +35,7 @@ class Config():
         self.spotprice_data_path = os.path.join(self.data_path, 'spotpriser.csv')
         self.mfrr_data_path = os.path.join(self.data_path, 'mFRR_NO1_balancing_prices_2023.csv')
 
+        # Path for data
+        self.data_analysis_path = os.path.join(self.path, "data_analysis/")
+        os.makedirs(self.data_analysis_path, exist_ok=True)  # Ensure simulations folder exists
 

@@ -6,3 +6,4 @@
 # /src/config.py
 /test/__pycache__/
 /simulations/
+/data_analysis/

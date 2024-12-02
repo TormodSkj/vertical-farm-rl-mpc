@@ -8,12 +8,12 @@ from globals import *
 from simulator import Simulator
 
 
-SIM_NAME = "MPC_test"
-HORIZON_DAYS = 7
+SIM_NAME = "fixed_plant_model"
+HORIZON_DAYS = 20
 # FINAL_WEIGHT = 16.8
 # FINAL_WEIGHT = 84
-FINAL_WEIGHT = 45
-# FINAL_WEIGHT = 163
+# FINAL_WEIGHT = 45
+FINAL_WEIGHT = 163
 # FINAL_WEIGHT = 117.34
 
 SIMULATION_DATE = '2024-01-01'
@@ -38,19 +38,19 @@ def main():
     battery = BatteryModel(x_init = np.array([200]))
     battery_controller = Controller(HORIZON_DAYS, battery, market, config, 'opt')
 
-
     # battery_controller.optimize_baseline()
     # battery_controller.optimize_bidding()
 
-
     # controller.import_baseline()
-    controller.optimize_baseline()
-    controller.optimize_bidding()
-    controller.status_report()
-    controller.save_to_json()
+    # controller.rigid_baseline()
+    # controller.optimize_baseline()
+    # controller.optimize_bidding()
+    # controller.status_report()
+    # controller.save_to_json()
 
     plotter = Plotter(config, controller, simulator)
-    plotter.save_ocp_plots()
+    # plotter.save_ocp_plots()
+    # plotter.plot_spot_mfrr_prices()
 
     # market.optimal_bidding_price_prediction(controller.p_spot)
 

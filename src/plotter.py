@@ -31,7 +31,6 @@ class Plotter():
         controller = self.controller
         market = controller.market
 
-
         # Get plotting details
         foldername = self.foldername
 
@@ -195,6 +194,98 @@ class Plotter():
         filename = "spot_price"
         plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
+
+
+    def plot_spot_mfrr_prices(self):
+
+        config = self.config
+        controller = self.controller
+        market = controller.market
+        foldername = self.foldername
+
+        timestamps = market.timestamps
+        spot_prices = market.spot_prices
+        mfrr_prices_up = market.mfrr_prices_up
+        mfrr_prices_dn = market.mfrr_prices_dn
+        spot_prices_eur = spot_prices*1000/market.C_eur2nok
+
+        def moving_average(data, window_size):
+            return np.convolve(data, np.ones(window_size) / window_size, mode='same')
+
+        # Smoothed data
+        window_length = 24*3
+        mfrr_prices_up_smoothed = moving_average(mfrr_prices_up, window_length)
+        mfrr_prices_dn_smoothed = moving_average(mfrr_prices_dn, window_length)
+        spot_prices_eur_smoothed = moving_average(spot_prices, window_length)
+
+        opacity = 0.2
+        linewidth=1.5
+
+        line_x = np.array([min(spot_prices), max(spot_prices)])
+
+        plt.figure(1, figsize=config.plot_format)
+
+        # plt.step(timestamps, spot_prices*1000/market.C_eur2nok, label="Spot price")
+        plt.step(timestamps, mfrr_prices_up, label="Clearing price up", color='blue', alpha=opacity)
+        plt.step(timestamps, mfrr_prices_up_smoothed, label="Clearing price up smoothed", color='blue', alpha=1, linewidth = linewidth)
+
+        plt.step(timestamps, mfrr_prices_dn, label="Clearing price down", color='red', alpha=opacity)
+        plt.step(timestamps, mfrr_prices_dn_smoothed, label="Clearing price down smoothed", color='red', alpha=1, linewidth = linewidth)
+
+        # plt.fill_between(timestamps, mfrr_prices_up, max(mfrr_prices_up), label="Clearing price up", color='blue', alpha=0.4)
+        # plt.fill_between(timestamps, min(mfrr_prices_dn), mfrr_prices_dn, label="Clearing price down", color='red', alpha=0.4)
+        plt.step(timestamps, spot_prices_eur, label="Spot price", color='grey', alpha=opacity)
+        plt.step(timestamps, spot_prices_eur_smoothed, label="Spot price smoothed", color='grey', alpha=1, linewidth = linewidth)
+        plt.ylabel("Price (€/MW)")
+        plt.xlabel("Time (days)")
+        plt.title(f"Spot price vs activation prices smoothed using {window_length}h moving average")
+        plt.legend()
+
+
+        filename = "data_analysis_spot_price"
+        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+
+         ###########################################################333
+        plt.figure(3, figsize=config.plot_format)
+
+        # plt.step(timestamps, spot_prices_eur, label="Spot price", color='grey', linestyle=':')
+        plt.step(timestamps, mfrr_prices_up - spot_prices_eur, label="Clearing price up", color='blue')
+        plt.step(timestamps, mfrr_prices_dn - spot_prices_eur, label="Clearing price down", color='red')
+        plt.ylabel("Price (€/MW)")
+        plt.xlabel("Time (days)")
+        plt.title("Clearing prices relative to spot price (€/MW)")
+        plt.legend()
+
+        filename = "data_analysis_relative_prices"
+        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+
+        ################################################################
+        plt.figure(2, figsize=config.plot_format)
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=config.plot_format, sharex=True)
+
+        n = int(len(spot_prices)/10)
+        idx = np.ceil(np.linspace(1,len(spot_prices)-1,n))
+        ax1.scatter(spot_prices[idx], mfrr_prices_up[idx], color='blue', label='Clearing price up', s=0.1)
+        ax1.plot(line_x, line_x * 0.78*1000/market.C_eur2nok, label='Lower limit: 0.78 x spot', color='grey')
+        ax1.set_ylabel("Bidding price (€/MW)")
+        ax1.set_xlabel("Spot price (NOK/MW)")
+        ax1.set_xlim([-0.5, 4.5])
+        ax1.legend()
+
+        ax2.scatter(spot_prices[idx], mfrr_prices_dn[idx], color='red', label='Clearing proce down', s=0.1)
+        ax2.plot(line_x, line_x * 0.9*1000/market.C_eur2nok, label='Upper limit: 0.9 x spot', color='grey')
+        ax2.set_ylabel("Bidding price (€/MW)")
+        ax2.set_xlabel("Spot price (NOK/MW)")
+        ax2.set_xlim([-0.5, 4.5])
+        ax2.legend()
+
+
+        filename = "data_analysis_spot_mfrr_prices"
+        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+       
 
 
     def save_mpc_plots(self):

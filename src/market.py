@@ -32,6 +32,11 @@ class Market:
     opt_prices_up: np.array
     opt_prices_dn: np.array
 
+    spot_prices:    np.array
+    mfrr_prices_up: np.array
+    mfrr_prices_dn: np.array
+    timestamps: np.array
+
     n_given_bids = 2            # Number of time intervals with previously submitted bids
     n_given_activations = 1     # Number of time intervals with received activations
 
@@ -167,12 +172,28 @@ class Market:
             try:
                 with open(analysis_file, 'r') as file:
                     analysis_data = json.load(file)
+                
                 # Load means and covariance matrix
                 self.price_means = pd.Series(analysis_data["means"])
                 self.price_cov = np.array(analysis_data["covariance_matrix"])
+                
+                # Load additional data arrays into a DataFrame
+                merged_data = pd.DataFrame({
+                    "Timestamp": pd.to_datetime(analysis_data["Timestamp"]),
+                    "Spot Price": analysis_data["spot_prices"],
+                    "Up Price": analysis_data["up_prices"],
+                    "Down Price": analysis_data["down_prices"]
+                })
+                
+                self.spot_prices = merged_data['Spot Price']
+                self.mfrr_prices_up = merged_data['Up Price']
+                self.mfrr_prices_dn = merged_data['Down Price']
+                self.timestamps = merged_data['Timestamp']
+                self.merged_data = merged_data
+
             except Exception as e:
                 print(f"Error loading JSON file: {e}")
-                return -1  # Indicate an error
+                # return -1  # Indicate an error
         else:
             print("Performing price analysis as no precomputed data found.")
             # Paths to CSV files
@@ -204,6 +225,11 @@ class Market:
                 # Save results
                 self.price_means = means
                 self.price_cov = covariance_matrix
+                self.spot_prices = np.array(merged_data['Spot Price'])
+                self.mfrr_prices_up = np.array(merged_data['Up Price'])
+                self.mfrr_prices_dn = np.array(merged_data['Down Price'])
+                self.timestamps = merged_data['Timestamp']
+                self.merged_data = merged_data
 
                 # Ensure the directory exists
                 os.makedirs(self.config.data_path, exist_ok=True)
@@ -211,7 +237,11 @@ class Market:
                     with open(analysis_file, 'w') as file:
                         json.dump({
                             "means": self.price_means.to_dict(),
-                            "covariance_matrix": self.price_cov.tolist()
+                            "covariance_matrix": self.price_cov.tolist(),
+                            "Timestamp": merged_data['Timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S').tolist(),
+                            "spot_prices": self.spot_prices.tolist(),
+                            "up_prices": self.mfrr_prices_up.tolist(),
+                            "down_prices": self.mfrr_prices_dn.tolist()
                         }, file)
                     print("Price analysis data saved to JSON file.")
                 except Exception as e:

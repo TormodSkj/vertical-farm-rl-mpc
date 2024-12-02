@@ -62,7 +62,7 @@ def test_phot_curve():
         c_resp_sht = 3.47e-7    #Maintenance respiration coeff for the shoot
         c_resp_rt = 1.16e-7     #Maintenance respiration coeff for the  root
         c_e = 17e-6             #Light use effiiency at high CO2 concentrations
-        rho_c = 1.893           #Density of co2
+        rho_c = 1.893e-3        #Density of co2
         c_car_1 = -1.32e-5      #\
         c_car_2 = 5.94e-4       # } Carboxylation resistance 2nd order approximation coefficients
         c_car_3 = -2.64e-3      #/
@@ -102,7 +102,7 @@ def test_phot_curve():
         # x_LI_dot = PPFD*1e-6
 
         alpha_nr = 0.927
-        slope = alpha_nr
+        slope = alpha_nr*alpha
         A_sat = f_sat
         theta = 0.9
         curve = theta
@@ -115,23 +115,32 @@ def test_phot_curve():
         phot_rate = (term1 - term2) / (2 * curve)
         light_rate = u_light
 
-        return phot_rate
+        curve_nr = 0.9
+        f_phot_max_nr = (alpha*PPFD + f_sat - np.sqrt((alpha*PPFD + f_sat)**2 - 4*curve_nr*alpha*PPFD*f_sat))/(2*curve_nr)
+
+        return f_phot_max, f_phot_max_nr, phot_rate
     
-    f_list = []
+    f_max, f_max_nr, phot_rate = [], [], []
     u_list = []
     for u in range(400):
         u_list.append(u)
-        f_list.append(f_phot(u))
+        f1, f2, f3 = f_phot(u)
+        f_max.append(f1)
+        f_max_nr.append(f2)
+        phot_rate.append(f3)
 
 
     config = Config()
     
-    plt.plot(u_list, f_list)
+    plt.plot(u_list, f_max, label='f_phot_max')
+    plt.plot(u_list, f_max_nr, label='f_phot_max_nr')
+    plt.plot(u_list, phot_rate, label='f_phot_rate')
     plt.xlabel("PPFD")
     plt.ylabel('Photosynthetic rate')
+    plt.legend()
 
     filename = "Phot_curve"
     foldername = "testing"
     plt.savefig(config.plot_path + foldername + "/" + filename + ".png")    
 
-    assert False
+    # assert False
