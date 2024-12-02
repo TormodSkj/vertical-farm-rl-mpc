@@ -83,7 +83,7 @@ class PlantModel:
     c_resp_sht = 3.47e-7    #Maintenance respiration coeff for the shoot
     c_resp_rt = 1.16e-7     #Maintenance respiration coeff for the  root
     c_e = 17e-6             #Light use effiiency at high CO2 concentrations
-    rho_c = 1.893           #Density of co2
+    rho_c = 1.893e-3           #Density of co2
     c_car_1 = -1.32e-5      #\
     c_car_2 = 5.94e-4       # } Carboxylation resistance 2nd order approximation coefficients
     c_car_3 = -2.64e-3      #/
@@ -93,9 +93,10 @@ class PlantModel:
     c_d = 0.05              #Dry matter content
     PCD = 25                #Plant crop density
     c_fl = 7.43e-4          # Growth loss due to fluctuations in light
+    curve_nr = 0.9
 
 
-    def derivative(self, x: ca.MX.sym, u: ca.MX.sym, u_last: ca.MX.sym)->ca.MX.sym:
+    def derivative(self, x: ca.MX.sym, u: ca.MX.sym, u_last: ca.MX.sym = [None])->ca.MX.sym:
         
         #Extract state
         x_sdw   = x[0]      # structural dry weight
@@ -126,10 +127,15 @@ class PlantModel:
         f_sat = self.rho_c * (self.co2_in - Gamma)/r_co2                                              #Light saturated vlaue of max photosynthesis
         f_phot_max = alpha * U_par * f_sat / (alpha * U_par + f_sat)                        #Maximum photosynthetic rate
         # f_phot_max = f_phot_max * ca.exp(-ca.power(self.c_fl*(PPFD - PPFD_last), 2))
+        
+        f_phot_max_nr = (alpha*PPFD + f_sat - ca.sqrt(epsilon + ca.power(alpha*PPFD + f_sat, 2) - 4*self.curve_nr*alpha*PPFD*f_sat))/(2*self.curve_nr)
+        
         f_phot = f_phot_max * CAC                                                           #Gross canopy photosynthesis
         f_resp = (self.c_resp_sht*(1-c_T) + self.c_resp_rt*c_T)*x_sdw * self.c_Q_10_gr**((T_crop-25)/10)   #Maintenance respiration rate
         # x_dw_plant = (x_sdw + x_nsdw) / self.PCD                                                 #X dont worry plant <3
         # x_fw_sht = x_dw_plant * (1-c_T)/self.c_d                                                 #Fresh weight per plant
+
+
 
         #Derivatives
         x_sdw_dot = r_gr * x_sdw
@@ -354,7 +360,7 @@ class BatteryModel:
 
     title  = "Battery"
     labels = ["State of charge"]
-    x_unit = "Charge level"
+    x_unit = "Stored energy (kWh)"
     u_unit = "Charge/Discharge"
 
 
