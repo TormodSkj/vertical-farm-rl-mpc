@@ -4,6 +4,7 @@ from controller import Controller
 from model import *
 from market import Market
 from simulator import Simulator
+from utils import *
 
 class Plotter():
 
@@ -182,6 +183,28 @@ class Plotter():
 
             filename = "bidding_activations"
             plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+
+
+            if 'Bidding' in controller.runs['runs']:
+                ##################################################
+                plt.figure(8, figsize=config.plot_format)
+
+                freshweight_outcomes = generate_freshweight_outcomes(controller, u, b_p_up, b_p_dn, b_a_up, b_a_dn)
+
+                plt.plot(t, x_fw, label="Expected outcome", color='green')
+                plt.plot(t, freshweight_outcomes[0,1:], label="Constant Up-activation", color='blue')
+                plt.plot(t, freshweight_outcomes[1,1:], label="Constant Down-activation", color='red')
+                plt.ylabel("Fresh weight (g/plant)")
+                plt.xlabel("Time (days)")
+                plt.title("Edge cases of constant activation")
+                plt.legend()
+
+                filename = "freshweight_all_outcomes"
+                plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+
+
 
         ##################################################
         plt.figure(7, figsize=config.plot_format)

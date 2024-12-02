@@ -22,10 +22,10 @@ class Market:
     price_means: np.ndarray
     price_cov: np.ndarray
 
-    mu_dn = 30          # € / MW
     mu_up = 50          # € / MW
-    sigma_dn: float     # € / MW
+    mu_dn = 30          # € / MW
     sigma_up: float     # € / MW
+    sigma_dn: float     # € / MW
 
     mean_prices_up: np.array
     mean_prices_dn: np.array
@@ -66,7 +66,7 @@ class Market:
             'bidding zone'                  : self.bidding_zone,
             'eur to nok'                    : self.C_eur2nok,
             'Avg activation price up'       : self.price_means.iloc[1],
-            'Avg activation price down'     : self.price_means.iloc[2],
+            'Avg activation price down'     : self.price_means.iloc[2],          
             'Cond covariance spot - up'     : conditional_variance_up,
             'Cond covariance spot - Down'   : conditional_variance_dn,
             }

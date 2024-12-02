@@ -578,7 +578,17 @@ class Controller():
 
             print(f'BIDDING REPORT: \n{generate_table(bidding_data, header = bidding_header)}\n')
 
-        
+
+
+        market_data = [
+            ['Clearing price mean', np.average(self.market.mean_prices_up), np.average(self.market.mean_prices_dn)],
+            ['Clearing price standard deviation', self.market.sigma_up, self.market.sigma_dn], 
+        ]
+        market_header = ['', 'Up-regulation', 'Down-regulation']
+
+        print(f'MARKET REPORT: \n{generate_table(market_data, header = market_header)}\n')
+
+
         # Print solve times
         for run in self.runs['runs']:
             minutes, seconds = divmod(self.runs['runs'][run]['metrics']['elapsed_time'], 60)

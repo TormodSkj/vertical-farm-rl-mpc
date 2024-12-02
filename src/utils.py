@@ -259,3 +259,43 @@ def conditional_covariance(cov_matrix):
     
     return np.array([cond_cov_up, cond_cov_down])
 
+
+
+
+def generate_freshweight_outcomes(controller, u, b_p_up, b_p_dn, b_a_up, b_a_dn):
+
+    model = controller.model
+    x_init = model.x_init
+    N = controller.N
+    dt = controller.dt
+
+    activation_th = 1e-2        # lower limit for reasonable activation chance: 1%
+    # volume_th = 1e-3            # lower limit for valid bid: 0.001 MW
+    # th = activation_th * volume_th
+
+    b_a_up_filtered = np.where(b_a_up>activation_th, 1, 0)
+    b_a_dn_filtered = np.where(b_a_up>activation_th, 1, 0)
+
+    u_tilde_up = 2*1000*np.multiply(b_p_up, b_a_up)/model.C_conv_PPFD
+    u_tilde_dn = 2*1000*np.multiply(b_p_dn, b_a_dn)/model.C_conv_PPFD
+    
+    u_up = u - u_tilde_up
+    u_dn = u + u_tilde_dn
+
+    x_up = np.zeros((model.nx, N+1))
+    x_dn = np.zeros((model.nx, N+1))
+    x_up[:,0] = np.array(x_init)
+    x_dn[:,0] = np.array(x_init)
+    
+    for k in range(N):
+        x_up[:,k+1] = x_up[:,k] + dt*np.array(model.derivative(x_up[:,k], [u_up[k]])).flatten()
+        x_dn[:,k+1] = x_dn[:,k] + dt*np.array(model.derivative(x_dn[:,k], [u_dn[k]])).flatten()
+
+
+    fw_up = np.array(model.freshweight(x_up)).flatten()
+    fw_dn = np.array(model.freshweight(x_dn)).flatten()
+
+    fw = np.vstack((fw_up, fw_dn))
+    
+    return fw
+
