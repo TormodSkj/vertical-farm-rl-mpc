@@ -6,6 +6,8 @@ class Config():
     sim_path:   str
     sim_name:   str
     data_path:  str
+    data_analysis_path: str
+    output_path: str
 
     plot_file_type: str
     plot_format = (10, 6)
@@ -13,10 +15,13 @@ class Config():
     spotprice_data_path: str
     mfrr_data_path: str
 
-    def __init__(self, simulation_name="custom", filetype="pdf"):
+    seed: int
+
+    def __init__(self, simulation_name="custom", filetype="pdf", seed = 1133):
 
         self.sim_name = simulation_name
         self.plot_file_type = filetype
+        self.seed = seed
 
         # Get project root path
         self.path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..')) + "/"
@@ -38,4 +43,8 @@ class Config():
         # Path for data
         self.data_analysis_path = os.path.join(self.path, "data_analysis/")
         os.makedirs(self.data_analysis_path, exist_ok=True)  # Ensure simulations folder exists
+
+        # Path for data
+        self.output_path = os.path.join(self.path, "output/")
+        os.makedirs(self.output_path, exist_ok=True)  # Ensure simulations folder exists
 

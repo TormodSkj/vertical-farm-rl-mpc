@@ -299,3 +299,76 @@ def generate_freshweight_outcomes(controller, u, b_p_up, b_p_dn, b_a_up, b_a_dn)
     
     return fw
 
+
+
+def empirical_cdf(data, bins=100):
+    """
+    Compute the empirical CDF for the given data.
+    Parameters:
+        data (array-like): Input data
+        bins (int): Number of bins to use
+    Returns:
+        sorted_data (numpy array): Sorted original data (inverse CDF)
+        cdf (numpy array): CDF values corresponding to sorted data
+    """
+    # Create bins for histogram
+    hist, bin_edges = np.histogram(data, bins=bins, density=True)
+    cdf = np.cumsum(hist) / np.sum(hist)  # Normalize cumulative sum to [0, 1]
+    
+    # Use bin midpoints to represent the data points
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    return bin_centers, cdf
+
+
+
+def generate_samples_from_cdf(original_data, num_samples, seed):
+    """
+    Generate random samples similar to the original distribution using inverse CDF sampling.
+    Parameters:
+        original_data (array-like): Input data for CDF
+        num_samples (int): Number of samples to generate
+        bins (int): Number of bins for the empirical CDF
+    Returns:
+        synthetic_samples (numpy array): Random samples similar to the original data
+    """
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    # Compute the empirical CDF
+    bins = int(max(original_data))
+    bin_centers, cdf = empirical_cdf(original_data, bins)
+    
+    # Generate random uniform samples and sort them
+    # uniform_samples = np.sort(np.random.uniform(0, 1, num_samples))
+    uniform_samples = np.random.uniform(0, 1, num_samples)
+    
+    # Interpolate inverse CDF
+    synthetic_samples = np.interp(uniform_samples, cdf, bin_centers)
+    return synthetic_samples
+
+
+
+def generate_weighted_samples(values, probabilities, n, seed=None):
+    """
+    Generate samples from a weighted distribution.
+    
+    Parameters:
+        values (list or array-like): The values of the weighted distribution.
+        probabilities (list or array-like): The probabilities for each value.
+        n (int): Number of samples to generate.
+        seed (int, optional): Seed for reproducibility.
+        
+    Returns:
+        numpy array: Array of generated samples.
+    """
+    # Check that probabilities sum to 1
+    if not np.isclose(sum(probabilities), 1):
+        raise ValueError("Probabilities must sum to 1.")
+    
+    if seed is not None:
+        np.random.seed(seed)
+    
+    # Generate samples using np.random.choice
+    samples = np.random.choice(values, size=n, p=probabilities)
+    return samples

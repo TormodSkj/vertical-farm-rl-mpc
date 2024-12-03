@@ -5,6 +5,7 @@ from model import *
 from market import Market
 from simulator import Simulator
 from utils import *
+import scipy.stats as stats
 
 class Plotter():
 
@@ -219,6 +220,39 @@ class Plotter():
 
 
 
+    def plot_random_activations(self, m: int):
+
+        simulator = self.simulator
+        controller = self.controller
+        market = controller.market
+        config = self.config
+        foldername = self.foldername
+
+
+        t = controller.t
+        fershweights = simulator.simulate_random_activation(self.controller, m)
+
+
+        ##################################################
+        plt.figure(31, figsize=config.plot_format)
+
+        for case in range(fershweights.shape[0]):
+            plt.step(t, fershweights[case,:], color='green', alpha=0.2)
+        plt.axhline(y=controller.model.Final_fw_sht, color='gray', linestyle=':', label="Required Freshweight (g/plant)")
+        plt.ylabel("Fresh weight (g/plant)")
+        plt.xlabel("Time (days)")
+        plt.title(f'Simulated {m} different cases of plausible activations')
+        # plt.legend()
+
+
+        filename = "random_activations"
+        plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+
+
+
+
+
     def plot_spot_mfrr_prices(self):
 
         config = self.config
@@ -246,7 +280,7 @@ class Plotter():
 
         line_x = np.array([min(spot_prices), max(spot_prices)])
 
-        plt.figure(1, figsize=config.plot_format)
+        plt.figure(20, figsize=config.plot_format)
 
         # plt.step(timestamps, spot_prices*1000/market.C_eur2nok, label="Spot price")
         plt.step(timestamps, mfrr_prices_up, label="Clearing price up", color='blue', alpha=opacity)
@@ -269,8 +303,8 @@ class Plotter():
         plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
 
-         ###########################################################333
-        plt.figure(3, figsize=config.plot_format)
+         ###########################################################
+        plt.figure(21, figsize=config.plot_format)
 
         # plt.step(timestamps, spot_prices_eur, label="Spot price", color='grey', linestyle=':')
         plt.step(timestamps, mfrr_prices_up - spot_prices_eur, label="Clearing price up", color='blue')
@@ -284,8 +318,54 @@ class Plotter():
         plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
 
+        ###########################################################
+        plt.figure(22, figsize=config.plot_format)
+
+        n_bins = 100
+        N_data_points = len(mfrr_prices_up)
+
+        x_up = np.linspace(market.mu_up-3*market.sigma_up,market.mu_up+3*market.sigma_up, 1000)
+        x_dn = np.linspace(market.mu_dn-3*market.sigma_dn,market.mu_dn+3*market.sigma_dn, 1000)
+        # norm_fac_up = N_data_points*market.sigma_up
+        # norm_fac_dn = N_data_points*market.sigma_dn
+
+        # plt.step(timestamps, spot_prices_eur, label="Spot price", color='grey', linestyle=':')
+        plt.hist(mfrr_prices_up, label="Clearing price up", color='blue', alpha=0.4, bins=n_bins, density=True)
+        plt.hist(mfrr_prices_dn, label="Clearing price down", color='red', alpha=0.4, bins=n_bins, density=True)
+        plt.plot(x_up, stats.norm.pdf(x_up, market.mu_up, market.sigma_up), label="Estimated Up-price distribution", color='blue')
+        plt.plot(x_dn, stats.norm.pdf(x_dn, market.mu_dn, market.sigma_dn), label="Estimated Down-price distribution", color='red')
+        # plt.ylabel("")
+        plt.xlabel("Bidding prices (€/MW)")
+        plt.title("Clearing prices histogram normalized")
+        plt.legend()
+
+        filename = "data_analysis_price_hist"
+        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+        ###########################################################
+        plt.figure(24, figsize=config.plot_format)
+
+        x_up = np.linspace(market.mu_up-3*market.sigma_up,market.mu_up+3*market.sigma_up, 1000)
+        x_dn = np.linspace(market.mu_dn-3*market.sigma_dn,market.mu_dn+3*market.sigma_dn, 1000)
+
+        rand_prices_up = generate_samples_from_cdf(mfrr_prices_up, 8668, market.seed)
+        rand_prices_dn = generate_samples_from_cdf(mfrr_prices_dn, 8668, market.seed)
+
+        plt.hist(rand_prices_up, label="Clearing price up", color='blue', alpha=0.4, bins=n_bins, density=True)
+        plt.hist(rand_prices_dn, label="Clearing price down", color='red', alpha=0.4, bins=n_bins, density=True)
+        plt.plot(x_up, stats.norm.pdf(x_up, market.mu_up, market.sigma_up), label="Estimated Up-price distribution", color='blue')
+        plt.plot(x_dn, stats.norm.pdf(x_dn, market.mu_dn, market.sigma_dn), label="Estimated Down-price distribution", color='red')
+        # plt.ylabel("")
+        plt.xlabel("Bidding prices (€/MW)")
+        plt.title("Randomly generated prices normalized")
+        plt.legend()
+
+        filename = "data_analysis_price_hist_sampled"
+        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+
         ################################################################
-        plt.figure(2, figsize=config.plot_format)
+        plt.figure(23, figsize=config.plot_format)
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=config.plot_format, sharex=True)
 
         n = int(len(spot_prices)/10)

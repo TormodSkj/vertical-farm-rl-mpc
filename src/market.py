@@ -43,10 +43,10 @@ class Market:
     specs: dict
 
 
-    def __init__(self, config, time_horizon, seed, bidding_zone, date):
+    def __init__(self, config, time_horizon, bidding_zone, date):
         self.config = config
         self.N = time_horizon * QUARTER_HOURS_PER_DAY
-        self.seed = seed
+        self.seed = config.seed
         self.bidding_zone = bidding_zone
         self.date = date
 
@@ -304,6 +304,19 @@ class Market:
         return 0
 
 
+
+    def generate_activation_demands(self, N, seed):
+        '''
+        Generates a list of ints where 0 means no demand for activation, -1 means down activation and 1 means up
+        '''
+
+        D_up = self.Pr_D_up()
+        D_dn = self.Pr_D_dn()
+        no_D = 1 - D_up - D_dn
+
+        activation_demands = utils.generate_weighted_samples([-1, 0, 1], [D_dn, no_D, D_up], N, seed)
+
+        return activation_demands
 
     
     

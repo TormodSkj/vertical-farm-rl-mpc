@@ -50,7 +50,7 @@ class Controller():
                  import_file = '', warm_start = True, calculate_fw = True):
         self.surpress_output = surpress_output
         self.warm_start = warm_start
-        self.calculate_fw = True
+        self.calculate_fw = calculate_fw
         self.T = timehorizon   
         self.N = timehorizon * QUARTER_HOURS_PER_DAY
         self.dt = SECONDS_PER_QUARTER_HOUR   
@@ -145,8 +145,8 @@ class Controller():
 
         # Initialize cost function and constraints
         J = self.model.bidding_objective_function(self, X, U, B)\
-                       + self.model.terminal_cost(self, X, U, Eps)\
-                       + self.model.fluctuating_light_cost(self, U) # Cost function
+                       + self.model.terminal_cost(self, X, U, Eps)#\
+                       #+ self.model.fluctuating_light_cost(self, U) # Cost function
 
 
         g_eq, g_ineq = [], []
@@ -234,8 +234,8 @@ class Controller():
         Eps = ca.MX.sym('Eps', 1, 1)                    # Slack variable for feasibility
 
         J = self.model.baseline_obj_function(self, X, U)\
-                     + self.model.terminal_cost(self, X, U, Eps)\
-                     + self.model.fluctuating_light_cost(self, U)         # Cost function
+                     + self.model.terminal_cost(self, X, U, Eps)#\
+                    # + self.model.fluctuating_light_cost(self, U)         # Cost function
 
         # Get bounds
         lbx, ubx = self.model.get_state_bounds(self)
@@ -341,7 +341,7 @@ class Controller():
         self.save_run('Rigid', sol, x, u)
         self.u_base = u
         self.x_base = x
-        self.model.Final_fw_sht = float(self.model.freshweight(x[:,-1]))
+        if self.calculate_fw: self.model.Final_fw_sht = float(self.model.freshweight(x[:,-1]))
         # self.runs['specs']['controller']['baseline'] = 'rigid'
 
         if not self.surpress_output: print('Generated rigid baseline')
@@ -511,7 +511,7 @@ class Controller():
         # Scale from percentage based schedule to light intensity
         u_base = self.model.C_PPFD_max/100*np.repeat(light_schedule, 4)     
 
-        assert len(u_base) == self.N, f"Imported light schedule not correct length. Len: {len(u_base)}, N: {N}"
+        assert len(u_base) >= self.N, f"Imported light schedule too short. Len: {len(u_base)}, N: {N}"
 
         x0 = self.x_init
         X = np.zeros((self.model.nx, N+1))
@@ -523,7 +523,7 @@ class Controller():
 
         sol ={}
         x = X
-        u = u_base
+        u = u_base[:N]
 
         end_time = time.time()
         elapsed_time = end_time - start_time
@@ -537,6 +537,32 @@ class Controller():
 
         if not self.surpress_output: print('Imported light schedule')
         return 0
+
+
+    def export_intensity_to_json(self, run: str):
+
+        u = self.runs['runs'][run]['timeseries']['u']
+
+        u_scaled = 100 * u / self.model.C_PPFD_max
+
+        intensity_schedule_dict = {'Light intensity': u_scaled}
+        # Filepath
+        sim_name = self.config.sim_name
+        inty_save_path = os.path.join(self.config.output_path, f"{sim_name}_inty_schedule.json")
+
+        # Ensure the target json file exists
+        os.makedirs(self.config.sim_path, exist_ok=True)
+
+        # Convert the entire runs dictionary
+        intensity_schedule = convert_np_arrays_to_lists(intensity_schedule_dict)
+
+        # Save the data for all runs
+        with open(inty_save_path, "w") as json_file:
+            json.dump(intensity_schedule, json_file, indent=4)
+
+
+        
+
 
 
 
