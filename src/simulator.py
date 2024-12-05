@@ -50,30 +50,35 @@ class Simulator():
         # 
         # Filter out accepted bids
         # Simulate the plant now with only the accepted bids
-        
+        market = controller.market
         N = controller.N
         dt = controller.dt
         seed = None     # Set to None for random 
 
         u_base = controller.runs['runs']['Baseline']['timeseries']['u']
 
-        if 'Bidding' not in controller.runs['runs']: 
-            print('Cannot perform random bid activations due to lack of bidding data')
-            return 1
+        assert 'Bidding' in controller.runs['runs'], 'Unable to perform random bid activations due to lack of bidding data'
         
+        # Get bidding data
         bidding_vol_up = controller.runs['runs']['Bidding']['timeseries']['P_up']
         bidding_vol_dn = controller.runs['runs']['Bidding']['timeseries']['P_dn']
         bidding_price_up = controller.runs['runs']['Bidding']['timeseries']['C_up']
         bidding_price_dn = controller.runs['runs']['Bidding']['timeseries']['C_dn']
 
+        # Preallocation
         freshweights = np.zeros((m, N))
 
         for case in range(m):
 
             activation_demands = controller.market.generate_activation_demands(N, seed)
-            clearing_prices_up = generate_samples_from_cdf(controller.market.mfrr_prices_up, N, seed)
-            clearing_prices_dn = generate_samples_from_cdf(controller.market.mfrr_prices_dn, N, seed)
+            # clearing_prices_up = generate_samples_from_cdf(controller.market.mfrr_prices_up[:N], N, seed)  #TODO REMOVE check if we get better performance if we use january-data  
+            # clearing_prices_dn = generate_samples_from_cdf(controller.market.mfrr_prices_dn[:N], N, seed)   #TODO REMOVE
 
+            mu_up = conditional_expectation(controller.p_spot, market.price_means, market.price_cov)[0]
+            mu_dn = conditional_expectation(controller.p_spot, market.price_means, market.price_cov)[1]
+
+            clearing_prices_up = np.random.normal(loc=mu_up, scale=market.sigma_up)
+            clearing_prices_dn = np.random.normal(loc=mu_dn, scale=market.sigma_dn)
 
             u = u_base + 1000*(np.where(np.logical_and(activation_demands == -1, bidding_price_dn < clearing_prices_dn), bidding_vol_dn, 0)\
                              - np.where(np.logical_and(activation_demands == 1, bidding_price_up < clearing_prices_up), bidding_vol_up, 0))/controller.model.C_conv_PPFD

@@ -5,6 +5,9 @@ import numpy as np
 import json
 import hashlib
 import pandas as pd
+import casadi as ca
+import scipy as sp
+
 
 
 def plotting(t, timeseries, filename, folder = 'plots'):
@@ -372,3 +375,152 @@ def generate_weighted_samples(values, probabilities, n, seed=None):
     # Generate samples using np.random.choice
     samples = np.random.choice(values, size=n, p=probabilities)
     return samples
+
+
+
+
+def calculate_light_schedule_variance(controller, bidding_volumes_up, bidding_volumes_dn, bidding_prices_up, bidding_prices_dn):
+
+    market = controller.market
+    model = controller.model
+    N = controller.N
+    p_spot = controller.p_spot
+
+
+    u_var = np.zeros((1,N))
+
+    for k in range(2,N):        # Don't count the first 2 bids
+
+
+        p_up = market.Pr_a_up(p_spot[k], bidding_prices_up[k])  # Bernoulli constant p for u_tilde_up
+        p_dn = market.Pr_a_dn(p_spot[k], bidding_prices_dn[k])  # Bernoulli constant p for u_tilde_down
+        E_u_up = 1000 * bidding_volumes_up[k]/model.C_conv_PPFD * p_up
+        E_u_dn = 1000 * bidding_volumes_dn[k]/model.C_conv_PPFD * p_dn
+        
+        var_u_up = (1000 * bidding_volumes_up[k]/model.C_conv_PPFD)**2 * p_up * (1-p_up)
+        var_u_dn = (1000 * bidding_volumes_dn[k]/model.C_conv_PPFD)**2 * p_dn * (1-p_dn)
+
+        u_var[:,k] = var_u_up + var_u_dn - 2*E_u_up*E_u_dn
+
+        assert not (u_var[:,k]) < -1e-6, 'Variance cannot be negative'
+
+    return u_var.flatten()
+
+
+
+def calculate_freshweight_interval(controller, u_bid, b_p_up, b_p_dn, b_c_up, b_c_dn):
+    '''
+    Generates a timeseries interval for one standard deviation from u_base
+    '''
+
+    u_var = calculate_light_schedule_variance(controller, b_p_up, b_p_dn, b_c_up, b_c_dn)
+
+    model = controller.model
+    N = controller.N
+    dt = controller.dt
+    
+    u_sd = np.sqrt(u_var)       # Get standard deviation from variance
+
+    # upper and lower bounds on u defining the interval
+    u_ub = np.maximum(np.minimum(u_bid + u_sd, model.C_PPFD_max), 0)
+    u_lb = np.maximum(np.minimum(u_bid - u_sd, model.C_PPFD_max), 0)
+
+    X_ub = np.zeros((model.nx, N+1))
+    X_lb = np.zeros((model.nx, N+1))
+    X_ub[:,0] = model.x_init
+    X_lb[:,0] = model.x_init
+    for k in range(N):
+        #Forward euler
+        X_ub[:,k+1] = X_ub[:,k] + dt*np.array(controller.model.derivative(X_ub[:,k], np.array([u_ub[k]]))).reshape(1, -1)
+        X_lb[:,k+1] = X_lb[:,k] + dt*np.array(controller.model.derivative(X_lb[:,k], np.array([u_lb[k]]))).reshape(1, -1)
+
+    return np.vstack((np.array(model.freshweight(X_ub[:,1:])).flatten(),
+                      np.array(model.freshweight(X_lb[:,1:])).flatten()))
+
+
+
+
+def propagate_process_covariance(controller, x_bid, u_bid, bidding_volumes_up, bidding_volumes_dn, bidding_prices_up, bidding_prices_dn):
+    model = controller.model
+    market = controller.market
+    N = controller.N
+    dt = controller.dt
+    p_spot = controller.p_spot
+
+    # State dimensions
+    x0 = ca.DM(model.x_init)  # Initial state
+    P = 0 * ca.DM.eye(model.nx)  # Initial covariance matrix
+    C = ca.DM([1,1,0]).T
+
+    # Arrays to store results
+    state_covariances = [P]
+    dw_variances = np.zeros((1, N+1))
+    skewness_values = np.zeros((1, N+1))  # To store skewness
+    dw_variances[:,0] = float(C @ P @ C.T)
+
+    for k in range(N):
+        # Input uncertainty terms
+        a, b = 1000*bidding_volumes_up[k]/model.C_conv_PPFD, 1000*bidding_volumes_dn[k]/model.C_conv_PPFD
+        p_a = market.Pr_a_up(p_spot[k], bidding_prices_up[k])
+        p_b = market.Pr_a_dn(p_spot[k], bidding_prices_dn[k])
+
+        # Expected values of u_a and u_b
+        E_u_a = a * p_a
+        E_u_b = b * p_b
+        E_u = u_bid[k] + E_u_a + E_u_b
+
+        # Variance of u
+        Var_u_a = a**2 * p_a * (1 - p_a)
+        Var_u_b = b**2 * p_b * (1 - p_b)
+        Var_u = Var_u_a + Var_u_b - 2 * (E_u_a * E_u_b)
+
+        # # Skewness of u
+        # Skew_u_a = -((1 - 2*p_a) / (np.sqrt(Var_u_a) if Var_u_a > 0 else 1e-6) if Var_u_b>1 else 0)
+        # Skew_u_b = ((1 - 2*p_b) / (np.sqrt(Var_u_b) if Var_u_b > 0 else 1e-6) if Var_u_b>1 else 0)
+        # Skew_u = Skew_u_a + Skew_u_b  # Approximate combined skewness
+
+        # # Store skewness for measurement
+        # skewness_values[:, k+1] = Skew_u
+
+        if Var_u < 0: Var_u = 0
+        Q = ca.DM([float(Var_u)])  # Input variance matrix
+
+        # Linearize the process model
+        x = ca.MX.sym('x', model.nx)
+        u = ca.MX.sym('u')
+        x_dot = model.derivative(x, u)
+        A = ca.jacobian(x_dot, x)
+        G = ca.jacobian(x_dot, u)
+
+        # Evaluate A and G
+        A_cont_eval = ca.Function('A_cont', [x, u], [A])(x_bid[:,k], E_u)
+        G_cont_eval = ca.Function('G_cont', [x, u], [G])(x_bid[:,k], E_u)
+
+        # Discretize A and compute G_discrete
+        A_discrete = sp.linalg.expm(A_cont_eval.full() * dt)
+        if np.linalg.cond(A_cont_eval.full()) < 1 / np.finfo(float).eps:
+            G_discrete = np.linalg.solve(A_cont_eval.full(), (A_discrete - np.eye(model.nx))) @ G_cont_eval.full()
+        else:
+            G_discrete = np.zeros_like(G_cont_eval.full())
+            for i in range(10):
+                tau = i * dt / 10
+                expm_partial = sp.linalg.expm(A_cont_eval.full() * tau)
+                G_discrete += expm_partial @ G_cont_eval.full() * dt / 10
+
+        A_discrete = ca.DM(A_discrete)
+        G_discrete = ca.DM(G_discrete)
+
+        # Propagate covariance
+        P = A_discrete @ P @ A_discrete.T + G_discrete @ Q @ G_discrete.T
+        state_covariances.append(P)
+        dw_variances[:, k+1] = float(C @ P @ C.T)
+
+    # # Adjust confidence intervals with skewness (Cornish-Fisher expansion)
+    # z = 1.96  # For 95% confidence
+    # skew_adjustment = skewness_values[:, 1:].flatten() * (z**2 - 1) / 6
+    # z_upper = z + skew_adjustment
+    # z_lower = z - skew_adjustment
+
+    fw_variances = ((1-model.c_T)/(model.c_d * model.PCD))**2 * dw_variances[:, 1:].flatten()
+
+    return fw_variances #, z_upper, z_lower

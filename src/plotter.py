@@ -186,29 +186,76 @@ class Plotter():
             plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
 
+            # ##################################################
+            # plt.figure(8, figsize=config.plot_format)
 
-            if 'Bidding' in controller.runs['runs']:
-                ##################################################
-                plt.figure(8, figsize=config.plot_format)
+            # freshweight_outcomes = generate_freshweight_outcomes(controller, u, b_p_up, b_p_dn, b_a_up, b_a_dn)
 
-                freshweight_outcomes = generate_freshweight_outcomes(controller, u, b_p_up, b_p_dn, b_a_up, b_a_dn)
+            # plt.plot(t, x_fw, label="Expected outcome", color='green')
+            # plt.plot(t, freshweight_outcomes[0,1:], label="Constant Up-activation", color='blue')
+            # plt.plot(t, freshweight_outcomes[1,1:], label="Constant Down-activation", color='red')
+            # plt.ylabel("Fresh weight (g/plant)")
+            # plt.xlabel("Time (days)")
+            # plt.title("Edge cases of constant activation")
+            # plt.legend()
 
-                plt.plot(t, x_fw, label="Expected outcome", color='green')
-                plt.plot(t, freshweight_outcomes[0,1:], label="Constant Up-activation", color='blue')
-                plt.plot(t, freshweight_outcomes[1,1:], label="Constant Down-activation", color='red')
-                plt.ylabel("Fresh weight (g/plant)")
-                plt.xlabel("Time (days)")
-                plt.title("Edge cases of constant activation")
-                plt.legend()
+            # filename = "freshweight_all_outcomes"
+            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
-                filename = "freshweight_all_outcomes"
-                plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
+            ######################################################
+
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=config.plot_format)
+
+            ax1.scatter(b_p_up, b_a_up, color='blue', s=5)
+            ax1.set_ylabel("Projected activation chance")
+            ax1.set_xlabel("Bid volume (MW)")
+            ax1.title.set_text('Up-regulation bids')
+
+            ax2.scatter(b_p_dn, b_a_dn, color='red', s=5)
+            ax2.set_ylabel("Projected activation chance")
+            ax2.set_xlabel("Bid volume (MW)")
+            ax2.title.set_text('Down-regulation bids')
+            
+            fig.suptitle("Bidding Prices and Spot Prices in €/MW")
+
+            # Adjust layout to avoid overlap
+            fig.tight_layout(rect=[0, 0.03, 1, 0.95])  # Leaves space for the title
+
+
+            filename = "bidding_scatter_plots"
+            plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+
+            ######################################################
+
+            plt.figure(figsize=config.plot_format)
+            
+            u_bid = controller.runs['runs']['Bidding']['timeseries']['u']
+            x_bid = controller.runs['runs']['Bidding']['timeseries']['x']
+            # fw_interval = calculate_freshweight_interval(controller, u_bid, b_p_up, b_p_dn, b_c_up, b_c_dn)
+            fw_variance = propagate_process_covariance(controller, x_bid, u_bid, b_p_up, b_p_dn, b_c_up, b_c_dn)
+            fw_sd = np.sqrt(fw_variance)
+            fw = np.array(controller.model.freshweight(x_bid[:,1:])).flatten()
+
+            fw_ub = fw + 1.96*fw_sd
+            fw_lb = fw - 1.96*fw_sd
+
+            # plt.fill_between(t, fw-3*fw_sd, fw+3*fw_sd, color='green', alpha=0.2)
+            # plt.fill_between(t, fw-2*fw_sd, fw+2*fw_sd, color='green', alpha=0.2)
+            plt.fill_between(t, fw_lb, fw_ub, color='green', alpha=0.6)
+            plt.axhline(y=controller.model.Final_fw_sht, color='gray', linestyle=':', label="Required Freshweight (g/plant)")
+            plt.ylabel("Fresh weight (g/plant)")
+            plt.xlabel("Time (days)")
+            plt.title('95% confidence interval of freshweight throughout one growth cycle')
+
+            filename = "freshweight_variance"
+            plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
 
 
         ##################################################
-        plt.figure(7, figsize=config.plot_format)
+        plt.figure(figsize=config.plot_format)
         plt.step(t, market.get_spotprice(), label="Spot price")
         plt.ylabel("Spot price (kr/kWh)")
         plt.xlabel("Time (days)")
@@ -230,14 +277,14 @@ class Plotter():
 
 
         t = controller.t
-        fershweights = simulator.simulate_random_activation(self.controller, m)
+        freshwewights = simulator.simulate_random_activation(self.controller, m)
 
 
         ##################################################
         plt.figure(31, figsize=config.plot_format)
 
-        for case in range(fershweights.shape[0]):
-            plt.step(t, fershweights[case,:], color='green', alpha=0.2)
+        for case in range(freshwewights.shape[0]):
+            plt.plot(t, freshwewights[case,:], color='green', alpha=0.2)
         plt.axhline(y=controller.model.Final_fw_sht, color='gray', linestyle=':', label="Required Freshweight (g/plant)")
         plt.ylabel("Fresh weight (g/plant)")
         plt.xlabel("Time (days)")
@@ -273,7 +320,7 @@ class Plotter():
         window_length = 24*3
         mfrr_prices_up_smoothed = moving_average(mfrr_prices_up, window_length)
         mfrr_prices_dn_smoothed = moving_average(mfrr_prices_dn, window_length)
-        spot_prices_eur_smoothed = moving_average(spot_prices, window_length)
+        spot_prices_eur_smoothed = moving_average(spot_prices_eur, window_length)
 
         opacity = 0.2
         linewidth=1.5
@@ -348,8 +395,8 @@ class Plotter():
         x_up = np.linspace(market.mu_up-3*market.sigma_up,market.mu_up+3*market.sigma_up, 1000)
         x_dn = np.linspace(market.mu_dn-3*market.sigma_dn,market.mu_dn+3*market.sigma_dn, 1000)
 
-        rand_prices_up = generate_samples_from_cdf(mfrr_prices_up, 8668, market.seed)
-        rand_prices_dn = generate_samples_from_cdf(mfrr_prices_dn, 8668, market.seed)
+        rand_prices_up = generate_samples_from_cdf(mfrr_prices_up, 8668, config.seed)
+        rand_prices_dn = generate_samples_from_cdf(mfrr_prices_dn, 8668, config.seed)
 
         plt.hist(rand_prices_up, label="Clearing price up", color='blue', alpha=0.4, bins=n_bins, density=True)
         plt.hist(rand_prices_dn, label="Clearing price down", color='red', alpha=0.4, bins=n_bins, density=True)
