@@ -88,7 +88,8 @@ class Simulator():
             
             for k in range(N):
                 #Forward euler
-                X[:,k+1] = X[:,k] + dt*np.array(controller.model.derivative(X[:,k], np.array([u[k]]))).reshape(1, -1)
+                # X[:,k+1] = X[:,k] + dt*np.array(controller.model.derivative(X[:,k], np.array([u[k]]))).reshape(1, -1)
+                X[:,k+1] = np.array(controller.model.casadi_function()(X[:,k], np.array([u[k]]))).reshape(1, -1)
 
             fw = controller.model.freshweight(X)
         

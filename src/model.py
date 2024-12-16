@@ -145,6 +145,24 @@ class PlantModel:
 
         return ca.vertcat(x_sdw_dot, x_nsdw_dot, x_LI_dot)
     
+    def casadi_function(self, ts=SECONDS_PER_QUARTER_HOUR):
+        states = ca.MX.sym('X', self.nx)
+        controls = ca.MX.sym('U', self.nu)
+        state_time_derivatives = self.derivative(states, controls)
+        f = ca.Function('f', [states, controls], [state_time_derivatives], ['x', 'u'], ['ode'])
+        intg_options = {}
+        ode = {
+            'x': states,
+            'p': controls,
+            'ode': f(states,controls)
+        }
+        intg = ca.integrator('intg', 'rk', ode, 0, ts, intg_options)
+        res = intg(x0=states, p=controls)
+        x_next = res['xf']
+        F = ca.Function('F', [states, controls], [x_next], ['x', 'u_control'], ['x_next'])
+
+        return F
+
 
     def freshweight(self, x):
         x_sdw = x[0]
@@ -233,7 +251,8 @@ class PlantModel:
         # Define the dynamic and control constraints
         for k in range(0,N):
             # Model equalities
-            x_next = X[:, k] + dt*self.derivative(X[:, k], U[k], U[min(k-1, 0)])
+            # x_next = X[:, k] + dt*self.derivative(X[:, k], U[k], U[min(k-1, 0)])
+            x_next = self.casadi_function()(X[:, k], U[k])
             g_eq.append(X[:, k+1] - x_next)
 
 

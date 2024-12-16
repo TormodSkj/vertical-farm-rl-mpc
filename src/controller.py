@@ -326,6 +326,9 @@ class Controller():
             #Forward euler
             dt = self.dt
             X[:,k+1] = X[:,k] + dt*np.array(self.model.derivative(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
+            # X[:,k+1] = np.array(self.model.casadi_function()(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
+
+
 
         sol ={}
         x = X
@@ -520,6 +523,7 @@ class Controller():
             #Forward euler
             dt = self.dt
             X[:,k+1] = X[:,k] + dt*np.array(self.model.derivative(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
+            # X[:,k+1] = np.array(self.model.casadi_function()(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
 
         sol ={}
         x = X

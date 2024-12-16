@@ -8,13 +8,14 @@ from globals import *
 from simulator import Simulator
 
 
-SIM_NAME = "Random_bid_activations"
+SIM_NAME = "rk"
 HORIZON_DAYS = 20
-# FINAL_WEIGHT = 16.8
-# FINAL_WEIGHT = 84
+# FINAL_WEIGHT = 12.8
+# FINAL_WEIGHT = 84             #
+# FINAL_WEIGHT = 36.66          # 7 Days
 # FINAL_WEIGHT = 45
 # FINAL_WEIGHT = 122.57
-FINAL_WEIGHT = 136.7
+FINAL_WEIGHT = 136.7            # 20 Days
 # FINAL_WEIGHT = 117.34
 # FINAL_WEIGHT = 163
 
@@ -60,7 +61,7 @@ def main():
     # simulator.Simulate_mpc()
     # simulator.simulate_random_activation(controller, 1)
 
-    # plotter.plot_random_activations(100)
+    plotter.plot_random_activations(100)
 
     # plotter.save_mpc_plots()
 
