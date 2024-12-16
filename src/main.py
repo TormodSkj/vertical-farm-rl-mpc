@@ -61,7 +61,7 @@ def main():
     # simulator.Simulate_mpc()
     # simulator.simulate_random_activation(controller, 1)
 
-    plotter.plot_random_activations(100)
+    # plotter.plot_random_activations(10)
 
     # plotter.save_mpc_plots()
 
