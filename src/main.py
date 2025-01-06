@@ -8,7 +8,7 @@ from globals import *
 from simulator import Simulator
 
 
-SIM_NAME = "rk"
+SIM_NAME = "results"
 HORIZON_DAYS = 20
 # FINAL_WEIGHT = 12.8
 # FINAL_WEIGHT = 84             #
@@ -33,7 +33,7 @@ def main():
     plant = PlantModel(x_init, FINAL_WEIGHT)
     # plant = Photosynthesis(x_init, FINAL_WEIGHT)
     market = Market(config, HORIZON_DAYS, BIDDING_ZONE, SIMULATION_DATE)
-    controller = Controller(HORIZON_DAYS, plant, market, config, baseline=baseline, search_cache = True, warm_start=False, import_file = import_file, calculate_fw=False)         #Baseline: 'opt' / 'rigid'
+    controller = Controller(HORIZON_DAYS, plant, market, config, baseline=baseline, search_cache = True, warm_start=True, import_file = import_file, calculate_fw=False)         #Baseline: 'opt' / 'rigid'
     
     mpc_controller = Controller(HORIZON_DAYS, plant, market, config, baseline='opt', surpress_output = True)     # Instance of controller used in mpc
     simulator = Simulator(HORIZON_DAYS, plant, market, config, mpc_controller)
@@ -44,19 +44,20 @@ def main():
     # battery_controller.optimize_baseline()
     # battery_controller.optimize_bidding()
 
-    controller.import_baseline()
+    # controller.import_baseline()
     controller.rigid_baseline()
     controller.optimize_baseline()
-    controller.optimize_bidding()
+    # controller.optimize_bidding()
     controller.status_report()
     # controller.export_intensity_to_json('Baseline')
     controller.save_to_json()
 
     plotter = Plotter(config, controller, simulator)
     plotter.save_ocp_plots()
-    # plotter.plot_spot_mfrr_prices()
+    plotter.plot_spot_mfrr_prices() 
 
     # market.optimal_bidding_price_prediction(controller.p_spot)
+    # plotter.plot_price_prediction()
 
     # simulator.Simulate_mpc()
     # simulator.simulate_random_activation(controller, 1)

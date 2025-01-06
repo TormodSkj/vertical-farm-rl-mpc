@@ -288,8 +288,8 @@ class Market:
 
         # Extract solution
         x    = np.array(sol['x'])
-        x_up = x[:N]
-        x_dn = x[N:]
+        x_up = x[::2]  
+        x_dn = x[1::2] 
 
         self.opt_prices_up = x_up
         self.opt_prices_dn = x_dn
