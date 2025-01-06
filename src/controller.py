@@ -12,9 +12,7 @@ from tabulate import tabulate
 from datetime import datetime
 
 class Controller():
-    """The controller is tasked with finding an optimal 
-    bidding strategy while making sure the plant reaches 
-    the required fresh weight mass"""
+    """The controller handles open-loop optimization given a model and a set of constraints."""
 
     surpress_output: bool
     import_file: str
@@ -45,9 +43,10 @@ class Controller():
     u_base:         np.array
     x_base:         np.array
 
-    def __init__(self, timehorizon, plantmodel, market, config, 
-                 baseline = 'opt', surpress_output = False, search_cache = True, 
+    def __init__(self, timehorizon, plantmodel, market, config,
+                 surpress_output = False, search_cache = True, 
                  import_file = '', warm_start = True, calculate_fw = True):
+        
         self.surpress_output = surpress_output
         self.warm_start = warm_start
         self.calculate_fw = calculate_fw
@@ -571,7 +570,9 @@ class Controller():
 
 
     def status_report(self):
-
+        '''
+        Extract and print metrics from the optimization. Outputs metrics in tables. 
+        '''
 
         costs = [self.runs['runs'][run]['metrics']['Costs'] for run in self.runs['runs']]
         earnings = [self.runs['runs'][run]['metrics']['Earnings'] for run in self.runs['runs']]
@@ -593,6 +594,7 @@ class Controller():
         print(f'METRICS DATA: \n{metrics_table}\n')
 
 
+        # Print bidding metrics
         if 'Bidding' in self.runs['runs']:
             bidding_result_up = self.runs['bidding result']['Up-regulation']
             bidding_result_dn = self.runs['bidding result']['Down-regulation']
@@ -609,7 +611,7 @@ class Controller():
             print(f'BIDDING REPORT: \n{generate_table(bidding_data, header = bidding_header)}\n')
 
 
-
+        # Print market metrics
         market_data = [
             ['Clearing price mean', np.average(self.market.mean_prices_up), np.average(self.market.mean_prices_dn)],
             ['Clearing price standard deviation', self.market.sigma_up, self.market.sigma_dn], 
@@ -624,12 +626,4 @@ class Controller():
             minutes, seconds = divmod(self.runs['runs'][run]['metrics']['elapsed_time'], 60)
             print(f"{run} solved in: {int(minutes)} minutes and {seconds:.2f} seconds. ")
         
-
-        # f_opt = bidding_total
-        # f_base = baseline_total
-        # print(f"\nCost of base: {f_base}")
-        # print(f"Cost after bidding: {f_opt}")
-        # print(f"Cost reduction from bidding: {f_base - f_opt}")
-        # print(f"Cost reduction in percentage: {100*(f_base - f_opt)/(f_base)} \n")
-
 

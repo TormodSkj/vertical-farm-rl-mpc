@@ -115,29 +115,27 @@ class PlantModel:
         #Abstractions
         r_gr = x_nsdw / (x_nsdw + x_sdw + epsilon) * self.c_gr_max * self.c_Q_10_gr**((T_crop-20)/10)      #Growth rate
 
-        LAI = self.c_lar * (1-c_T)*x_sdw                                                         #Leaf area index
-        CAC = 1-np.exp(-self.c_k * LAI)                                                          #Cultivation area cover fraction
-        Gamma = self.c_Gamma * self.c_Q_10_Gamma**(T_crop - 20)/10                                    #Co2 compensation point 
-        alpha = self.c_e * (self.co2_in - Gamma)/(self.co2_in + 2*Gamma)                                   #Quantum yield
-        U_par = self.c_p * PPFD                                                                  #Photosynthetically active radiation
-        r_car = 1/(self.c_car_1 * T_crop**2 + self.c_car_2 * T_crop + self.c_car_3)                        #Carboxylation resistance
-        r_bnd = 350*np.sqrt(self.l/self.u_inf) / (LAI + epsilon)                                                  #Boundary layer resistance 
-        r_stm = 60*(1500 + PPFD)/(200 + PPFD)                                               #Stomatal resistance
-        r_co2 = r_bnd + r_stm + r_car                                                       #Canopy resistance 
-        f_sat = self.rho_c * (self.co2_in - Gamma)/r_co2                                              #Light saturated vlaue of max photosynthesis
-        f_phot_max = alpha * U_par * f_sat / (alpha * U_par + f_sat)                        #Maximum photosynthetic rate
-        # f_phot_max = f_phot_max * ca.exp(-ca.power(self.c_fl*(PPFD - PPFD_last), 2))
+        LAI = self.c_lar * (1-c_T)*x_sdw                                                    # Leaf area index
+        CAC = 1-np.exp(-self.c_k * LAI)                                                     # Cultivation area cover fraction
+        Gamma = self.c_Gamma * self.c_Q_10_Gamma**(T_crop - 20)/10                          # Co2 compensation point 
+        alpha = self.c_e * (self.co2_in - Gamma)/(self.co2_in + 2*Gamma)                    # Quantum yield
+        U_par = self.c_p * PPFD                                                             # Photosynthetically active radiation
+        r_car = 1/(self.c_car_1 * T_crop**2 + self.c_car_2 * T_crop + self.c_car_3)         # Carboxylation resistance
+        r_bnd = 350*np.sqrt(self.l/self.u_inf) / (LAI + epsilon)                            # Boundary layer resistance 
+        r_stm = 60*(1500 + PPFD)/(200 + PPFD)                                               # Stomatal resistance
+        r_co2 = r_bnd + r_stm + r_car                                                       # Canopy resistance 
+        f_sat = self.rho_c * (self.co2_in - Gamma)/r_co2                                    # Light saturated vlaue of max photosynthesis
+        f_phot_max = alpha * U_par * f_sat / (alpha * U_par + f_sat)                        # Maximum photosynthetic rate
         
+        # Alternative calculations
+        # f_phot_max = f_phot_max * ca.exp(-ca.power(self.c_fl*(PPFD - PPFD_last), 2))
         # f_phot_max_nr = (alpha*PPFD + f_sat - ca.sqrt(epsilon + ca.power(alpha*PPFD + f_sat, 2) - 4*self.curve_nr*alpha*PPFD*f_sat))/(2*self.curve_nr)
         
-        f_phot = f_phot_max * CAC                                                           #Gross canopy photosynthesis
-        f_resp = (self.c_resp_sht*(1-c_T) + self.c_resp_rt*c_T)*x_sdw * self.c_Q_10_gr**((T_crop-25)/10)   #Maintenance respiration rate
-        # x_dw_plant = (x_sdw + x_nsdw) / self.PCD                                                 #X dont worry plant <3
-        # x_fw_sht = x_dw_plant * (1-c_T)/self.c_d                                                 #Fresh weight per plant
+        f_phot = f_phot_max * CAC                                                           # Gross canopy photosynthesis
+        f_resp = (self.c_resp_sht*(1-c_T) + self.c_resp_rt*c_T)*x_sdw * self.c_Q_10_gr**((T_crop-25)/10)   # Maintenance respiration rate
+        
 
-
-
-        #Derivatives
+        # State derivatives
         x_sdw_dot = r_gr * x_sdw
         # x_nsdw_dot = c_a * f_phot - x_sdw_dot - f_resp - (1-c_b)/c_b * r_gr * x_sdw   # Slightly inefficient implementation
         x_nsdw_dot = self.c_a * f_phot - f_resp - 1/self.c_b * x_sdw_dot                # More efficient implementation
@@ -146,6 +144,8 @@ class PlantModel:
         return ca.vertcat(x_sdw_dot, x_nsdw_dot, x_LI_dot)
     
     def casadi_function(self, ts=SECONDS_PER_QUARTER_HOUR):
+        '''Repackages the system equations as a casadi function'''
+
         states = ca.MX.sym('X', self.nx)
         controls = ca.MX.sym('U', self.nu)
         state_time_derivatives = self.derivative(states, controls)
@@ -165,7 +165,10 @@ class PlantModel:
 
 
     def freshweight(self, x):
-        x_sdw = x[0]
+
+        '''Calculate freshweight based on plant dry weight'''
+
+        x_sdw  = x[0]
         x_nsdw = x[1]
 
         x_dw = x_sdw + x_nsdw
@@ -188,10 +191,6 @@ class PlantModel:
 
         L = 0
 
-        # for k in range(0, N): #from k = 2, to N-1. 
-        #     L += (1000*p_spot[k] - self.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * self.market.Pr_a_dn(Bc_dn[k])\
-        #           - (1000*p_spot[k] + self.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * self.market.Pr_a_up(Bc_up[k])
-        
         for k in range(0, N): #from k = 2, to N-1. 
             L += p_spot[k] * self.C_conv_PPFD * controller.u_base[k] \
                   + (1000*p_spot[k] - controller.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * controller.market.Pr_a_dn(p_spot[k], Bc_dn[k])\
@@ -238,10 +237,10 @@ class PlantModel:
 
 
     def get_process_constraints(self, controller, g_eq, g_ineq, X, U, Eps):
+        '''Get plant model constraints'''
 
         N = controller.N
         dt = controller.dt
-
 
         # Initial state constraint
         g_eq.append(X[:, 0] - self.x_init)
@@ -308,8 +307,6 @@ class PlantModel:
                           1000 * np.ones((1, N)),                                # Bid price up. Arbitrary limit of 1000€ / MW 
                           1000 * np.ones((1, N))))                               # Bid price down. Arbitrary limit of 1000€ / MW 
         
-        # ub_B = 0 * np.ones((4, N)) # TODO Uncomment to set all bids to 0
-
         return lb_B, ub_B
     
     def get_state_bounds(self, controller):
@@ -508,8 +505,6 @@ class BatteryModel:
                           1000 * np.ones((1, N)),      # Bid price up. Arbitrary limit of 1000€ / MW 
                           1000 * np.ones((1, N))))     # Bid price down. Arbitrary limit of 1000€ / MW 
         
-        # ub_B = 0 * np.ones((4, N)) # TODO Uncomment to set all bids to 0
-
         return lb_B, ub_B
     
     def get_state_bounds(self, controller):

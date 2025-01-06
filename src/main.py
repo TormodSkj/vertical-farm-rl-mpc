@@ -9,40 +9,34 @@ from simulator import Simulator
 
 
 SIM_NAME = "results"
-HORIZON_DAYS = 20
-# FINAL_WEIGHT = 12.8
-# FINAL_WEIGHT = 84             #
-# FINAL_WEIGHT = 36.66          # 7 Days
-# FINAL_WEIGHT = 45
-# FINAL_WEIGHT = 122.57
-FINAL_WEIGHT = 136.7            # 20 Days
-# FINAL_WEIGHT = 117.34
-# FINAL_WEIGHT = 163
-
+HORIZON_DAYS    = 20
+# FINAL_WEIGHT  = 36.66             # 7 Days
+FINAL_WEIGHT    = 136.7             # 20 Days
 SIMULATION_DATE = '2024-01-01'
 BIDDING_ZONE    = 'NO3'
-
-baseline = 'import'
-import_file = 'scaled_optimal_intensities.json'
+import_file     = 'scaled_optimal_intensities.json'
 
 def main():
 
     x_init = np.array([5, 1])   # Specify init vector [structural and non structural dry weight in grams]
 
+
+    ''' CREATING INSTANCES '''
     config = Config(SIM_NAME, filetype="pdf", seed=1133)
     plant = PlantModel(x_init, FINAL_WEIGHT)
     # plant = Photosynthesis(x_init, FINAL_WEIGHT)
     market = Market(config, HORIZON_DAYS, BIDDING_ZONE, SIMULATION_DATE)
-    controller = Controller(HORIZON_DAYS, plant, market, config, baseline=baseline, search_cache = True, warm_start=True, import_file = import_file, calculate_fw=False)         #Baseline: 'opt' / 'rigid'
+    controller = Controller(HORIZON_DAYS, plant, market, config, search_cache = True, warm_start=True, import_file = import_file, calculate_fw=False)         #Baseline: 'opt' / 'rigid'
     
-    mpc_controller = Controller(HORIZON_DAYS, plant, market, config, baseline='opt', surpress_output = True)     # Instance of controller used in mpc
+    mpc_controller = Controller(HORIZON_DAYS, plant, market, config, surpress_output = True)     # Instance of controller used in mpc
     simulator = Simulator(HORIZON_DAYS, plant, market, config, mpc_controller)
 
     battery = BatteryModel(x_init = np.array([200]))
     battery_controller = Controller(HORIZON_DAYS, battery, market, config, 'opt')
 
-    # battery_controller.optimize_baseline()
-    # battery_controller.optimize_bidding()
+
+
+    ''' OPTIMIZAION AND PLOTTING '''
 
     # controller.import_baseline()
     controller.rigid_baseline()
@@ -61,10 +55,10 @@ def main():
 
     # simulator.Simulate_mpc()
     # simulator.simulate_random_activation(controller, 1)
+    # plotter.save_mpc_plots()
 
     # plotter.plot_random_activations(10)
 
-    # plotter.save_mpc_plots()
 
 
 if __name__ == "__main__":
