@@ -26,8 +26,8 @@ class Controller():
     dt: float
     t:  np.array
 
-    p_spot:     np.array
-    x_init:     np.array
+    spot_prices:    np.array
+    x_init:         np.array
 
     bids:       list[Bid]
     A_up:       list[bool]
@@ -45,7 +45,7 @@ class Controller():
 
     def __init__(self, timehorizon, plantmodel, market, config,
                  surpress_output = False, search_cache = True, 
-                 import_file = '', warm_start = True, calculate_fw = True):
+                 import_file = '', warm_start = False, calculate_fw = False):
         
         self.surpress_output = surpress_output
         self.warm_start = warm_start
@@ -78,7 +78,7 @@ class Controller():
         self.hash = generate_hash(self.runs['specs'])
 
         self.t = np.linspace(0, self.T, self.N)
-        self.p_spot = self.market.get_spotprice()
+        self.spot_prices = self.market.get_spotprice()
 
         self.bids = []
         for i in range(self.market.n_given_bids):
@@ -301,6 +301,7 @@ class Controller():
         start_time = time.time()
 
         N = self.N
+        F = self.model.casadi_function_rk()
 
         # 18 hours on, 6 hours off in 15 minute intervals
         intervals_per_hour = 4   # 4 intervals (15 minutes) per hour
@@ -324,8 +325,8 @@ class Controller():
         for k in range(N):
             #Forward euler
             dt = self.dt
-            X[:,k+1] = X[:,k] + dt*np.array(self.model.derivative(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
-            # X[:,k+1] = np.array(self.model.casadi_function()(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
+            # X[:,k+1] = X[:,k] + dt*np.array(self.model.derivative(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
+            X[:,k+1] = np.array(F(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
 
 
 
@@ -337,7 +338,7 @@ class Controller():
         elapsed_time = end_time - start_time
 
         sol['elapsed_time'] = elapsed_time
-        sol['f'] = self.model.baseline_obj_function(self, x, u)
+        sol['f'] = self.model.baseline_obj_function(N, self.spot_prices, x, u)
         sol['x'] = np.hstack((x.flatten(), u, 0))
         
         self.save_run('Rigid', sol, x, u)
@@ -370,7 +371,7 @@ class Controller():
         metrics_data = self.model.get_metrics(self, run_id, metrics_data, x, u, B)
 
         if B is None:
-            costs = self.model.baseline_obj_function(self, x, u)
+            costs = self.model.baseline_obj_function(self.N, self.spot_prices, x, u)
             metrics_data['Costs'] = costs
             metrics_data['Earnings'] = 0
             metrics_data['Total'] = costs - 0
@@ -379,8 +380,8 @@ class Controller():
             b_p_dn = B[1,:]
             b_c_up = B[2,:]
             b_c_dn = B[3,:]
-            b_a_up = self.market.Pr_a_up(self.p_spot, b_c_up)
-            b_a_dn = self.market.Pr_a_dn(self.p_spot, b_c_dn)
+            b_a_up = self.market.Pr_a_up(self.spot_prices, b_c_up)
+            b_a_dn = self.market.Pr_a_dn(self.spot_prices, b_c_dn)
 
 
             timeseries_data['P_up'] = b_p_up
@@ -400,8 +401,8 @@ class Controller():
             metrics_data['Earnings']    = bidding_earnings
             metrics_data['Total']       = bidding_total
 
-            b_a_up  = np.array(self.market.Pr_a_up(self.p_spot, b_c_up))
-            b_a_dn  = np.array(self.market.Pr_a_dn(self.p_spot,b_c_dn))
+            b_a_up  = np.array(self.market.Pr_a_up(self.spot_prices, b_c_up))
+            b_a_dn  = np.array(self.market.Pr_a_dn(self.spot_prices,b_c_dn))
             up_bids = np.where(b_a_up.flatten() > 1e-6)
             dn_bids = np.where(b_a_dn.flatten() > 1e-6)
 
@@ -444,7 +445,7 @@ class Controller():
         """
 
         # Add spot price to data
-        self.runs['spotprice'] = self.p_spot
+        self.runs['spotprice'] = self.spot_prices
 
         # Filepath
         sim_name = self.config.sim_name
@@ -521,8 +522,8 @@ class Controller():
         for k in range(N):
             #Forward euler
             dt = self.dt
-            X[:,k+1] = X[:,k] + dt*np.array(self.model.derivative(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
-            # X[:,k+1] = np.array(self.model.casadi_function()(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
+            # X[:,k+1] = X[:,k] + dt*np.array(self.model.derivative(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
+            X[:,k+1] = np.array(self.model.casadi_function_rk(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
 
         sol ={}
         x = X
@@ -567,16 +568,14 @@ class Controller():
         
 
 
-
-
     def status_report(self):
         '''
         Extract and print metrics from the optimization. Outputs metrics in tables. 
         '''
 
-        costs = [self.runs['runs'][run]['metrics']['Costs'] for run in self.runs['runs']]
-        earnings = [self.runs['runs'][run]['metrics']['Earnings'] for run in self.runs['runs']]
-        totals = [self.runs['runs'][run]['metrics']['Total'] for run in self.runs['runs']]
+        costs       = [self.runs['runs'][run]['metrics']['Costs']       for run in self.runs['runs']]
+        earnings    = [self.runs['runs'][run]['metrics']['Earnings']    for run in self.runs['runs']]
+        totals      = [self.runs['runs'][run]['metrics']['Total']       for run in self.runs['runs']]
         cost_reduction_percent = [(totals[0] - totals[i])/totals[0] * 100 for i in range(len(totals))]
 
         cost_data = [

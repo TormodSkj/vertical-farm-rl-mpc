@@ -8,16 +8,22 @@ from globals import *
 from simulator import Simulator
 
 
-SIM_NAME = "results"
-HORIZON_DAYS    = 20
-# FINAL_WEIGHT  = 36.66             # 7 Days
-FINAL_WEIGHT    = 136.7             # 20 Days
+SIM_NAME = "mpc_testing_fe"
+HORIZON_DAYS    = 7
+FINAL_WEIGHT  = 36.66             # 7 Days
+# FINAL_WEIGHT    = 136.7             # 20 Days 
+# FINAL_WEIGHT    = 2.05            # 20 Days [Directly from germination]
 SIMULATION_DATE = '2024-01-01'
 BIDDING_ZONE    = 'NO3'
 import_file     = 'scaled_optimal_intensities.json'
+search_cache    = 0
+
+MPC_TH = 3
+MPC_T_iter = 3
 
 def main():
 
+    # x_init = 0.031415 * np.array([5, 1])   # From germination [calibrated from 18d experiment]
     x_init = np.array([5, 1])   # Specify init vector [structural and non structural dry weight in grams]
 
 
@@ -26,10 +32,11 @@ def main():
     plant = PlantModel(x_init, FINAL_WEIGHT)
     # plant = Photosynthesis(x_init, FINAL_WEIGHT)
     market = Market(config, HORIZON_DAYS, BIDDING_ZONE, SIMULATION_DATE)
-    controller = Controller(HORIZON_DAYS, plant, market, config, search_cache = True, warm_start=True, import_file = import_file, calculate_fw=False)         #Baseline: 'opt' / 'rigid'
+    controller = Controller(HORIZON_DAYS, plant, market, config, search_cache = search_cache, warm_start=True, import_file = import_file, calculate_fw=False)         #Baseline: 'opt' / 'rigid'
     
-    mpc_controller = Controller(HORIZON_DAYS, plant, market, config, surpress_output = True)     # Instance of controller used in mpc
-    simulator = Simulator(HORIZON_DAYS, plant, market, config, mpc_controller)
+    mpc_plant = MpcPlantModel(x_init, FINAL_WEIGHT)
+    mpc_controller = Controller(HORIZON_DAYS, mpc_plant, market, config, surpress_output = False, calculate_fw=False)     # Instance of controller used in mpc
+    simulator = Simulator(HORIZON_DAYS, mpc_plant, market, config, mpc_controller, time_horizon=MPC_TH, time_iteration=MPC_T_iter)
 
     battery = BatteryModel(x_init = np.array([200]))
     battery_controller = Controller(HORIZON_DAYS, battery, market, config, 'opt')
@@ -39,23 +46,24 @@ def main():
     ''' OPTIMIZAION AND PLOTTING '''
 
     # controller.import_baseline()
-    controller.rigid_baseline()
-    controller.optimize_baseline()
+    # controller.rigid_baseline()
+    # controller.optimize_baseline()
     # controller.optimize_bidding()
-    controller.status_report()
+    # controller.status_report()
     # controller.export_intensity_to_json('Baseline')
-    controller.save_to_json()
+    # controller.save_to_json()
 
     plotter = Plotter(config, controller, simulator)
-    plotter.save_ocp_plots()
-    plotter.plot_spot_mfrr_prices() 
+    # plotter.save_ocp_plots()
+    # plotter.plot_spot_mfrr_prices() 
 
-    # market.optimal_bidding_price_prediction(controller.p_spot)
+    # market.optimal_bidding_price_prediction(controller.spot_prices)
     # plotter.plot_price_prediction()
 
     # simulator.Simulate_mpc()
+    simulator.solve_mpc()
     # simulator.simulate_random_activation(controller, 1)
-    # plotter.save_mpc_plots()
+    plotter.save_mpc_plots()
 
     # plotter.plot_random_activations(10)
 

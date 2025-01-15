@@ -40,7 +40,7 @@ class Plotter():
 
 
         t       = self.controller.t
-        p_spot  = self.controller.p_spot
+        spot_prices  = self.controller.spot_prices
 
 
         if 'Bidding' in controller.runs['runs']:
@@ -50,8 +50,8 @@ class Plotter():
             b_p_dn  = bid_ts['P_dn']
             b_c_up  = bid_ts['C_up']
             b_c_dn  = bid_ts['C_dn']
-            b_a_up  = np.array(self.controller.market.Pr_a_up(p_spot, b_c_up)).flatten()
-            b_a_dn  = np.array(self.controller.market.Pr_a_dn(p_spot, b_c_dn)).flatten()
+            b_a_up  = np.array(self.controller.market.Pr_a_up(spot_prices, b_c_up)).flatten()
+            b_a_dn  = np.array(self.controller.market.Pr_a_dn(spot_prices, b_c_dn)).flatten()
             
             # Filter out the unreasonably low bid activations
             activation_th = 0.01
@@ -105,8 +105,8 @@ class Plotter():
 
         fig, axes = plt.subplots(n_runs+1, 1, figsize=config.plot_format, sharex=True)
 
-        if n_runs == 1:
-            axes = [axes]
+        # if n_runs == 1:
+        #     axes = [axes]
 
         for i, run_name in enumerate(controller.runs['runs']):
             ax = axes[i]
@@ -118,7 +118,7 @@ class Plotter():
             ax.legend()
 
         ax = axes[-1]
-        ax.step(t, p_spot, label=f"Spot price") 
+        ax.step(t, spot_prices, label=f"Spot price") 
         ax.set_ylabel("NOK/kWh")
         ax.set_xlabel("Time (days)")
         ax.legend()
@@ -165,7 +165,7 @@ class Plotter():
             # Plot for Bidding Price Up
             ax.fill_between(t, 0, filtered_b_c_up, label="Bidding Price Up", color="blue", step='post', alpha=0.4)
             ax.fill_between(t, 0,filtered_b_c_dn, label="Bidding Price Down", color="red", step='post', alpha=0.4)
-            ax.step(t, p_spot*1000/self.controller.market.C_eur2nok, label="Spot price", color="grey", linestyle="--", where='mid')
+            ax.step(t, spot_prices*1000/self.controller.market.C_eur2nok, label="Spot price", color="grey", linestyle="--", where='mid')
             ax.set_ylabel("Bidding Price (€/MW)", color="blue")
             ax.tick_params(axis='y', labelcolor="blue")
             ax.legend(loc="upper left")
@@ -350,7 +350,7 @@ class Plotter():
         foldername = self.foldername
 
         timestamps = market.timestamps
-        spot_prices = market.spot_prices
+        spot_prices = market.spot_price_data
         mfrr_prices_up = market.mfrr_prices_up
         mfrr_prices_dn = market.mfrr_prices_dn
         spot_prices_eur = spot_prices*1000/market.C_eur2nok
@@ -512,21 +512,24 @@ class Plotter():
         # Define these for simplicity # TODO remove bloat
         config = self.config
         controller = self.controller
-        market = controller.market
+        # market = controller.market
+        simulator = self.simulator
 
 
         # Get plotting details
         foldername = self.foldername
 
         t = self.controller.t
-        p_spot = self.controller.p_spot
-        u_bid = self.controller.u_bid.flatten()
-        u_base = self.controller.u_base.flatten()
+        spot_prices = self.controller.spot_prices
+        # u_bid = self.controller.u_bid.flatten()
+        # u_base = self.controller.u_base.flatten()
+        u_rigid = simulator.mpc_controller.runs['runs']['Rigid']['timeseries']['u'].flatten()
+        x_rigid = simulator.mpc_controller.runs['runs']['Rigid']['timeseries']['x']
         u_mpc = self.simulator.u_mpc.flatten()
 
-        x_bid = self.simulator.x_bid
-        x1_bid = x_bid[0,1:]
-        x2_bid = x_bid[1,1:]
+        # x_bid = self.simulator.x_bid
+        # x1_bid = x_bid[0,1:]
+        # x2_bid = x_bid[1,1:]
         # x_base = self.controller.x_base
         # x1_base = x_base[0,1:]
         # x2_base = x_base[1,1:]
@@ -536,23 +539,26 @@ class Plotter():
         x2_mpc = x_mpc[1,1:]
 
 
-        B_bid = self.simulator.bids_mpc
-        b_p_up = B_bid[0,:]
-        b_p_dn = B_bid[1,:]
-        b_c_up = B_bid[2,:]
-        b_c_dn = B_bid[3,:]
-        b_a_up = self.controller.market.Pr_a_up(p_spot, b_c_up)
-        b_a_dn = self.controller.market.Pr_a_dn(p_spot, b_c_dn)        
+        # B_bid = self.simulator.bids_mpc
+        # b_p_up = B_bid[0,:]
+        # b_p_dn = B_bid[1,:]
+        # b_c_up = B_bid[2,:]
+        # b_c_dn = B_bid[3,:]
+        # b_a_up = self.controller.market.Pr_a_up(spot_prices, b_c_up)
+        # b_a_dn = self.controller.market.Pr_a_dn(spot_prices, b_c_dn)        
 
 
         # BEGIN PLOTTING (or more like saving plots, but you get it)
         ##################################################
         plt.figure(1, figsize=config.plot_format)
-        plt.step(t, x1_mpc, "r", label="Structural dry weight (g/m^2)") 
-        plt.step(t, x2_mpc, "b", label="Non-structural dry weight (g/m^2)")
-        plt.step(t, controller.model.freshweight(x_mpc[:,1:]), color='purple', label="MPC Freshweight shoot (g/plant)")
-        plt.step(t, controller.model.freshweight(x_bid[:,1:]), color='g', linestyle=':', label="Bidding freshweight shoot (g/plant)")
-        plt.axhline(y=controller.model.Final_fw_sht, color='orange', linestyle=':', label="Required Freshweight (g/plant)")
+        # plt.step(t, x1_mpc, "r", label="Structural dry weight (g/m^2)") 
+        # plt.step(t, x2_mpc, "b", label="Non-structural dry weight (g/m^2)")
+        plt.step(t, self.simulator.model.freshweight(x_mpc), "g", label="MPC Fresh weight (g/plant)")
+        plt.step(t, self.simulator.model.freshweight(x_rigid[:,1:]), "orange", label="Rigid Fresh weight (g/plant)")
+        plt.axhline(y=self.simulator.model.Final_fw_sht, color='gray', linestyle=':', label="Required Freshweight (g/plant)")
+        # plt.step(t, controller.model.freshweight(x_mpc[:,1:]), color='purple', label="MPC Freshweight shoot (g/plant)")
+        # plt.step(t, controller.model.freshweight(x_bid[:,1:]), color='g', linestyle=':', label="Bidding freshweight shoot (g/plant)")
+        # plt.axhline(y=controller.model.Final_fw_sht, color='orange', linestyle=':', label="Required Freshweight (g/plant)")
         plt.ylabel("Weight")
         plt.xlabel("Time (days)")
         plt.legend()
@@ -565,8 +571,9 @@ class Plotter():
 
         plt.figure(2, figsize=config.plot_format)
         plt.step(t, u_mpc, label="MPC U") 
-        plt.step(t, u_bid, linestyle=':', label="Bidding U") 
-        plt.step(t, u_base, linestyle=':', label="Baseline U") 
+        plt.step(t, u_rigid, label="Rigid U") 
+        # plt.step(t, u_bid, linestyle=':', label="Bidding U") 
+        # plt.step(t, u_base, linestyle=':', label="Baseline U") 
         plt.ylabel("Light level (PPFD)")
         plt.xlabel("Time (days)")
         plt.legend()
@@ -592,7 +599,7 @@ class Plotter():
 
 
         t       = self.controller.t
-        p_spot  = self.controller.p_spot
+        spot_prices  = self.controller.spot_prices
 
 
         if 'Bidding' in controller.runs['runs']:
@@ -602,15 +609,15 @@ class Plotter():
             b_p_dn  = bid_ts['P_dn']
             b_c_up  = bid_ts['C_up']
             b_c_dn  = bid_ts['C_dn']
-            b_a_up  = np.array(self.controller.market.Pr_a_up(p_spot, b_c_up)).flatten()
-            b_a_dn  = np.array(self.controller.market.Pr_a_dn(p_spot, b_c_dn)).flatten()
+            b_a_up  = np.array(self.controller.market.Pr_a_up(spot_prices, b_c_up)).flatten()
+            b_a_dn  = np.array(self.controller.market.Pr_a_dn(spot_prices, b_c_dn)).flatten()
             
 
             pred_prices_up = market.opt_prices_up.flatten()
             pred_prices_dn = market.opt_prices_dn.flatten()
 
-            pred_a_up = np.array(self.controller.market.Pr_a_up(p_spot, pred_prices_up)).flatten()
-            pred_a_dn  = np.array(self.controller.market.Pr_a_dn(p_spot, pred_prices_dn)).flatten()
+            pred_a_up = np.array(self.controller.market.Pr_a_up(spot_prices, pred_prices_up)).flatten()
+            pred_a_dn  = np.array(self.controller.market.Pr_a_dn(spot_prices, pred_prices_dn)).flatten()
 
             # Filter out the unreasonably low bid activations
             activation_th = 0.01
@@ -634,7 +641,7 @@ class Plotter():
             # Plot for Bidding Price Up
             ax1.fill_between(t, 0, filtered_b_c_up, label="Bidding Price Up", color="blue", step='post', alpha=0.4)
             ax1.fill_between(t, 0,filtered_b_c_dn, label="Bidding Price Down", color="red", step='post', alpha=0.4)
-            ax1.step(t, p_spot*1000/self.controller.market.C_eur2nok, label="Spot price", color="grey", linestyle="--", where='mid')
+            ax1.step(t, spot_prices*1000/self.controller.market.C_eur2nok, label="Spot price", color="grey", linestyle="--", where='mid')
             ax1.set_ylabel("Optimal Bidding Prices (€/MW)")
             ax1.tick_params(axis='y')
             ax1.legend(loc="upper left")
@@ -642,7 +649,7 @@ class Plotter():
             # Plot for Bidding Price Up
             ax2.fill_between(t, 0, filtered_pred_prices_up, label="Bidding Price Up", color="blue", step='post', alpha=0.4)
             ax2.fill_between(t, 0,filtered_pred_prices_dn, label="Bidding Price Down", color="red", step='post', alpha=0.4)
-            ax2.step(t, p_spot*1000/self.controller.market.C_eur2nok, label="Spot price", color="grey", linestyle="--", where='mid')
+            ax2.step(t, spot_prices*1000/self.controller.market.C_eur2nok, label="Spot price", color="grey", linestyle="--", where='mid')
             ax2.set_ylabel("Predicted Bidding Prices (€/MW)")
             ax2.tick_params(axis='y')
             ax2.legend(loc="upper left")

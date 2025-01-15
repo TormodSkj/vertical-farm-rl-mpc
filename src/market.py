@@ -35,7 +35,7 @@ class Market:
     spot_prices:    np.array
     mfrr_prices_up: np.array
     mfrr_prices_dn: np.array
-    timestamps: np.array
+    timestamps:     np.array
 
     n_given_bids = 2            # Number of time intervals with previously submitted bids
     n_given_activations = 1     # Number of time intervals with received activations
@@ -54,9 +54,9 @@ class Market:
         conditional_variance_up, conditional_variance_dn = utils.conditional_covariance(self.price_cov)
         self.sigma_up = np.sqrt(conditional_variance_up)
         self.sigma_dn = np.sqrt(conditional_variance_dn)
-        self.p_spot = self.get_spotprice()
-        self.mean_prices_up = utils.conditional_expectation(self.p_spot, self.price_means, self.price_cov)[0]
-        self.mean_prices_dn = utils.conditional_expectation(self.p_spot, self.price_means, self.price_cov)[1]
+        self.spot_prices = self.get_spotprice()
+        self.mean_prices_up = utils.conditional_expectation(self.spot_prices, self.price_means, self.price_cov)[0]
+        self.mean_prices_dn = utils.conditional_expectation(self.spot_prices, self.price_means, self.price_cov)[1]
         self.opt_prices_up = np.zeros((1,self.N))
         self.opt_prices_dn = np.zeros((1,self.N))
 
@@ -118,15 +118,15 @@ class Market:
         df['Dato/klokkeslett'] = pd.to_datetime(df['Dato/klokkeslett'].str.split().str[0])
         start_idx = df[df['Dato/klokkeslett'] == pd.to_datetime(self.date)].index[0]
         
-        P_spot_hours = np.array(df[self.bidding_zone].iloc[start_idx:start_idx+n_hours].values)
-        P_spot = np.repeat(P_spot_hours, 4)[0:N]
-        return P_spot
+        spot_prices_hours = np.array(df[self.bidding_zone].iloc[start_idx:start_idx+n_hours].values)
+        spot_prices = np.repeat(spot_prices_hours, 4)[0:N]
+        return spot_prices
     
 
-    def Pr_a_up(self, p_spot, Bc_up):
+    def Pr_a_up(self, spot_prices, Bc_up):
         #TODO Find real numbers here
         
-        mu_up = utils.conditional_expectation(p_spot, self.price_means, self.price_cov)[0]
+        mu_up = utils.conditional_expectation(spot_prices, self.price_means, self.price_cov)[0]
         sigma_up = self.sigma_up
 
         Bc_up_norm = (Bc_up - mu_up)/sigma_up
@@ -134,10 +134,10 @@ class Market:
         # return norm.cdf(-Bc_up_norm)
         return self.Pr_D_up() * (1.0 + ca.erf(-Bc_up_norm / ca.sqrt(2.0))) / 2.0
 
-    def Pr_a_dn(self, p_spot, Bc_dn):
+    def Pr_a_dn(self, spot_prices, Bc_dn):
         #TODO Find real numbers here
 
-        mu_dn = utils.conditional_expectation(p_spot, self.price_means, self.price_cov)[1]
+        mu_dn = utils.conditional_expectation(spot_prices, self.price_means, self.price_cov)[1]
         sigma_dn = self.sigma_dn
         
         Bc_dn_norm = (Bc_dn - mu_dn)/sigma_dn
@@ -185,7 +185,7 @@ class Market:
                     "Down Price": analysis_data["down_prices"]
                 })
                 
-                self.spot_prices = merged_data['Spot Price']
+                self.spot_price_data = merged_data['Spot Price']
                 self.mfrr_prices_up = merged_data['Up Price']
                 self.mfrr_prices_dn = merged_data['Down Price']
                 self.timestamps = merged_data['Timestamp']
@@ -225,7 +225,7 @@ class Market:
                 # Save results
                 self.price_means = means
                 self.price_cov = covariance_matrix
-                self.spot_prices = np.array(merged_data['Spot Price'])
+                self.spot_price_data = np.array(merged_data['Spot Price'])
                 self.mfrr_prices_up = np.array(merged_data['Up Price'])
                 self.mfrr_prices_dn = np.array(merged_data['Down Price'])
                 self.timestamps = merged_data['Timestamp']
@@ -239,7 +239,7 @@ class Market:
                             "means": self.price_means.to_dict(),
                             "covariance_matrix": self.price_cov.tolist(),
                             "Timestamp": merged_data['Timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S').tolist(),
-                            "spot_prices": self.spot_prices.tolist(),
+                            "spot_prices": self.spot_price_data.tolist(),
                             "up_prices": self.mfrr_prices_up.tolist(),
                             "down_prices": self.mfrr_prices_dn.tolist()
                         }, file)
@@ -252,21 +252,21 @@ class Market:
 
 
 
-    def optimal_bidding_price_prediction(self, p_spot):    
+    def optimal_bidding_price_prediction(self, spot_prices):    
 
         start_time = time.time()
         print("Starting price prediction")
 
-        mu_up = utils.conditional_expectation(p_spot, self.price_means, self.price_cov)[0]
-        mu_dn = utils.conditional_expectation(p_spot, self.price_means, self.price_cov)[1]
+        mu_up = utils.conditional_expectation(spot_prices, self.price_means, self.price_cov)[0]
+        mu_dn = utils.conditional_expectation(spot_prices, self.price_means, self.price_cov)[1]
 
         # Create decision variables for the optimization problem
-        N = len(p_spot)
+        N = len(spot_prices)
         X = ca.MX.sym('X', 2, N)
 
         J = 0
-        for k in range(N):  J -= X[0,k] * self.Pr_a_up(p_spot[k], X[0,k])
-        for k in range(N):  J -= X[1,k] * self.Pr_a_dn(p_spot[k], X[1,k])
+        for k in range(N):  J -= X[0,k] * self.Pr_a_up(spot_prices[k], X[0,k])
+        for k in range(N):  J -= X[1,k] * self.Pr_a_dn(spot_prices[k], X[1,k])
         
         lbx = 0
         ubx = 1000

@@ -384,7 +384,7 @@ def calculate_light_schedule_variance(controller, bidding_volumes_up, bidding_vo
     market = controller.market
     model = controller.model
     N = controller.N
-    p_spot = controller.p_spot
+    spot_prices = controller.spot_prices
 
 
     u_var = np.zeros((1,N))
@@ -392,8 +392,8 @@ def calculate_light_schedule_variance(controller, bidding_volumes_up, bidding_vo
     for k in range(2,N):        # Don't count the first 2 bids
 
 
-        p_up = market.Pr_a_up(p_spot[k], bidding_prices_up[k])  # Bernoulli constant p for u_tilde_up
-        p_dn = market.Pr_a_dn(p_spot[k], bidding_prices_dn[k])  # Bernoulli constant p for u_tilde_down
+        p_up = market.Pr_a_up(spot_prices[k], bidding_prices_up[k])  # Bernoulli constant p for u_tilde_up
+        p_dn = market.Pr_a_dn(spot_prices[k], bidding_prices_dn[k])  # Bernoulli constant p for u_tilde_down
         E_u_up = 1000 * bidding_volumes_up[k]/model.C_conv_PPFD * p_up
         E_u_dn = 1000 * bidding_volumes_dn[k]/model.C_conv_PPFD * p_dn
         
@@ -445,7 +445,7 @@ def propagate_process_covariance(controller, x_bid, u_bid, bidding_volumes_up, b
     market = controller.market
     N = controller.N
     dt = controller.dt
-    p_spot = controller.p_spot
+    spot_prices = controller.spot_prices
 
     # State dimensions
     x0 = ca.DM(model.x_init)  # Initial state
@@ -461,8 +461,8 @@ def propagate_process_covariance(controller, x_bid, u_bid, bidding_volumes_up, b
     for k in range(N):
         # Input uncertainty terms
         a, b = 1000*bidding_volumes_up[k]/model.C_conv_PPFD, 1000*bidding_volumes_dn[k]/model.C_conv_PPFD
-        p_a = market.Pr_a_up(p_spot[k], bidding_prices_up[k])
-        p_b = market.Pr_a_dn(p_spot[k], bidding_prices_dn[k])
+        p_a = market.Pr_a_up(spot_prices[k], bidding_prices_up[k])
+        p_b = market.Pr_a_dn(spot_prices[k], bidding_prices_dn[k])
 
         # Expected values of u_a and u_b
         E_u_a = a * p_a
