@@ -18,6 +18,7 @@ class Controller():
     import_file: str
 
     model: PlantModel
+    mpc_model: MpcPlantModel
     market: Market
     config: Config
 
@@ -25,6 +26,11 @@ class Controller():
     T:  float
     dt: float
     t:  np.array
+
+    mpc_T_horizon: float
+    mpc_N_horizon: int
+    mpc_step_time: float
+    mpc_step_N: int
 
     spot_prices:    np.array
     x_init:         np.array
@@ -36,46 +42,56 @@ class Controller():
     bidding_z_init: ca.DM
     baseline_z_init: ca.DM
 
-    runs:           dict
+    optimization_results: dict
     search_cache:   bool
     warm_start:     bool
     calculate_fw:   bool
     u_base:         np.array
     x_base:         np.array
 
-    def __init__(self, timehorizon, plantmodel, market, config,
+    def __init__(self, timehorizon, plantmodel, mpc_plantmodel, market, config,
+                 mpc_timehorizon, mpc_steplength,
                  surpress_output = False, search_cache = True, 
                  import_file = '', warm_start = False, calculate_fw = False):
         
         self.surpress_output = surpress_output
         self.warm_start = warm_start
         self.calculate_fw = calculate_fw
-        self.T = timehorizon   
-        self.N = timehorizon * QUARTER_HOURS_PER_DAY
+        self.T = timehorizon 
+        self.N = int(np.ceil(timehorizon * QUARTER_HOURS_PER_DAY))
         self.dt = SECONDS_PER_QUARTER_HOUR   
-        self.model = plantmodel  
+        self.mpc_T_horizon = mpc_timehorizon
+        self.mpc_N_horizon = int(np.ceil(mpc_timehorizon * QUARTER_HOURS_PER_DAY))
+        self.mpc_T_step = max(mpc_steplength, self.dt)
+        self.mpc_N_step = int(np.ceil(mpc_steplength * QUARTER_HOURS_PER_DAY))
+        self.model = plantmodel
+        self.mpc_model = mpc_plantmodel
         self.market = market
         self.config = config
         self.search_cache = search_cache
         self.import_file = import_file
+        
 
         specs_data = {
             'controller': 
                 {
                     'time horizon'          : self.T,
                     'N'                     : self.N,
+                    'mpc time horizon'      : self.mpc_T_horizon,
+                    'mpc step time'         : self.mpc_T_step,
+                    'calculate freshweight' : self.calculate_fw,
+                    'warm start'            : self.warm_start
                 },
             'model'             : self.model.specs,
             'market'            : self.market.specs
         }
-        self.runs = {
+        self.optimization_results = {
             'name'              : self.config.sim_name,
             'timestamp'         : datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'specs'             : specs_data,
-            'bidding result'    : None,
             'runs'              : {}
             }
-        self.hash = generate_hash(self.runs['specs'])
+        self.hash = generate_hash(self.optimization_results['specs'])
 
         self.t = np.linspace(0, self.T, self.N)
         self.spot_prices = self.market.get_spotprice()
@@ -102,6 +118,11 @@ class Controller():
         baseline_z0[0:self.model.nx] = self.x_init  # enforce init state
         self.baseline_z_init = baseline_z0
         
+
+        # Generate freshweight for the mpc bidding controller to use as reference trajectory
+        self.rigid_baseline()   
+        ref_x = self.optimization_results['runs']['Rigid']['timeseries']['x']
+        self.reference_weight = self.model.freshweight(ref_x)
  
         
     def set_bids(self, Bid_0, Bid_1):
@@ -115,7 +136,7 @@ class Controller():
         # 
         start_time = time.time()
 
-        hash = generate_hash(self.runs['specs'])
+        hash = generate_hash(self.optimization_results['specs'])
         if self.search_cache:
             if self.load_from_json(hash, 'Bidding'): 
                 # Identical run located. Using its solution instead
@@ -125,7 +146,7 @@ class Controller():
         
 
         # Just check if there is a basline before proceeding
-        assert 'Baseline' in self.runs['runs'] or 'Rigid' in self.runs['runs'], "Baseline was not generated"   
+        assert 'Baseline' in self.optimization_results['runs'] or 'Rigid' in self.optimization_results['runs'], "Baseline was not generated"   
 
         N = self.N
         T = self.T
@@ -179,7 +200,7 @@ class Controller():
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
 
         z0 = self.bidding_z_init
-        if self.warm_start and 'Baseline' in self.runs['runs']: 
+        if self.warm_start and 'Baseline' in self.optimization_results['runs']: 
             z0[:nx*(N+1)]                   = self.x_base.flatten()
             z0[nx*(N+1):nx*(N+1)+4*N]       = ub_B.reshape(4*N,1)
             z0[nx*(N+1)+2*N:nx*(N+1)+3*N]   = self.market.mean_prices_up
@@ -209,12 +230,12 @@ class Controller():
         '''
         start_time = time.time()
 
-        hash = generate_hash(self.runs['specs'])
+        hash = generate_hash(self.optimization_results['specs'])
         if self.search_cache:
             if self.load_from_json(hash, 'Baseline'): 
                 # Identical run located. Using its solution instead
-                self.x_base = self.runs['runs']['Baseline']['timeseries']['x']
-                self.u_base = self.runs['runs']['Baseline']['timeseries']['u']
+                self.x_base = self.optimization_results['runs']['Baseline']['timeseries']['x']
+                self.u_base = self.optimization_results['runs']['Baseline']['timeseries']['u']
                 return 0
             # If no identical run was located, generate baseline instead
             if not self.surpress_output: print('No matching run found. Generating baseline light schedule')
@@ -232,7 +253,7 @@ class Controller():
         U = ca.MX.sym('U', nu, N)                       # Controls over time (Nx1 vector)
         Eps = ca.MX.sym('Eps', 1, 1)                    # Slack variable for feasibility
 
-        J = self.model.baseline_obj_function(self, X, U)\
+        J = self.model.baseline_obj_function(N, self.spot_prices, X, U)\
                      + self.model.terminal_cost(self, X, U, Eps)#\
                     # + self.model.fluctuating_light_cost(self, U)         # Cost function
 
@@ -266,7 +287,7 @@ class Controller():
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
 
         z0 = self.baseline_z_init
-        if self.warm_start and 'Rigid' in self.runs['runs']: 
+        if self.warm_start and 'Rigid' in self.optimization_results['runs']: 
             z0[:nx*(N+1)]                   = self.x_base.flatten()
             z0[nx*(N+1):(nx*(N+1)+N*nu)]    = self.u_base.flatten()
 
@@ -286,10 +307,172 @@ class Controller():
         self.save_run('Baseline', sol, x, u)
         self.u_base = u
         self.x_base = x
-        self.runs['specs']['controller']['baseline'] = 'opt'
+        self.optimization_results['specs']['controller']['baseline'] = 'opt'
 
         if not self.surpress_output: print('Baseline optimized')
         return 0
+
+
+
+    def optimize_bidding_mpc(self):
+        
+        start_time = time.time()
+
+        hash = generate_hash(self.optimization_results['specs'])
+        if self.search_cache:
+            if self.load_from_json(hash, 'MPC Bidding'): 
+                # Identical run located. Using its solution instead
+                return 0
+            # No identical run located, or the needed run wasn't already produced. Optimizing from scratch
+            if not self.surpress_output: print('No matching run found. Generating bidding strategy using mpc')
+        
+        
+
+        N = self.N                      # Number of time steps for the whole optimization problem
+        N_TH = self.mpc_N_horizon       # Number of time steps for internal open-loop solver
+        N_iter = self.mpc_N_step        # Number of time steps between each open-loop solution
+        spot_prices = self.spot_prices
+        nx, nu = self.mpc_model.nx, self.mpc_model.nu
+        F = self.mpc_model.casadi_function_fe()
+
+        # Set up optimizers
+        opti_base,  X_base, U_base, _,      Eps_base,   = self.setup_optimizer(nx, nu, N_TH)
+        opti_bid,   X_bid,  _ ,     B_bid,  Eps_bid,    = self.setup_optimizer(nx, nu, N_TH)
+
+        # Set up state vectors
+        X = ca.DM.zeros(nx, N+1)
+        X[:,0] = self.x_init
+        U = ca.DM.zeros(nu, N)
+        U_nom = ca.DM.zeros(nu, N)
+        B = ca.DM.zeros(4, N)
+        Eps = 0
+
+        # for k in range(N):
+        k = 0
+        while k < N:
+            
+            N_horizon = min(N-k, N_TH)
+
+            # Update baseline optimizer
+            opti_base_copy = self.update_optimizer_baseline(opti_base.copy(), N_TH = N_horizon, spot_prices = spot_prices[k:k+N_horizon], 
+                                                       X    = X_base[:,:N_horizon+1],   x0 = X[:,k], 
+                                                       U    = U_base[:,:N_horizon], 
+                                                       Eps  = Eps_base, 
+                                                       ref_weight = self.reference_weight[k+N_horizon])
+
+            sol_base = opti_base_copy.solve()
+            u_opt = sol_base.value(U_base)
+
+            opti_bid_copy = self.update_optimizer_bidding(opti=opti_bid.copy(), N_TH = N_horizon, spot_prices = spot_prices[k:k+N_horizon],
+                                                     X      = X_bid[:,:N_horizon+1],    x0 = X[:,k], 
+                                                     B      = B_bid[:,:N_horizon], 
+                                                     Eps    = Eps_bid, 
+                                                     U_base = u_opt[:N_horizon], 
+                                                     ref_weight = self.reference_weight[k+N_horizon])
+            sol_bid = opti_bid_copy.solve()
+            B_opt = sol_bid.value(B_bid)
+            # Solve baseline
+            # Solve bidding
+
+            # Get u
+            # U[:,k] = self.model.get_u(U_base, B, spot_prices[k,k+N_horizon], self.market)
+
+            U_nom[:,k:k+min(N_iter, N_horizon)] = u_opt[0:min(N_iter, N_horizon)]
+
+            # Store inputs
+            U[:,k:k+min(N_iter, N_horizon)] = self.mpc_model.get_u(U_base      = u_opt[0:min(N_iter, N_horizon)], 
+                                                               B           = B_opt[:,0:min(N_iter, N_horizon)],
+                                                               spot_prices = spot_prices[k:k+N_horizon],
+                                                               market      = self.market)
+
+            B[:,k:k+min(N_iter, N_horizon)] = B_opt[:,0:min(N_iter, N_horizon)]
+
+            # Integrate states
+            for i in range(min(N_iter, N_horizon)):
+                X[:,k+1+i] = F(X[:,k+i], U[:,k+i])
+
+            Eps = self.reference_weight[k+N_horizon] - self.mpc_model.freshweight(X[:,k+1+i])
+
+            k += N_iter
+
+        end_time = time.time()
+        sol = {}
+        sol['x'] = np.array([Eps])
+        sol['f'] = self.mpc_model.baseline_obj_function(N, spot_prices, X, U) + self.mpc_model.bidding_obj_function(N, spot_prices, X, B, U_nom, self.market)
+        sol['elapsed_time'] = end_time - start_time
+        
+        self.save_run('MPC Bidding', sol, np.array(X), np.array(U).flatten(), B=np.array(B))
+
+        if not self.surpress_output: print('Bids optimized using MPC')
+        return 0
+
+
+    def setup_optimizer(self, nx, nu, N_horizon):
+        opti = ca.Opti()
+
+        X = opti.variable(nx, N_horizon+1)
+        U = opti.variable(nu, N_horizon)
+        B = opti.variable(4*nu, N_horizon)
+        Eps = opti.variable(1, 1)
+
+        opti.subject_to(opti.bounded(0, Eps, ca.inf))
+        
+        lb_X, ub_X = self.mpc_model.get_state_bounds(N_horizon)
+
+        opti.subject_to(opti.bounded(lb_X, X, ub_X))
+
+        # x0 = opti.parameter(nx, 1)
+        # spot_prices = opti.parameter(1, N_horizon)
+
+        J = 0 #self.model.baseline_obj_function(N_horizon, spot_prices, X, U) + self.model.terminal_cost(Eps)
+
+        opti.minimize(J)
+        opts = {}
+        opti.solver('ipopt', opts)
+        return opti, X, U, B, Eps #, x0, spot_prices
+                
+
+
+    def set_constraints(self, opti: ca.Opti, N_TH, X, x0, Eps, ref_weight, U=None, B=None, U_base=None):
+
+        g_eq, g_ineq = [], []
+        g_eq, g_ineq = self.mpc_model.get_process_constraints(g_eq, g_ineq, N_TH, self.dt, X, x0, U, Eps, ref_weight)
+        
+        if U is not None:
+            lb_U, ub_U = self.mpc_model.get_input_bounds(N_TH)
+            opti.bounded(lb_U, U, ub_U)
+
+        if B is not None and U_base is not None:
+            g_eq, g_ineq = self.mpc_model.get_bidding_constraints(g_eq, g_ineq, N_TH, B, U_base)
+            # lb_B, ub_B = self.model.get_bidding_bounds(N_TH, U_base)
+            # opti.bounded(lb_B, B, ub_B)
+
+
+        # opti.subject_to()
+        [opti.subject_to(equality_constraint == 0) for equality_constraint in g_eq]
+        [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
+
+        return opti
+
+
+    def update_optimizer_baseline(self, opti, N_TH, spot_prices, X,x0, U, Eps, ref_weight):
+
+        J = self.mpc_model.baseline_obj_function(N_TH, spot_prices, X, U) + self.mpc_model.terminal_cost(Eps)
+        opti.minimize(J)
+        
+        opti = self.set_constraints(opti=opti, N_TH=N_TH, X=X, x0=x0, U=U, Eps=Eps, ref_weight=ref_weight)
+        return opti
+
+    def update_optimizer_bidding(self, opti, N_TH, spot_prices, X, x0, B, Eps, U_base, ref_weight):
+
+        J = self.mpc_model.bidding_obj_function(N_TH, spot_prices, X, B, U_base, self.market) + self.mpc_model.terminal_cost(Eps)
+        opti.minimize(J)
+
+        U = ca.transpose(self.mpc_model.get_u(U_base=U_base, B=B, spot_prices=spot_prices, market=self.market))
+        
+        opti = self.set_constraints(opti=opti, N_TH=N_TH, X=X, x0=x0, U=U, Eps=Eps, ref_weight=ref_weight, B=B, U_base = U_base)
+        return opti
+
 
 
     def rigid_baseline(self):
@@ -370,6 +553,8 @@ class Controller():
 
         metrics_data = self.model.get_metrics(self, run_id, metrics_data, x, u, B)
 
+        run_data = {'metrics' : metrics_data}
+
         if B is None:
             costs = self.model.baseline_obj_function(self.N, self.spot_prices, x, u)
             metrics_data['Costs'] = costs
@@ -394,7 +579,7 @@ class Controller():
             bidding_earnings_dn = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(b_a_dn, b_p_dn), b_c_dn)
             bidding_earnings    = np.sum(bidding_earnings_up) + np.sum(bidding_earnings_dn)
 
-            bidding_costs = self.model.baseline_obj_function(self, x, u)
+            bidding_costs = self.model.baseline_obj_function(self.N, self.spot_prices, x, u)
             bidding_total = bidding_costs - bidding_earnings
 
             metrics_data['Costs']       = bidding_costs
@@ -427,16 +612,14 @@ class Controller():
                     'Avg bid price'             : np.average(filtered_b_c_dn),
                     'Avg activation rate'       : np.average(filtered_b_a_dn)
                 }
-            }
+            }     
 
-            self.runs['bidding result'] = bidding_data
-            
+            run_data['bidding result'] = bidding_data       
+
+        run_data['timeseries'] = timeseries_data
 
         # Storing runs in dictionaries
-        self.runs['runs'][run_id] = {
-            "metrics"       : metrics_data,
-            "timeseries"    : timeseries_data
-        }
+        self.optimization_results['runs'][run_id] = run_data 
 
 
     def save_to_json(self):
@@ -445,7 +628,7 @@ class Controller():
         """
 
         # Add spot price to data
-        self.runs['spotprice'] = self.spot_prices
+        self.optimization_results['spotprice'] = self.spot_prices
 
         # Filepath
         sim_name = self.config.sim_name
@@ -455,7 +638,7 @@ class Controller():
         os.makedirs(self.config.sim_path, exist_ok=True)
 
         # Convert the entire runs dictionary
-        runs_dict = convert_np_arrays_to_lists(self.runs)
+        runs_dict = convert_np_arrays_to_lists(self.optimization_results)
         runs_dict['hash'] = self.hash
 
         # Save the data for all runs
@@ -489,8 +672,8 @@ class Controller():
                 if run_name not in conv_loaded_data['runs']:
                     return False
                 
-                self.runs['runs'][run_name] = conv_loaded_data['runs'][run_name]
-                if run_name == 'Bidding': self.runs['bidding result'] = conv_loaded_data['bidding result']
+                self.optimization_results['runs'][run_name] = conv_loaded_data['runs'][run_name]
+                # if run_name == 'Bidding': self.runs['bidding result'] = conv_loaded_data['bidding result']
 
                 if not self.surpress_output: print(f"Loaded run {run_name} from simulation \'{loaded_data['name']}\' dated {loaded_data['timestamp']}")
                 return True
@@ -499,10 +682,11 @@ class Controller():
 
     def import_baseline(self):
         '''
-        Imports an already made light schedule as the baseline
+        Imports a previously made light schedule from a json file
         '''
         start_time = time.time()
         N = self.N
+        F = self.model.casadi_function_rk()
 
         # Open and load the JSON file
         import_path = os.path.join(self.config.data_path, self.import_file)
@@ -512,7 +696,7 @@ class Controller():
 
         # Transform from hourly to quarter hourly basis
         # Scale from percentage based schedule to light intensity
-        u_base = self.model.C_PPFD_max/100*np.repeat(light_schedule, 4)     
+        u_base = 250/100*np.repeat(light_schedule, 4)     
 
         assert len(u_base) >= self.N, f"Imported light schedule too short. Len: {len(u_base)}, N: {N}"
 
@@ -523,7 +707,7 @@ class Controller():
             #Forward euler
             dt = self.dt
             # X[:,k+1] = X[:,k] + dt*np.array(self.model.derivative(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
-            X[:,k+1] = np.array(self.model.casadi_function_rk(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
+            X[:,k+1] = np.array(F(X[:,k], np.array([u_base[k]]))).reshape(1, -1)
 
         sol ={}
         x = X
@@ -533,7 +717,7 @@ class Controller():
         elapsed_time = end_time - start_time
 
         sol['elapsed_time'] = elapsed_time
-        sol['f'] = self.model.baseline_obj_function(self, x, u)
+        sol['f'] = self.model.baseline_obj_function(N, self.spot_prices, x, u)
         sol['x'] = np.hstack((x.flatten(), u, 0))
         
         self.save_run('Imported', sol, x, u)
@@ -545,7 +729,7 @@ class Controller():
 
     def export_intensity_to_json(self, run: str):
 
-        u = self.runs['runs'][run]['timeseries']['u']
+        u = self.optimization_results['runs'][run]['timeseries']['u']
 
         u_scaled = 100 * u / self.model.C_PPFD_max
 
@@ -573,9 +757,9 @@ class Controller():
         Extract and print metrics from the optimization. Outputs metrics in tables. 
         '''
 
-        costs       = [self.runs['runs'][run]['metrics']['Costs']       for run in self.runs['runs']]
-        earnings    = [self.runs['runs'][run]['metrics']['Earnings']    for run in self.runs['runs']]
-        totals      = [self.runs['runs'][run]['metrics']['Total']       for run in self.runs['runs']]
+        costs       = [self.optimization_results['runs'][run]['metrics']['Costs']       for run in self.optimization_results['runs']]
+        earnings    = [self.optimization_results['runs'][run]['metrics']['Earnings']    for run in self.optimization_results['runs']]
+        totals      = [self.optimization_results['runs'][run]['metrics']['Total']       for run in self.optimization_results['runs']]
         cost_reduction_percent = [(totals[0] - totals[i])/totals[0] * 100 for i in range(len(totals))]
 
         cost_data = [
@@ -585,18 +769,21 @@ class Controller():
             ['Total percentage cost reduction'] + cost_reduction_percent,
         ]
 
-        cost_table = generate_table(cost_data, header=[run for run in self.runs['runs']])
+        cost_table = generate_table(cost_data, header=[run for run in self.optimization_results['runs']])
         print(f'COST DATA: \n{cost_table}\n')
 
 
-        metrics_table = get_metrics_table(self.runs['runs'])
+        metrics_table = get_metrics_table(self.optimization_results['runs'])
         print(f'METRICS DATA: \n{metrics_table}\n')
 
 
         # Print bidding metrics
-        if 'Bidding' in self.runs['runs']:
-            bidding_result_up = self.runs['bidding result']['Up-regulation']
-            bidding_result_dn = self.runs['bidding result']['Down-regulation']
+        for run in self.optimization_results['runs']:
+            if 'bidding result' not in self.optimization_results['runs'][run]:
+                continue
+
+            bidding_result_up = self.optimization_results['runs'][run]['bidding result']['Up-regulation']
+            bidding_result_dn = self.optimization_results['runs'][run]['bidding result']['Down-regulation']
             
             bidding_data = [
                 ['Avg bid size',                        bidding_result_up['Avg bid size'],                                  bidding_result_dn['Avg bid size'],                               "MW"], 
@@ -607,7 +794,7 @@ class Controller():
             ]
             bidding_header = ['', 'Up-regulation', 'Down-regulation', 'Unit']
 
-            print(f'BIDDING REPORT: \n{generate_table(bidding_data, header = bidding_header)}\n')
+            print(f'BIDDING REPORT {run}: \n{generate_table(bidding_data, header = bidding_header)}\n')
 
 
         # Print market metrics
@@ -621,8 +808,8 @@ class Controller():
 
 
         # Print solve times
-        for run in self.runs['runs']:
-            minutes, seconds = divmod(self.runs['runs'][run]['metrics']['elapsed_time'], 60)
+        for run in self.optimization_results['runs']:
+            minutes, seconds = divmod(self.optimization_results['runs'][run]['metrics']['elapsed_time'], 60)
             print(f"{run} solved in: {int(minutes)} minutes and {seconds:.2f} seconds. ")
         
 

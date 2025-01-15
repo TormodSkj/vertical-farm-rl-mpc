@@ -45,7 +45,7 @@ class Simulator():
         self.bids_mpc = np.zeros((4, self.N))
 
         self.mpc_controller.rigid_baseline()
-        ref_x = mpc_controller.runs['runs']['Rigid']['timeseries']['x']
+        ref_x = mpc_controller.optimization_results['runs']['Rigid']['timeseries']['x']
         self.reference_weight = self.model.freshweight(ref_x)
         
 
@@ -66,15 +66,15 @@ class Simulator():
         dt = controller.dt
         seed = None     # Set to None for random 
 
-        u_base = controller.runs['runs']['Baseline']['timeseries']['u']
+        u_base = controller.optimization_results['runs']['Baseline']['timeseries']['u']
 
-        assert 'Bidding' in controller.runs['runs'], 'Unable to perform random bid activations due to lack of bidding data'
+        assert 'Bidding' in controller.optimization_results['runs'], 'Unable to perform random bid activations due to lack of bidding data'
         
         # Get bidding data
-        bidding_vol_up = controller.runs['runs']['Bidding']['timeseries']['P_up']
-        bidding_vol_dn = controller.runs['runs']['Bidding']['timeseries']['P_dn']
-        bidding_price_up = controller.runs['runs']['Bidding']['timeseries']['C_up']
-        bidding_price_dn = controller.runs['runs']['Bidding']['timeseries']['C_dn']
+        bidding_vol_up = controller.optimization_results['runs']['Bidding']['timeseries']['P_up']
+        bidding_vol_dn = controller.optimization_results['runs']['Bidding']['timeseries']['P_dn']
+        bidding_price_up = controller.optimization_results['runs']['Bidding']['timeseries']['C_up']
+        bidding_price_dn = controller.optimization_results['runs']['Bidding']['timeseries']['C_dn']
 
         # Preallocation
         freshweights = np.zeros((m, N))
@@ -187,134 +187,6 @@ class Simulator():
         return 0
     
 
-
-    def solve_mpc(self):
-
-        N = self.N              # Number of time steps for the whole optimization problem
-        N_TH = self.N_TH        # Number of time steps for internal open-loop solver
-        spot_prices = self.mpc_controller.spot_prices
-        nx, nu = self.model.nx, self.model.nu
-        F = self.model.casadi_function_fe()
-
-        # Set up optimizers
-        opti_base,  X_base, U_base, _,      Eps_base    = self.setup_optimizer(nx, nu, N_TH)
-        opti_bid,   X_bid,  _ ,     B_bid,  Eps_bid     = self.setup_optimizer(nx, nu, N_TH)
-
-        # Set up state vectors
-        X = ca.DM.zeros(nx, N+1)
-        X[:,0] = self.mpc_controller.x_init
-        U = ca.DM.zeros(nu, N)
-        B = ca.DM.zeros(4, N)
-
-
-        # for k in range(N):
-        k = 0
-        while k < N:
-            
-            N_horizon = min(N-k, N_TH)
-
-            # Update baseline optimizer
-            opti_base = self.update_optimizer_baseline(opti_base.copy(), N_TH = N_horizon, spot_prices = spot_prices[k:k+N_horizon], 
-                                                       X    = X_base,   x0 = X[:,k], 
-                                                       U    = U_base, 
-                                                       Eps  = Eps_base, 
-                                                       ref_weight = self.reference_weight[k+N_horizon])
-
-            sol_base = opti_base.solve()
-            u_opt = sol_base.value(U_base)
-
-            # opti_bid = self.update_optimizer_bidding(opti=opti_bid.copy(), N_TH = N_horizon, spot_prices = spot_prices[k:k+N_horizon],
-            #                                          X      = X_bid,    x0 = X[:,k], 
-            #                                          B      = B_bid, 
-            #                                          Eps    = Eps_bid, 
-            #                                          U_base = u_opt, 
-            #                                          ref_weight = self.reference_weight[k+N_horizon])
-            # sol_bid = opti_bid.solve()
-            # B_opt = sol_bid.value(B_bid)
-            # Solve baseline
-            # Solve bidding
-
-            # Get u
-            # U[:,k] = self.model.get_u(U_base, B, spot_prices[k,k+N_horizon], self.market)
-
-            U[:,k:k+min(self.N_iter, N_horizon)] = u_opt[0:min(self.N_iter, N_horizon)]
-
-            # Store inputs
-            # U[:,k:k+min(self.N_iter, N_horizon)] = self.model.get_u(U_base      = u_opt[0:min(self.N_iter, N_horizon)], 
-            #                                                         B           = B_opt[:,0:min(self.N_iter, N_horizon)],
-            #                                                         spot_prices = spot_prices[k:k+N_horizon],
-            #                                                         market      = self.market)
-
-            # B[:,k:k+min(self.N_iter, N_horizon)] = B_opt[:,0:min(self.N_iter, N_horizon)]
-            
-
-            # Integrate states
-            for i in range(min(self.N_iter, N_horizon)):
-                X[:,k+1+i] = F(X[:,k+i], U[:,k+i])
-
-            k += self.N_iter
-
-        self.x_mpc = np.array(X[:,1:])
-        self.u_mpc = np.array(U)
-
-
-    def setup_optimizer(self, nx, nu, N_horizon):
-        opti = ca.Opti()
-
-        X = opti.variable(nx, N_horizon+1)
-        U = opti.variable(nu, N_horizon)
-        B = opti.variable(4*nu, N_horizon)
-        Eps = opti.variable(1, 1)
-
-        x0 = opti.parameter(nx, 1)
-        spot_prices = opti.parameter(1, N_horizon)
-
-        J = 0
-
-        opti.minimize(J)
-        opts = {}
-        opti.solver('ipopt', opts)
-        return opti, X, U, B, Eps, x0, spot_prices
-                
-
-
-    def set_constraints(self, opti, N_TH, X, x0, U, Eps, ref_weight, B=None, U_base=None):
-
-        g_eq, g_ineq = [], []
-        g_eq, g_ineq = self.model.get_process_constraints(g_eq, g_ineq, N_TH, self.dt, X, x0, U, Eps, ref_weight)
-        
-        lb_X, ub_X = self.model.get_state_bounds(N_TH)
-        lb_U, ub_U = self.model.get_input_bounds(N_TH)
-
-    
-        # if type(B) != type(None) and type(U_base) != type(None):
-        if B is not None and U_base is not None:
-            g_eq, g_ineq = self.model.get_bidding_constraints(g_eq, g_ineq, N_TH, B, U_base)
-
-        # opti.subject_to()
-        [opti.subject_to(equality_constraint == 0) for equality_constraint in g_eq]
-        [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
-
-        return opti
-
-
-    def update_optimizer_baseline(self, opti, N_TH, spot_prices, X,x0, U, Eps, ref_weight):
-
-        J = self.model.baseline_obj_function(N_TH, spot_prices, X, U) + self.model.terminal_cost(Eps)
-        opti.minimize(J)
-        
-        opti = self.set_constraints(opti=opti, N_TH=N_TH, X=X, x0=x0, U=U, Eps=Eps, ref_weight=ref_weight)
-        return opti
-
-    def update_optimizer_bidding(self, opti, N_TH, spot_prices, X, x0, B, Eps, U_base, ref_weight):
-
-        J = self.model.bidding_obj_function(self.N_TH, spot_prices, X, B, U_base, self.market) + self.model.terminal_cost(Eps)
-        opti.minimize(J)
-
-        U = self.model.get_u(U_base=U_base, B=B, spot_prices=spot_prices, market=self.market)
-        
-        opti = self.set_constraints(opti=opti, N_TH=N_TH, X=X, x0=x0, U=U, Eps=Eps, ref_weight=ref_weight, B=B, U_base = U_base)
-        return opti
 
 
             

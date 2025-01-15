@@ -16,7 +16,7 @@ class Plotter():
     # market: Market
     foldername: str
 
-    def __init__(self, config, controller, simulator):
+    def __init__(self, config, controller, simulator=None):
         self.config = config
         self.controller = controller
         # self.model = plantModel
@@ -36,45 +36,22 @@ class Plotter():
         # Get plotting details
         foldername = self.foldername
 
-        n_runs = len(list(self.controller.runs['runs'].keys()))
+        n_runs = len(list(self.controller.optimization_results['runs'].keys()))
 
 
         t       = self.controller.t
         spot_prices  = self.controller.spot_prices
 
 
-        if 'Bidding' in controller.runs['runs']:
-
-            bid_ts  = self.controller.runs['runs']['Bidding']['timeseries']
-            b_p_up  = bid_ts['P_up']
-            b_p_dn  = bid_ts['P_dn']
-            b_c_up  = bid_ts['C_up']
-            b_c_dn  = bid_ts['C_dn']
-            b_a_up  = np.array(self.controller.market.Pr_a_up(spot_prices, b_c_up)).flatten()
-            b_a_dn  = np.array(self.controller.market.Pr_a_dn(spot_prices, b_c_dn)).flatten()
-            
-            # Filter out the unreasonably low bid activations
-            activation_th = 0.01
-            filtered_b_c_up = np.where(b_a_up > activation_th, b_c_up, 0).flatten()
-            filtered_b_c_dn = np.where(b_a_dn > activation_th, b_c_dn, 0).flatten()
-
-            # volume_th = 1e-3
-            # filtered_b_p_up = b_p_up[np.where(b_p_up > volume_th)]
-            # filtered_b_p_dn = b_p_dn[np.where(b_p_dn > volume_th)]
-            # filtered_t_up   = t[np.where(b_p_up > volume_th)]
-            # filtered_t_dn   = t[np.where(b_p_dn > volume_th)]
-        
-
         # BEGIN PLOTTING (or more like saving plots, but you get it)
         ##################################################
         
         if self.controller.model.title == "Vertical Farm" or self.controller.model.title == "Gjermund plant model":
-            plt.figure(1, figsize=config.plot_format)
 
-            for run_name in controller.runs['runs']:
-                x = controller.runs['runs'][run_name]['timeseries']['x']
+            for run_name in controller.optimization_results['runs']:
+                x = controller.optimization_results['runs'][run_name]['timeseries']['x']
                 x_fw = controller.model.freshweight(x[:,1:])
-                plt.plot(t, x_fw, label=f"Freshweight shoot {run_name} (g/plant)")
+                plt.plot(t, x_fw, label=f"{run_name} (g/plant)")
 
             # plt.plot(t, controller.model.freshweight(x_bid[:,1:]), "g", label="Freshweight shoot (g/plant)")
             # plt.plot(t, controller.model.freshweight(x_base[:,1:]), color='purple', linestyle=':', label="Baseline freshweight shoot (g/plant)")
@@ -85,10 +62,9 @@ class Plotter():
             plt.title(f"Expected freshweight of plant growth (g/plant). ({controller.market.date}, {controller.market.bidding_zone})")
 
         if self.controller.model.title == "Battery":
-            plt.figure(1, figsize=config.plot_format)
 
-            for run_name in controller.runs['runs']:
-                x = controller.runs['runs'][run_name]['timeseries']['x']
+            for run_name in controller.optimization_results['runs']:
+                x = controller.optimization_results['runs'][run_name]['timeseries']['x']
                 x_fw = controller.model.freshweight(x[:,1:])
                 plt.plot(t, x_fw, "g", label=f"SOC {run_name}")
             # plt.step(t, x_bid[:,1:].flatten(), label="Bidding state of charge")
@@ -101,16 +77,15 @@ class Plotter():
         plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
         
         ##################################################
-        plt.figure(2, figsize=config.plot_format)
 
         fig, axes = plt.subplots(n_runs+1, 1, figsize=config.plot_format, sharex=True)
 
         # if n_runs == 1:
         #     axes = [axes]
 
-        for i, run_name in enumerate(controller.runs['runs']):
+        for i, run_name in enumerate(controller.optimization_results['runs']):
             ax = axes[i]
-            u = controller.runs['runs'][run_name]['timeseries']['u']
+            u = controller.optimization_results['runs'][run_name]['timeseries']['u']
 
             ax.step(t, u, label=f"U {run_name}") 
             ax.set_ylabel(self.controller.model.u_unit)
@@ -136,11 +111,33 @@ class Plotter():
         filename = "light_schedule"
         plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
+        for run in controller.optimization_results['runs']:
+            if 'bidding result' not in controller.optimization_results['runs'][run]:
+                continue
+
+            run_sanitized = run.lower().replace(" ", "_")
+
+            bid_ts  = self.controller.optimization_results['runs'][run]['timeseries']
+            b_p_up  = bid_ts['P_up']
+            b_p_dn  = bid_ts['P_dn']
+            b_c_up  = bid_ts['C_up']
+            b_c_dn  = bid_ts['C_dn']
+            b_a_up  = np.array(self.controller.market.Pr_a_up(spot_prices, b_c_up)).flatten()
+            b_a_dn  = np.array(self.controller.market.Pr_a_dn(spot_prices, b_c_dn)).flatten()
+            
+            # Filter out the unreasonably low bid activations
+            activation_th = 0.01
+            filtered_b_c_up = np.where(b_a_up > activation_th, b_c_up, 0).flatten()
+            filtered_b_c_dn = np.where(b_a_dn > activation_th, b_c_dn, 0).flatten()
+
+            # volume_th = 1e-3
+            # filtered_b_p_up = b_p_up[np.where(b_p_up > volume_th)]
+            # filtered_b_p_dn = b_p_dn[np.where(b_p_dn > volume_th)]
+            # filtered_t_up   = t[np.where(b_p_up > volume_th)]
+            # filtered_t_dn   = t[np.where(b_p_dn > volume_th)]
 
 
-        if 'Bidding' in controller.runs['runs']:
             ##################################################
-            plt.figure(3, figsize=config.plot_format)
             fig, ax = plt.subplots(1, 1, figsize=config.plot_format, sharex=True)
 
             lb_B, ub_B = self.controller.model.get_bidding_bounds(self.controller)
@@ -153,11 +150,12 @@ class Plotter():
             ax.set_xlabel("Time")
             ax.legend(loc="upper right")
 
-            filename = "bidding_volume"
+            fig.suptitle(f"{run} Bidding volumes in MW ({controller.market.date}, {controller.market.bidding_zone})")
+
+            filename = f"{run_sanitized}_volume"
             plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
             ##################################################
-            plt.figure(4)
 
             # Create a figure with two subplots sharing the same x-axis
             fig, ax = plt.subplots(1, 1, figsize=config.plot_format, sharex=True)
@@ -170,17 +168,17 @@ class Plotter():
             ax.tick_params(axis='y', labelcolor="blue")
             ax.legend(loc="upper left")
 
-            fig.suptitle(f"Bidding Prices and Spot Prices in €/MW ({controller.market.date}, {controller.market.bidding_zone})")
+            fig.suptitle(f"{run} Bidding Prices and Spot Prices in €/MW ({controller.market.date}, {controller.market.bidding_zone})")
 
             # Adjust layout to avoid overlap
             fig.tight_layout(rect=[0, 0.03, 1, 0.95])  # Leaves space for the title
 
             # Save the plot
-            filename = "bidding_prices"
+            filename = f"{run_sanitized}_prices"
             plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
             ##################################################
-            plt.figure(6, figsize=config.plot_format)
+            plt.figure(figsize=config.plot_format)
             plt.fill_between(t, 0, b_a_up, color='blue', label="Up-activation", alpha=0.4)
             plt.fill_between(t, 0, b_a_dn, color='red', label="Down-activation", alpha=0.4)
             # plt.step(t, b_a_up, label="Up-activation")
@@ -188,8 +186,9 @@ class Plotter():
             plt.ylabel("Probability of activations")
             plt.xlabel("Time (days)")
             plt.legend()
+            plt.title(f"{run} Activation Chances ({controller.market.date}, {controller.market.bidding_zone})")
 
-            filename = "bidding_activations"
+            filename = f"{run_sanitized}_activations"
             plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
 
@@ -224,13 +223,13 @@ class Plotter():
             ax2.set_xlabel("Bid volume (MW)")
             ax2.title.set_text('Down-regulation bids')
             
-            fig.suptitle(f"Bidding Prices and Spot Prices in €/MW ({controller.market.date}, {controller.market.bidding_zone})")
+            fig.suptitle(f"{run} Prices and Spot Prices in €/MW ({controller.market.date}, {controller.market.bidding_zone})")
 
             # Adjust layout to avoid overlap
             fig.tight_layout(rect=[0, 0.03, 1, 0.95])  # Leaves space for the title
 
 
-            filename = "bidding_scatter_plots"
+            filename = f"{run_sanitized}_scatter_plots"
             plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
 
@@ -238,8 +237,8 @@ class Plotter():
 
             plt.figure(figsize=config.plot_format)
             
-            u_bid = controller.runs['runs']['Bidding']['timeseries']['u']
-            x_bid = controller.runs['runs']['Bidding']['timeseries']['x']
+            u_bid = controller.optimization_results['runs'][run]['timeseries']['u']
+            x_bid = controller.optimization_results['runs'][run]['timeseries']['x']
             # fw_interval = calculate_freshweight_interval(controller, u_bid, b_p_up, b_p_dn, b_c_up, b_c_dn)
             fw_variance = propagate_process_covariance(controller, x_bid, u_bid, b_p_up, b_p_dn, b_c_up, b_c_dn)
             fw_sd = np.sqrt(fw_variance)
@@ -254,9 +253,9 @@ class Plotter():
             plt.axhline(y=controller.model.Final_fw_sht, color='gray', linestyle=':', label="Required Freshweight (g/plant)")
             plt.ylabel("Fresh weight (g/plant)")
             plt.xlabel("Time (days)")
-            plt.title('95% confidence interval of freshweight throughout one growth cycle')
+            plt.title(f'{run}: 95% confidence interval of freshweight throughout one growth cycle')
 
-            filename = "freshweight_variance"
+            filename = f"{run_sanitized}_freshweight_variance"
             plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
 
@@ -274,7 +273,7 @@ class Plotter():
             b_p_up_filtered = np.where(np.logical_and(b_a_up > activation_threshold, b_p_up > volume_threshold,), b_p_up, 0)
             b_p_dn_filtered = np.where(np.logical_and(b_a_dn > activation_threshold, b_p_dn > volume_threshold,), b_p_dn, 0)
 
-            plt.figure(3, figsize=config.plot_format)
+            plt.figure(figsize=config.plot_format)
             fig, (ax1, ax2) = plt.subplots(2, 1, figsize=config.plot_format, sharex=True)
 
             ax1.fill_between(t, -b_p_up_filtered, 0, color='blue', alpha=0.4, label='Up-regulation', step='post')
@@ -290,9 +289,9 @@ class Plotter():
             ax2.legend()
 
 
-            fig.suptitle(f"Bidding volumes and predicted activation chances. ({controller.market.date}, {controller.market.bidding_zone})")
+            fig.suptitle(f"{run} volumes and predicted activation chances. ({controller.market.date}, {controller.market.bidding_zone})")
 
-            filename = "results_bidding_vol_act"
+            filename = f"{run_sanitized}_results_bidding_vol_act"
             plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
 
@@ -323,7 +322,7 @@ class Plotter():
 
 
         ##################################################
-        plt.figure(31, figsize=config.plot_format)
+        plt.figure(figsize=config.plot_format)
 
         for case in range(freshwewights.shape[0]):
             plt.plot(t, freshwewights[case,:], color='green', alpha=0.2)
@@ -369,7 +368,7 @@ class Plotter():
 
         line_x = np.array([min(spot_prices), max(spot_prices)])
 
-        plt.figure(20, figsize=config.plot_format)
+        plt.figure(figsize=config.plot_format)
 
         # plt.step(timestamps, spot_prices*1000/market.C_eur2nok, label="Spot price")
         plt.step(timestamps, mfrr_prices_up, label="Clearing price up", color='blue', alpha=opacity)
@@ -393,7 +392,7 @@ class Plotter():
 
 
          ###########################################################
-        plt.figure(21, figsize=config.plot_format)
+        plt.figure(figsize=config.plot_format)
 
         # plt.step(timestamps, spot_prices_eur, label="Spot price", color='grey', linestyle=':')
         plt.step(timestamps, mfrr_prices_up - spot_prices_eur, label="Clearing price up", color='blue')
@@ -409,7 +408,7 @@ class Plotter():
 
 
         ###########################################################
-        plt.figure(22, figsize=config.plot_format)
+        plt.figure(figsize=config.plot_format)
 
         n_bins = 100
         N_data_points = len(mfrr_prices_up)
@@ -434,7 +433,7 @@ class Plotter():
         plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
         ###########################################################
-        plt.figure(24, figsize=config.plot_format)
+        plt.figure(figsize=config.plot_format)
 
         x_up = np.linspace(market.mu_up-3*market.sigma_up,market.mu_up+3*market.sigma_up, 1000)
         x_dn = np.linspace(market.mu_dn-3*market.sigma_dn,market.mu_dn+3*market.sigma_dn, 1000)
@@ -456,7 +455,7 @@ class Plotter():
 
 
         ################################################################
-        plt.figure(23, figsize=config.plot_format)
+        plt.figure(figsize=config.plot_format)
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=config.plot_format, sharex=True)
 
         n = int(len(spot_prices)/10)
@@ -523,8 +522,8 @@ class Plotter():
         spot_prices = self.controller.spot_prices
         # u_bid = self.controller.u_bid.flatten()
         # u_base = self.controller.u_base.flatten()
-        u_rigid = simulator.mpc_controller.runs['runs']['Rigid']['timeseries']['u'].flatten()
-        x_rigid = simulator.mpc_controller.runs['runs']['Rigid']['timeseries']['x']
+        u_rigid = simulator.mpc_controller.optimization_results['runs']['Rigid']['timeseries']['u'].flatten()
+        x_rigid = simulator.mpc_controller.optimization_results['runs']['Rigid']['timeseries']['x']
         u_mpc = self.simulator.u_mpc.flatten()
 
         # x_bid = self.simulator.x_bid
@@ -550,7 +549,7 @@ class Plotter():
 
         # BEGIN PLOTTING (or more like saving plots, but you get it)
         ##################################################
-        plt.figure(1, figsize=config.plot_format)
+        plt.figure(figsize=config.plot_format)
         # plt.step(t, x1_mpc, "r", label="Structural dry weight (g/m^2)") 
         # plt.step(t, x2_mpc, "b", label="Non-structural dry weight (g/m^2)")
         plt.step(t, self.simulator.model.freshweight(x_mpc), "g", label="MPC Fresh weight (g/plant)")
@@ -569,7 +568,7 @@ class Plotter():
         ##################################################
 
 
-        plt.figure(2, figsize=config.plot_format)
+        plt.figure(figsize=config.plot_format)
         plt.step(t, u_mpc, label="MPC U") 
         plt.step(t, u_rigid, label="Rigid U") 
         # plt.step(t, u_bid, linestyle=':', label="Bidding U") 
@@ -595,16 +594,16 @@ class Plotter():
         # Get plotting details
         foldername = self.foldername
 
-        n_runs = len(list(self.controller.runs['runs'].keys()))
+        n_runs = len(list(self.controller.optimization_results['runs'].keys()))
 
 
         t       = self.controller.t
         spot_prices  = self.controller.spot_prices
 
 
-        if 'Bidding' in controller.runs['runs']:
+        if 'Bidding' in controller.optimization_results['runs']:
 
-            bid_ts  = self.controller.runs['runs']['Bidding']['timeseries']
+            bid_ts  = self.controller.optimization_results['runs']['Bidding']['timeseries']
             b_p_up  = bid_ts['P_up']
             b_p_dn  = bid_ts['P_dn']
             b_c_up  = bid_ts['C_up']
