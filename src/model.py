@@ -605,8 +605,8 @@ class MpcPlantModel:
 
         for k in range(N_TH):
             for bid_param in range(4):
-                g_ineq.append(B[bid_param,k] - lb_B[bid_param,:])
-                g_ineq.append(-(B[bid_param,k] - ub_B[bid_param,:]))
+                g_ineq.append(B[bid_param,k] - lb_B[bid_param,k])
+                g_ineq.append(-(B[bid_param,k] - ub_B[bid_param,k]))
 
 
         return g_eq, g_ineq

@@ -17,9 +17,9 @@ FINAL_WEIGHT = 4                    # 1 day
 SIMULATION_DATE = '2024-01-01'
 BIDDING_ZONE    = 'NO3'
 import_file     = 'scaled_optimal_intensities.json'
-search_cache    = 1
+search_cache    = 0
 
-MPC_TH = 1
+MPC_TH = 3
 MPC_steplength = 1
 
 def main():
@@ -45,9 +45,9 @@ def main():
   
     ''' OPTIMIZAION AND PLOTTING '''
 
-    controller.import_baseline()
-    controller.optimize_baseline()
-    controller.optimize_bidding()
+    # controller.import_baseline()
+    # controller.optimize_baseline()
+    # controller.optimize_bidding()
     controller.optimize_bidding_mpc()
 
     controller.status_report()
