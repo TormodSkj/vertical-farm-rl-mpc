@@ -28,7 +28,7 @@ def main():
     x_init = np.array([5, 1])   # Specify init vector [structural and non structural dry weight in grams]
 
 
-    ''' CREATING INSTANCES '''
+    ''' CREATING OBJECTS '''
     config = Config(SIM_NAME, filetype="pdf", seed=1133)
     plant = PlantModel(x_init, FINAL_WEIGHT)
     mpc_plant = MpcPlantModel(x_init, FINAL_WEIGHT)
@@ -37,12 +37,8 @@ def main():
     
     # mpc_controller = Controller(HORIZON_DAYS, mpc_plant, None, market, config, MPC_TH, MPC_steplength, surpress_output = False, calculate_fw=True)     # Instance of controller used in mpc
     # simulator = Simulator(HORIZON_DAYS, mpc_plant, market, config, mpc_controller, time_horizon=MPC_TH, time_iteration=MPC_steplength)
-
-    # battery = BatteryModel(x_init = np.array([200]))
-    # battery_controller = Controller(HORIZON_DAYS, battery, market, config, 'opt')
-
-
   
+
     ''' OPTIMIZAION AND PLOTTING '''
 
     # controller.import_baseline()

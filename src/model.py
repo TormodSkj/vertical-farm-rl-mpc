@@ -599,64 +599,78 @@ class MpcPlantModel:
 
         return Eps * 10**6
 
-    def get_bidding_constraints(self, g_eq, g_ineq, N_TH, B, U_base):
+    def get_static_bidding_constraints(self, g_eq, g_ineq, N_TH, B):
 
-        lb_B, ub_B = self.get_bidding_bounds(N_TH, U_base)
+        lb_B, _ = self.get_bidding_bounds(N_TH, np.zeros((1,N_TH)))
 
         for k in range(N_TH):
             for bid_param in range(4):
                 g_ineq.append(B[bid_param,k] - lb_B[bid_param,k])
-                g_ineq.append(-(B[bid_param,k] - ub_B[bid_param,k]))
+
+        return g_eq, g_ineq
+    
+    def get_dynamic_bidding_constraints(self, g_eq, g_ineq, N_TH, B, U_base):
+
+        _, ub_B = self.get_bidding_bounds(N_TH, U_base)
+
+        Bp_up = B[0,:]
+        Bp_dn = B[1,:]
+
+        for k in range(N_TH):
+            g_ineq.append(-Bp_up[k] + ub_B[0,k])
+            g_ineq.append(-Bp_dn[k] + ub_B[1,k])
+
+        return g_eq, g_ineq
+
+
+    def get_static_process_constraints(self,g_eq, g_ineq, N_TH, dt, X, U, Eps):
+        '''Creates list of constraints that are non-changing throughout the mpc solution'''
+
+
+        ''' Inequality constraints: g_ineq[k] > 0 for all k '''
+
+        g_ineq.append(Eps)
+
+        # Upper and lower bounds on u
+        for k in range(N_TH):
+            g_ineq.append(X[k])
+
+        # DLI constraint
+        for k in range(N_TH+1):
+            if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
+                # k = 96 +24, +48, +72 ...
+                LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
+                
+                g_ineq.append(self.DLI_max - LI)
+                g_ineq.append(LI - self.DLI_min)
 
 
         return g_eq, g_ineq
     
 
-
-    def get_process_constraints(self,g_eq, g_ineq, N_TH, dt, X, x0, U, Eps, ref_weight):
-        '''Get plant model constraints'''
+    def get_dynamic_process_constraints(self,g_eq, g_ineq, N_TH, dt, X, x0, U, Eps, ref_weight):
+        '''Creates list of constraints that change throughout the mpc solution'''
 
         F = self.casadi_function_fe(ts=dt)
+
+        # Define the dynamic and control constraints
+        for k in range(0,N_TH):
+            x_next = F(X[:, k], U[k])    
+            g_eq.append(X[:, k+1] - x_next)
 
         # Initial state constraint
         g_eq.append(X[:,0] - x0)
         # Final weight constraint
         g_ineq.append(self.freshweight(X[:,N_TH]) + Eps - ref_weight)   
 
-        # Define the dynamic and control constraints
-        for k in range(0,N_TH):
-            # Model equalities
-            # x_next = X[:, k] + dt*self.derivative(X[:, k], U[k], U[min(k-1, 0)])        # Forward euler
-            x_next = F(X[:, k], U[k])                            # 
-            g_eq.append(X[:, k+1] - x_next)
-
-
         ''' Inequality constraints: g_ineq[k] > 0 for all k '''
-
-        # g_ineq.append(Eps)
 
         # Upper and lower bounds on u
         for k in range(N_TH):
             g_ineq.append(U[k])
             g_ineq.append(self.C_PPFD_max - U[k])
 
-            # g_ineq.append(X[k])
-
-        # DLI constraint
-        for k in range(N_TH+1):
-            if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
-                # k = 96 +24, +48, +72 ...
-
-                LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
-                # LI = ca.sum2(U[k-QUARTER_HOURS_PER_DAY:k])*1e-6*SECONDS_PER_QUARTER_HOUR # Convert from umol/m^2/s to mol/m^2/s
-                
-                g_ineq.append(self.DLI_max - LI)
-                g_ineq.append(LI - self.DLI_min)
-
-
-
         return g_eq, g_ineq
-    
 
     def get_u(self, U_base, B, spot_prices, market):
 

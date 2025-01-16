@@ -341,6 +341,8 @@ class Controller():
         # Set up optimizers
         opti_base,  X_base, U_base, _,      Eps_base,   = self.setup_optimizer(nx, nu, N_TH)
         opti_bid,   X_bid,  _ ,     B_bid,  Eps_bid,    = self.setup_optimizer(nx, nu, N_TH)
+        opti_base = self.set_static_constraints(opti_base,  N_TH=N_TH, X=X_base, U=U_base,  Eps=Eps_base)
+        opti_bid  = self.set_static_constraints(opti_bid,   N_TH=N_TH, X=X_bid,  B=B_bid,   Eps=Eps_bid)
 
         # Set up state vectors
         X = ca.DM.zeros(nx, N+1)
@@ -367,9 +369,9 @@ class Controller():
                             ref_weight = reference_weight[k+N_horizon]
             )
 
+            # Solve baseline
             sol_base = opti_base_copy.solve()
             u_opt_base = sol_base.value(U_base)
-            x_opt_base = sol_base.value(X_base)
 
             opti_bid_copy = self.update_optimizer_bidding(
                             opti    = opti_bid.copy(), N_TH = N_horizon, spot_prices = spot_prices[k:k+N_horizon],
@@ -377,23 +379,17 @@ class Controller():
                             B       = B_bid[:,:N_horizon], 
                             Eps     = Eps_bid, 
                             U_base  = u_opt_base[:N_horizon], 
-                            # ref_X   = x_opt_base[:,:N_horizon+1],
-                            # ref_U   = ref_U[k:k+N_horizon],
                             ref_weight = reference_weight[k+N_horizon]
             )
 
+            # Solve bidding
             sol_bid = opti_bid_copy.solve()
             B_opt = sol_bid.value(B_bid)
             x_opt_bid = sol_bid.value(X_bid)
-            # Solve baseline
-            # Solve bidding
 
-            # Get u
-            # U[:,k] = self.model.get_u(U_base, B, spot_prices[k,k+N_horizon], self.market)
-
-            U_nom[:,k:k+min(N_iter, N_horizon)] = u_opt_base[0:min(N_iter, N_horizon)]
 
             # Store inputs
+            U_nom[:,k:k+min(N_iter, N_horizon)] = u_opt_base[0:min(N_iter, N_horizon)]
             U[:,k:k+min(N_iter, N_horizon)] = self.mpc_model.get_u(U_base  = u_opt_base[0:min(N_iter, N_horizon)], 
                                                                B           = B_opt[:,0:min(N_iter, N_horizon)],
                                                                spot_prices = spot_prices[k:k+N_horizon],
@@ -402,11 +398,7 @@ class Controller():
             B[:,k:k+min(N_iter, N_horizon)] = B_opt[:,0:min(N_iter, N_horizon)]
 
             # Integrate states
-
             X[:,k:k+1+min(N_iter, N_horizon)] = x_opt_bid[:,:1+min(N_iter, N_horizon)]
-
-            # for i in range(min(N_iter, N_horizon)):
-            #     X[:,k+1+i] = F(X[:,k+i], U[:,k+i])
 
             #TODO temp solution
             # Eps = reference_weight[k+N_horizon] - self.mpc_model.freshweight(X[:,k+1+min(N_iter, N_horizon)])
@@ -434,15 +426,6 @@ class Controller():
         B = opti.variable(4*nu, N_horizon)
         Eps = opti.variable(1, 1)
 
-        opti.subject_to(opti.bounded(0, Eps, ca.inf))
-        
-        lb_X, ub_X = self.mpc_model.get_state_bounds(N_horizon)
-
-        opti.subject_to(opti.bounded(lb_X, X, ub_X))
-
-        # x0 = opti.parameter(nx, 1)
-        # spot_prices = opti.parameter(1, N_horizon)
-
         J = 0 #self.model.baseline_obj_function(N_horizon, spot_prices, X, U) + self.model.terminal_cost(Eps)
 
         opti.minimize(J)
@@ -450,35 +433,37 @@ class Controller():
         opti.solver('ipopt', opts)
         return opti, X, U, B, Eps #, x0, spot_prices
                 
+    def set_static_constraints(self, opti: ca.Opti, N_TH, X, Eps, U=None, B=None):
+
+        g_eq, g_ineq = [], []
+        g_eq, g_ineq = self.mpc_model.get_static_process_constraints(g_eq, g_ineq, N_TH, self.dt, X, U, Eps)
+        
+        if B is not None:
+            g_eq, g_ineq = self.mpc_model.get_static_bidding_constraints(g_eq, g_ineq, N_TH, B)
+
+        [opti.subject_to(equality_constraint == 0) for equality_constraint in g_eq]
+        [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
+
+        return opti
+
 
 
     def set_constraints(self, opti: ca.Opti, N_TH, X, x0, Eps, ref_weight, U=None, B=None, U_base=None):
 
         g_eq, g_ineq = [], []
-        g_eq, g_ineq = self.mpc_model.get_process_constraints(g_eq, g_ineq, N_TH, self.dt, X, x0, U, Eps, ref_weight)
+        g_eq, g_ineq = self.mpc_model.get_dynamic_process_constraints(g_eq, g_ineq, N_TH, self.dt, X, x0, U, Eps, ref_weight)
         
         # if U is not None:
             # lb_U, ub_U = self.mpc_model.get_input_bounds(N_TH)
             # opti.subject_to(opti.bounded(lb_U, U, ub_U))
 
         if B is not None and U_base is not None:
-            g_eq, g_ineq = self.mpc_model.get_bidding_constraints(g_eq, g_ineq, N_TH, B, U_base)
+            g_eq, g_ineq = self.mpc_model.get_dynamic_bidding_constraints(g_eq, g_ineq, N_TH, B, U_base)
             # lb_B, ub_B = self.model.get_bidding_bounds(N_TH, U_base)
             # opti.bounded(lb_B, B, ub_B)
 
-        print('')
-
-        for eq in g_eq:
-            opti.subject_to(eq == 0)
-
-        for ineq in g_ineq:
-            opti.subject_to(ineq >= 0)
-
-        # lowkey hvorfor blir det 74k constraints her?????
-
-        # # opti.subject_to()
-        # [opti.subject_to(equality_constraint == 0) for equality_constraint in g_eq]
-        # [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
+        [opti.subject_to(equality_constraint == 0) for equality_constraint in g_eq]
+        [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
 
         return opti
 

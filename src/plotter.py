@@ -43,6 +43,8 @@ class Plotter():
         spot_prices  = self.controller.spot_prices
 
 
+        bidding_runs = [run for run in controller.optimization_results['runs'] if 'bidding result' in controller.optimization_results['runs'][run]]
+
         # BEGIN PLOTTING (or more like saving plots, but you get it)
         ##################################################
         
@@ -111,17 +113,16 @@ class Plotter():
         filename = "light_schedule"
         plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
-        for run in controller.optimization_results['runs']:
-            if 'bidding result' not in controller.optimization_results['runs'][run]:
-                continue
+        n_bidding_runs = len(bidding_runs)
+        for run in bidding_runs:
 
             run_sanitized = run.lower().replace(" ", "_")
 
             bid_ts  = self.controller.optimization_results['runs'][run]['timeseries']
-            b_p_up  = bid_ts['P_up']
-            b_p_dn  = bid_ts['P_dn']
-            b_c_up  = bid_ts['C_up']
-            b_c_dn  = bid_ts['C_dn']
+            b_p_up  = bid_ts['P_up']    # Volume up
+            b_p_dn  = bid_ts['P_dn']    # Volume down
+            b_c_up  = bid_ts['C_up']    # Price up
+            b_c_dn  = bid_ts['C_dn']    # Price down
             b_a_up  = np.array(self.controller.market.Pr_a_up(spot_prices, b_c_up)).flatten()
             b_a_dn  = np.array(self.controller.market.Pr_a_dn(spot_prices, b_c_dn)).flatten()
             
@@ -138,19 +139,19 @@ class Plotter():
 
 
             ##################################################
-            fig, ax = plt.subplots(1, 1, figsize=config.plot_format, sharex=True)
+            fig, axes = plt.subplots(n_bidding_runs, 1, figsize=config.plot_format, sharex=True)
 
-            lb_B, ub_B = self.controller.model.get_bidding_bounds(self.controller)
-
+            # lb_B, ub_B = self.controller.model.get_bidding_bounds(self.controller)
             # ax.step(t, -ub_B[0,:], color='grey', label='Up-regulation volume limit')
             # ax.step(t, ub_B[1,:], color='grey', label='Down-regulation volume limit')
+            
             ax.fill_between(t, -b_p_up, 0, color='blue', alpha=0.4, label='Up-regulation', step='post')
             ax.fill_between(t, 0, b_p_dn, color='red', alpha=0.4, label='down-regulation', step='post')
             ax.set_ylabel("Power (MW)")
             ax.set_xlabel("Time")
             ax.legend(loc="upper right")
 
-            fig.suptitle(f"{run} Bidding volumes in MW ({controller.market.date}, {controller.market.bidding_zone})")
+            fig.suptitle(f"{run} volumes in MW ({controller.market.date}, {controller.market.bidding_zone})")
 
             filename = f"{run_sanitized}_volume"
             plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
