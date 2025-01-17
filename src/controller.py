@@ -339,10 +339,12 @@ class Controller():
         reference_weight = self.mpc_model.freshweight(ref_run['x'])
 
         # Set up optimizers
-        opti_base,  X_base, U_base, _,      Eps_base,   = self.setup_optimizer(nx, nu, N_TH)
-        opti_bid,   X_bid,  _ ,     B_bid,  Eps_bid,    = self.setup_optimizer(nx, nu, N_TH)
-        opti_base = self.set_static_constraints(opti_base,  N_TH=N_TH, X=X_base, U=U_base,  Eps=Eps_base)
-        opti_bid  = self.set_static_constraints(opti_bid,   N_TH=N_TH, X=X_bid,  B=B_bid,   Eps=Eps_bid)
+        opti_base,  opt_vars_base = self.setup_optimizer(nx, nu, N_TH, 'Baseline')
+        opti_bid,   opt_vars_bid  = self.setup_optimizer(nx, nu, N_TH, 'Bidding')
+
+        # Set up constraints using parameters
+        opti_base = self.set_constraints(opti_base,  N_TH, opt_vars_base)
+        opti_bid  = self.set_constraints(opti_bid,   N_TH, opt_vars_bid)
 
         # Set up state vectors
         X = ca.DM.zeros(nx, N+1)
@@ -352,45 +354,42 @@ class Controller():
         B = ca.DM.zeros(4, N)
         Eps = 0
 
-        # for k in range(N):
         k = 0
         while k < N:
             
             N_horizon = min(N-k, N_TH)
 
             # Update baseline optimizer
+            # Apply current parameters and set initial guess
             opti_base_copy = self.update_optimizer_baseline(
-                            opti_base.copy(), N_TH = N_horizon, spot_prices = spot_prices[k:k+N_horizon], 
-                            X    = X_base[:,:N_horizon+1],   x0 = X[:,k], 
-                            U    = U_base[:,:N_horizon], 
-                            Eps  = Eps_base, 
-                            ref_X= ref_X[:,k:k+N_horizon+1],
-                            ref_U= ref_U[k:k+N_horizon],
-                            ref_weight = reference_weight[k+N_horizon]
+                            opti_base.copy(), N_TH = N_horizon, opt_vars = opt_vars_base, spot_prices = spot_prices[k:k+N_horizon], 
+                            x0          = X[:,k], 
+                            init_X      = ref_X[:,k:k+N_horizon+1],
+                            init_U      = ref_U[k:k+N_horizon],
+                            ref_weight  = reference_weight[k+N_horizon]
             )
 
             # Solve baseline
             sol_base = opti_base_copy.solve()
-            u_opt_base = sol_base.value(U_base)
+            u_opt_base = sol_base.value(opt_vars_base['U']).reshape(1,-1)
 
+            # Apply current parameters and set initial guess
             opti_bid_copy = self.update_optimizer_bidding(
-                            opti    = opti_bid.copy(), N_TH = N_horizon, spot_prices = spot_prices[k:k+N_horizon],
-                            X       = X_bid[:,:N_horizon+1],    x0 = X[:,k], 
-                            B       = B_bid[:,:N_horizon], 
-                            Eps     = Eps_bid, 
-                            U_base  = u_opt_base[:N_horizon], 
-                            ref_weight = reference_weight[k+N_horizon]
+                            opti_bid.copy(), N_TH = N_horizon, opt_vars = opt_vars_bid, spot_prices = spot_prices[k:k+N_horizon],
+                            x0          = X[:,k], 
+                            U_nom       = u_opt_base[:,:N_horizon], 
+                            ref_weight  = reference_weight[k+N_horizon]
             )
 
             # Solve bidding
             sol_bid = opti_bid_copy.solve()
-            B_opt = sol_bid.value(B_bid)
-            x_opt_bid = sol_bid.value(X_bid)
+            x_opt_bid = sol_bid.value(opt_vars_bid['X'])
+            B_opt = sol_bid.value(opt_vars_bid['B'])
 
 
             # Store inputs
-            U_nom[:,k:k+min(N_iter, N_horizon)] = u_opt_base[0:min(N_iter, N_horizon)]
-            U[:,k:k+min(N_iter, N_horizon)] = self.mpc_model.get_u(U_base  = u_opt_base[0:min(N_iter, N_horizon)], 
+            U_nom[:,k:k+min(N_iter, N_horizon)] = u_opt_base[:,0:min(N_iter, N_horizon)]
+            U[:,k:k+min(N_iter, N_horizon)] = self.mpc_model.get_u(U_base  = u_opt_base[:,0:min(N_iter, N_horizon)], 
                                                                B           = B_opt[:,0:min(N_iter, N_horizon)],
                                                                spot_prices = spot_prices[k:k+N_horizon],
                                                                market      = self.market)
@@ -418,28 +417,61 @@ class Controller():
         return 0
 
 
-    def setup_optimizer(self, nx, nu, N_horizon):
+    def setup_optimizer(self, nx, nu, N_horizon, opti_type: str):
+        '''Creates opti variables. Creates opt_vars dictionaries containing opti symbolic optimization variables'''
+
         opti = ca.Opti()
-
-        X = opti.variable(nx, N_horizon+1)
-        U = opti.variable(nu, N_horizon)
-        B = opti.variable(4*nu, N_horizon)
-        Eps = opti.variable(1, 1)
-
-        J = 0 #self.model.baseline_obj_function(N_horizon, spot_prices, X, U) + self.model.terminal_cost(Eps)
-
-        opti.minimize(J)
         opts = {}
         opti.solver('ipopt', opts)
-        return opti, X, U, B, Eps #, x0, spot_prices
+
+        X = opti.variable(nx, N_horizon+1)
+        Eps = opti.variable(1, 1)
+
+        x0          = opti.parameter(nx, 1)         # Starting weight
+        ref_weight  = opti.parameter(1, 1)          # End weight (To be substituted)
+        spot_prices = opti.parameter(1, N_horizon)  # Spot prices for optimization window
+
+
+        opt_vars = {'N_horizon': N_horizon,
+                    'X':    X,
+                    'x0':   x0,
+                    'Eps':  Eps,
+                    'spot_prices' : spot_prices,
+                    'ref_weight'  : ref_weight
+                    }
+
+        if opti_type=='Baseline':
+            U = opti.variable(nu, N_horizon)
+            opt_vars['U'] = U
+            return opti, opt_vars
+        
+        if opti_type=='Bidding':
+            B = opti.variable(4*nu, N_horizon)
+            U_nom = opti.parameter(1, N_horizon)
+            opt_vars['B'] = B
+            opt_vars['U_nom'] = U_nom
+            return opti, opt_vars
                 
-    def set_static_constraints(self, opti: ca.Opti, N_TH, X, Eps, U=None, B=None):
-
-        g_eq, g_ineq = [], []
-        g_eq, g_ineq = self.mpc_model.get_static_process_constraints(g_eq, g_ineq, N_TH, self.dt, X, U, Eps)
+    def set_constraints(self, opti: ca.Opti, N_TH, opt_vars: dict):
         
-        if B is not None:
-            g_eq, g_ineq = self.mpc_model.get_static_bidding_constraints(g_eq, g_ineq, N_TH, B)
+        # Extract symbolic optimization variables and parameters
+        X, Eps, x0, spot_prices, ref_weight = [opt_vars[key] for key in ['X', 'Eps', 'x0', 'spot_prices', 'ref_weight']]    
+        
+        
+        g_eq, g_ineq = [], []
+
+        if 'B' in opt_vars and 'U_nom' in opt_vars and 'U' not in opt_vars:
+            B, U_nom = [opt_vars[key] for key in ['B', 'U_nom']]
+            U = ca.transpose(self.mpc_model.get_u(U_base=U_nom, B=B, spot_prices=spot_prices, market=self.market))
+            g_eq, g_ineq = self.mpc_model.get_bidding_constraints(g_eq, g_ineq, N_TH, B, U_nom)
+
+        elif 'B' not in opt_vars and 'U_nom' not in opt_vars and 'U' in opt_vars:
+            U = opt_vars['U']
+
+        else:
+            assert False, 'Content in opt_vars is inconsistent'
+
+        g_eq, g_ineq = self.mpc_model.get_process_constraints(g_eq, g_ineq, N_TH, self.dt, X, x0, U, Eps, ref_weight)
 
         [opti.subject_to(equality_constraint == 0) for equality_constraint in g_eq]
         [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
@@ -447,64 +479,73 @@ class Controller():
         return opti
 
 
+    def update_optimizer_baseline(self, opti: ca.Opti, N_TH, opt_vars, spot_prices, x0, init_X, init_U, ref_weight):
 
-    def set_constraints(self, opti: ca.Opti, N_TH, X, x0, Eps, ref_weight, U=None, B=None, U_base=None):
+        X, U, Eps = [opt_vars[key] for key in ['X', 'U', 'Eps']]    # Extract symbolic optimization variables and parameters
 
         g_eq, g_ineq = [], []
-        g_eq, g_ineq = self.mpc_model.get_dynamic_process_constraints(g_eq, g_ineq, N_TH, self.dt, X, x0, U, Eps, ref_weight)
-        
-        # if U is not None:
-            # lb_U, ub_U = self.mpc_model.get_input_bounds(N_TH)
-            # opti.subject_to(opti.bounded(lb_U, U, ub_U))
-
-        if B is not None and U_base is not None:
-            g_eq, g_ineq = self.mpc_model.get_dynamic_bidding_constraints(g_eq, g_ineq, N_TH, B, U_base)
-            # lb_B, ub_B = self.model.get_bidding_bounds(N_TH, U_base)
-            # opti.bounded(lb_B, B, ub_B)
-
+        g_eq, g_ineq = self.mpc_model.get_dynamic_process_constraints(g_eq, g_ineq, N_TH, X, Eps, ref_weight)
         [opti.subject_to(equality_constraint == 0) for equality_constraint in g_eq]
         [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
-
-        return opti
-
-
-    def update_optimizer_baseline(self, opti: ca.Opti, N_TH, spot_prices, X,x0, U, Eps, ref_X, ref_U, ref_weight):
 
         J = self.mpc_model.baseline_obj_function(N_TH, spot_prices, X, U) + self.mpc_model.terminal_cost(Eps)
         opti.minimize(J)
 
-        opti.set_initial(X, ref_X)
-        opti.set_initial(U, ref_U)
-        
-        opti = self.set_constraints(opti=opti, N_TH=N_TH, X=X, x0=x0, U=U, Eps=Eps, ref_weight=ref_weight)
+        opti.set_initial(X[:,:N_TH+1], init_X)
+        opti.set_initial(U[:,:N_TH], init_U)
+
+        opti.set_value(opt_vars['x0'], x0)
+        opti.set_value(opt_vars['ref_weight'], ref_weight)
+        opti.set_value(opt_vars['spot_prices'][:,:N_TH], spot_prices)
+        opti.set_value(opt_vars['spot_prices'][N_TH:], ca.DM.ones(1, opt_vars['spot_prices'][N_TH:].shape[1]))
+
         return opti
 
-    def update_optimizer_bidding(self, opti: ca.Opti, N_TH, spot_prices, X, x0, B, Eps, U_base, ref_weight):
+    def update_optimizer_bidding(self, opti: ca.Opti, N_TH, opt_vars, spot_prices, x0, U_nom, ref_weight):
 
-        J = self.mpc_model.bidding_obj_function(N_TH, spot_prices, X, B, U_base, self.market) + self.mpc_model.terminal_cost(Eps)
+        X, B, Eps = [opt_vars[key] for key in ['X', 'B', 'Eps']]    # Extract symbolic optimization variables and parameters
+
+        g_eq, g_ineq = [], []
+        g_eq, g_ineq = self.mpc_model.get_dynamic_process_constraints(g_eq, g_ineq, N_TH, X, Eps, ref_weight)
+        [opti.subject_to(equality_constraint == 0) for equality_constraint in g_eq]
+        [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
+
+        J = self.mpc_model.bidding_obj_function(N_TH, spot_prices,X, B, U_nom, self.market) + self.mpc_model.terminal_cost(Eps)
         opti.minimize(J)
 
-        U = ca.transpose(self.mpc_model.get_u(U_base=U_base, B=B, spot_prices=spot_prices, market=self.market))
-        
-        _, ub_B = self.mpc_model.get_bidding_bounds(N_TH, U_base)
+
+        # update parameters
+        opti.set_value(opt_vars['x0'], x0)
+        opti.set_value(opt_vars['U_nom'][:,:N_TH], U_nom)
+        opti.set_value(opt_vars['U_nom'][N_TH:], ca.DM.zeros(1, opt_vars['U_nom'][N_TH:].shape[1]))
+        opti.set_value(opt_vars['ref_weight'], ref_weight)
+        opti.set_value(opt_vars['spot_prices'][:,:opt_vars['N_horizon']], ca.DM.ones(opt_vars['spot_prices'][:,:opt_vars['N_horizon']].shape))
+        opti.set_value(opt_vars['spot_prices'][:,:N_TH], spot_prices)
+
+        # Set initial guesses
+
+        _, ub_B = self.mpc_model.get_bidding_bounds(N_TH, U_nom)
 
         # Expected value of clearing prices given spot prices
-        mu_up = conditional_expectation(spot_prices, self.market.price_means, self.market.price_cov)[0]
-        mu_dn = conditional_expectation(spot_prices, self.market.price_means, self.market.price_cov)[1]
+        clearing_price_mu = conditional_expectation(spot_prices, self.market.price_means, self.market.price_cov)
+        clearing_price_mu_up = clearing_price_mu[0]
+        clearing_price_mu_dn = clearing_price_mu[1]
+
+        # clearing_price_mu_up = 10*clearing_price_mu[0]
+        # clearing_price_mu_dn = 10*clearing_price_mu[1]
 
         # Set initial optimal bidding guess to be maximum possible volume and exactly at clearing price
-        B_initial_guess = np.vstack((ub_B[:2,:], mu_up, mu_dn))
-        U_initial_guess = np.array(self.mpc_model.get_u(U_base, B_initial_guess, spot_prices, self.market)).flatten()
+        B_initial_guess = np.vstack((ub_B[:2,:], clearing_price_mu_up, clearing_price_mu_dn))
+        U_initial_guess = np.array(self.mpc_model.get_u(U_nom, B_initial_guess, spot_prices, self.market)).flatten()
         X_initial_guess = ca.DM.zeros(self.mpc_model.nx, N_TH+1)
         X_initial_guess[:,0] = x0
         F = self.mpc_model.casadi_function_fe()
         for k in range(len(U_initial_guess)):
             X_initial_guess[:,k+1] = F(X_initial_guess[:,k], U_initial_guess[k])
 
-        opti.set_initial(X, X_initial_guess)
-        opti.set_initial(B, B_initial_guess)
+        opti.set_initial(X[:,:N_TH+1],  X_initial_guess)
+        opti.set_initial(B[:,:N_TH],    B_initial_guess)
 
-        opti = self.set_constraints(opti=opti, N_TH=N_TH, X=X, x0=x0, U=U, Eps=Eps, ref_weight=ref_weight, B=B, U_base = U_base)
         return opti
 
 

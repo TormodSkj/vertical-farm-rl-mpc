@@ -551,7 +551,7 @@ class MpcPlantModel:
     
     
 
-    def bidding_obj_function(self, N_TH, spot_prices, X, B, U_base, market:Market):
+    def bidding_obj_function(self, N_TH, spot_prices, X, B, U_nom, market:Market):
         
         Bp_up = B[0,:]
         Bp_dn = B[1,:]
@@ -561,7 +561,7 @@ class MpcPlantModel:
         L = 0
 
         for k in range(0, N_TH): #from k = 2, to N-1. 
-            L += spot_prices[k] * self.C_conv_PPFD * U_base[k] \
+            L += spot_prices[k] * self.C_conv_PPFD * U_nom[:,k] \
                   + (1000*spot_prices[k] - market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * market.Pr_a_dn(spot_prices[k], Bc_dn[k])\
                   - (1000*spot_prices[k] + market.C_eur2nok * Bc_up[k]) * Bp_up[k] * market.Pr_a_up(spot_prices[k], Bc_up[k])
 
@@ -599,57 +599,26 @@ class MpcPlantModel:
 
         return Eps * 10**6
 
-    def get_static_bidding_constraints(self, g_eq, g_ineq, N_TH, B):
-
-        lb_B, _ = self.get_bidding_bounds(N_TH, np.zeros((1,N_TH)))
-
-        for k in range(N_TH):
-            for bid_param in range(4):
-                g_ineq.append(B[bid_param,k] - lb_B[bid_param,k])
-
-        return g_eq, g_ineq
     
-    def get_dynamic_bidding_constraints(self, g_eq, g_ineq, N_TH, B, U_base):
+    def get_bidding_constraints(self, g_eq, g_ineq, N_TH, B, U_base):
 
-        _, ub_B = self.get_bidding_bounds(N_TH, U_base)
+        lb_B, ub_B = self.get_bidding_bounds(N_TH, U_base)
 
         Bp_up = B[0,:]
         Bp_dn = B[1,:]
 
         for k in range(N_TH):
+            for bid_param in range(4):
+                g_ineq.append(B[bid_param,k] - lb_B[bid_param,k])
+            
             g_ineq.append(-Bp_up[k] + ub_B[0,k])
             g_ineq.append(-Bp_dn[k] + ub_B[1,k])
 
         return g_eq, g_ineq
-
-
-    def get_static_process_constraints(self,g_eq, g_ineq, N_TH, dt, X, U, Eps):
-        '''Creates list of constraints that are non-changing throughout the mpc solution'''
-
-
-        ''' Inequality constraints: g_ineq[k] > 0 for all k '''
-
-        g_ineq.append(Eps)
-
-        # Upper and lower bounds on u
-        for k in range(N_TH):
-            g_ineq.append(X[k])
-
-        # DLI constraint
-        for k in range(N_TH+1):
-            if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
-                # k = 96 +24, +48, +72 ...
-                LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
-                
-                g_ineq.append(self.DLI_max - LI)
-                g_ineq.append(LI - self.DLI_min)
-
-
-        return g_eq, g_ineq
     
 
-    def get_dynamic_process_constraints(self,g_eq, g_ineq, N_TH, dt, X, x0, U, Eps, ref_weight):
-        '''Creates list of constraints that change throughout the mpc solution'''
+    def get_process_constraints(self,g_eq, g_ineq, N_TH, dt, X, x0, U, Eps, ref_weight):
+        '''Creates list of constraints for the mpc optimization problem'''
 
         F = self.casadi_function_fe(ts=dt)
 
@@ -661,39 +630,69 @@ class MpcPlantModel:
         # Initial state constraint
         g_eq.append(X[:,0] - x0)
         # Final weight constraint
-        g_ineq.append(self.freshweight(X[:,N_TH]) + Eps - ref_weight)   
+        # g_ineq.append(self.freshweight(X[:,N_TH]) + Eps - ref_weight)   
 
         ''' Inequality constraints: g_ineq[k] > 0 for all k '''
+
+        g_ineq.append(Eps)
 
         # Upper and lower bounds on u
         for k in range(N_TH):
             g_ineq.append(U[k])
             g_ineq.append(self.C_PPFD_max - U[k])
 
+            g_ineq.append(X[:,k])
+
+        # # DLI constraint
+        # for k in range(N_TH+1):
+        #     if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
+        #         # k = 96 +24, +48, +72 ...
+        #         LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
+                
+        #         g_ineq.append(self.DLI_max - LI)
+        #         g_ineq.append(LI - self.DLI_min)
+
+        return g_eq, g_ineq
+    
+
+    def get_dynamic_process_constraints(self, g_eq, g_ineq, N_TH, X, Eps, ref_weight):
+        '''Creates list of constraints for the mpc optimization problem'''
+
+        g_ineq.append(self.freshweight(X[:,N_TH]) + Eps - ref_weight)
+
+        # DLI constraint
+        for k in range(N_TH+1):
+            if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
+                # k = 96 +24, +48, +72 ...
+                LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
+                
+                g_ineq.append(self.DLI_max - LI)
+                g_ineq.append(LI - self.DLI_min)
+
         return g_eq, g_ineq
 
     def get_u(self, U_base, B, spot_prices, market):
 
         U = np.array([])
-
-        for k in range(len(U_base)):
+    
+        for k in range(U_base.shape[1]):
 
             # if(k<controller.market.n_given_activations):
             #     u_tilde = 1000*(B[1,k]*controller.A_down[k] - B[0,k]*controller.A_up[k])/self.C_conv_PPFD
             # else:
             u_tilde = 1000*(B[1,k]*market.Pr_a_dn(spot_prices[k], B[3,k]) - B[0,k]*market.Pr_a_up(spot_prices[k], B[2,k]))/self.C_conv_PPFD
 
-            U = np.append(U, U_base[k] + u_tilde)
+            U = np.append(U, U_base[:,k] + u_tilde)
 
         return ca.vertcat(*U)
 
-    def get_bidding_bounds(self, N_TH, U_base):
+    def get_bidding_bounds(self, N_TH, U_nom):
 
-        lb_B = 0 * np.ones((4, N_TH))
-        ub_B = np.vstack((self.C_conv_PPFD * U_base/1000,                           # Bid vol up
-                          self.C_conv_PPFD * (self.C_PPFD_max - U_base)/1000,       # Bid vol down
-                          1000 * np.ones((1, N_TH)),                                # Bid price up. Arbitrary limit of 1000€ / MW 
-                          1000 * np.ones((1, N_TH))))                               # Bid price down. Arbitrary limit of 1000€ / MW 
+        lb_B = ca.DM.zeros(4, N_TH)
+        ub_B = ca.vertcat(self.C_conv_PPFD * U_nom/1000,                           # Bid vol up
+                          self.C_conv_PPFD * (self.C_PPFD_max - U_nom)/1000,       # Bid vol down
+                          1000 * ca.DM.ones((1, N_TH)),                             # Bid price up. Arbitrary limit of 1000€ / MW 
+                          1000 * ca.DM.ones((1, N_TH)))                             # Bid price down. Arbitrary limit of 1000€ / MW 
         
         return lb_B, ub_B
     

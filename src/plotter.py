@@ -139,7 +139,7 @@ class Plotter():
 
 
             ##################################################
-            fig, axes = plt.subplots(n_bidding_runs, 1, figsize=config.plot_format, sharex=True)
+            fig, axes = plt.subplots(1, 1, figsize=config.plot_format, sharex=True)
 
             # lb_B, ub_B = self.controller.model.get_bidding_bounds(self.controller)
             # ax.step(t, -ub_B[0,:], color='grey', label='Up-regulation volume limit')

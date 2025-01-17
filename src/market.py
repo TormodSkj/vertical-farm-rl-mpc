@@ -129,7 +129,7 @@ class Market:
         mu_up = utils.conditional_expectation(spot_prices, self.price_means, self.price_cov)[0]
         sigma_up = self.sigma_up
 
-        Bc_up_norm = (Bc_up - mu_up)/sigma_up
+        Bc_up_norm = (Bc_up - ca.vertcat(*mu_up))/sigma_up
 
         # return norm.cdf(-Bc_up_norm)
         return self.Pr_D_up() * (1.0 + ca.erf(-Bc_up_norm / ca.sqrt(2.0))) / 2.0
@@ -140,7 +140,7 @@ class Market:
         mu_dn = utils.conditional_expectation(spot_prices, self.price_means, self.price_cov)[1]
         sigma_dn = self.sigma_dn
         
-        Bc_dn_norm = (Bc_dn - mu_dn)/sigma_dn
+        Bc_dn_norm = (Bc_dn - ca.vertcat(*mu_dn))/sigma_dn
 
         # return norm.cdf(-Bc_dn_norm)
         return self.Pr_D_dn() * (1.0 + ca.erf(-Bc_dn_norm / ca.sqrt(2.0))) / 2.0

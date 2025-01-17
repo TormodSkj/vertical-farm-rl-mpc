@@ -8,19 +8,19 @@ from globals import *
 from simulator import Simulator
 
 
-SIM_NAME = "mpc_testing_fe"
-HORIZON_DAYS    = 5
-FINAL_WEIGHT = 4                    # 1 day
-# FINAL_WEIGHT  = 36.66             # 7 Days
+SIM_NAME        = "mpc_testing_fe"
+HORIZON_DAYS    = 10
+FINAL_WEIGHT    = 4                 # 1 day
+# FINAL_WEIGHT    = 36.66             # 7 Days
 # FINAL_WEIGHT    = 136.7             # 20 Days 
-# FINAL_WEIGHT    = 2.05            # 20 Days [Directly from germination]
+# FINAL_WEIGHT    = 2.05              # 20 Days [Directly from germination]
 SIMULATION_DATE = '2024-01-01'
 BIDDING_ZONE    = 'NO3'
 import_file     = 'scaled_optimal_intensities.json'
-search_cache    = 0
+search_cache    = 1
 
-MPC_TH = 3
-MPC_steplength = 1
+MPC_TH = HORIZON_DAYS
+MPC_steplength = HORIZON_DAYS
 
 def main():
 
@@ -29,11 +29,11 @@ def main():
 
 
     ''' CREATING OBJECTS '''
-    config = Config(SIM_NAME, filetype="pdf", seed=1133)
-    plant = PlantModel(x_init, FINAL_WEIGHT)
-    mpc_plant = MpcPlantModel(x_init, FINAL_WEIGHT)
-    market = Market(config, HORIZON_DAYS, BIDDING_ZONE, SIMULATION_DATE)
-    controller = Controller(HORIZON_DAYS, plant, mpc_plant, market, config, MPC_TH, MPC_steplength, search_cache = search_cache, warm_start=True, import_file = import_file, calculate_fw=True)         #Baseline: 'opt' / 'rigid'
+    config      = Config(SIM_NAME, filetype="pdf", seed=1133)
+    plant       = PlantModel(x_init, FINAL_WEIGHT)
+    mpc_plant   = MpcPlantModel(x_init, FINAL_WEIGHT)
+    market      = Market(config, HORIZON_DAYS, BIDDING_ZONE, SIMULATION_DATE)
+    controller  = Controller(HORIZON_DAYS, plant, mpc_plant, market, config, MPC_TH, MPC_steplength, search_cache = search_cache, warm_start=True, import_file = import_file, calculate_fw=True)         #Baseline: 'opt' / 'rigid'
     
     # mpc_controller = Controller(HORIZON_DAYS, mpc_plant, None, market, config, MPC_TH, MPC_steplength, surpress_output = False, calculate_fw=True)     # Instance of controller used in mpc
     # simulator = Simulator(HORIZON_DAYS, mpc_plant, market, config, mpc_controller, time_horizon=MPC_TH, time_iteration=MPC_steplength)
@@ -42,8 +42,8 @@ def main():
     ''' OPTIMIZAION AND PLOTTING '''
 
     # controller.import_baseline()
-    # controller.optimize_baseline()
-    # controller.optimize_bidding()
+    controller.optimize_baseline()
+    controller.optimize_bidding()
     controller.optimize_bidding_mpc()
 
     controller.status_report()
