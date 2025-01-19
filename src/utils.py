@@ -157,7 +157,7 @@ def load_spot_prices(file_path, timestamp_col, price_col):
     return data[['Timestamp', price_col]].rename(columns={price_col: 'Spot Price'})
 
 
-def load_mfrr_prices(file_path, time_interval_col, up_price_col, down_price_col):
+def load_mfrr_prices(file_path):
     """
     Load mFRR prices, parse timestamps, and extract up and down price columns.
 
@@ -170,6 +170,10 @@ def load_mfrr_prices(file_path, time_interval_col, up_price_col, down_price_col)
     Returns:
     - pandas DataFrame with 'Timestamp', 'Up Price', and 'Down Price' columns
     """
+    time_interval_col = "Time Interval"  # mFRR time interval column
+    up_price_col = "Up price"  # mFRR up price column
+    down_price_col = "Down Price"  # mFRR down price column
+
     # Load the mFRR data with UTF-8 encoding
     data = pd.read_csv(file_path, delimiter=",", encoding="utf-8")
     
@@ -181,6 +185,67 @@ def load_mfrr_prices(file_path, time_interval_col, up_price_col, down_price_col)
     return data[['Timestamp', up_price_col, down_price_col]].rename(
         columns={up_price_col: 'Up Price', down_price_col: 'Down Price'}
     )
+
+
+def clean_mfrr_csv_file(filepath):
+    temp_filepath = filepath + ".tmp"  # Create a temporary file path
+
+    # Process the file safely
+    with open(filepath, "r") as infile, open(temp_filepath, "w") as outfile:
+        for line in infile:
+            # Remove quotation marks at the start and end of the line
+            line = line.strip()
+            if line.startswith('"') and line.endswith('"'):
+                line = line[1:-1]
+            
+            # Replace two consecutive quotation marks with a single quotation mark
+            line = line.replace('""', "'")
+            
+            # Write the cleaned line to the temp file
+            outfile.write(line + "\n")
+    
+    # Replace the original file with the cleaned one
+    os.replace(temp_filepath, filepath)
+    print(f"File cleaned successfully: {filepath}")
+
+
+def load_mfrr_activation_data(filepath):
+    """
+    Load mFRR activation data, split into upwards and downwards activations,
+    and process columns as per user specifications.
+
+    Parameters:
+    - file_path: str, path to the CSV file
+
+    Returns:
+    - Tuple of two pandas DataFrames: (upwards_activations, downwards_activations)
+    """
+    # Load the data
+    data = pd.read_csv(filepath, quotechar='"', skipinitialspace=True)
+
+    # Clean column names (remove extra quotes and whitespace)
+    data.columns = data.columns.str.replace("'", '').str.strip()
+    data = data.apply(lambda x: x.str.replace("'", '').str.strip() if x.dtype == "object" else x)
+    
+    # Split ISP into 'Start Time' and 'End Time'
+    data[['Start Time', 'End Time']] = data['ISP'].str.extract(r'(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}) - (\d{2}\.\d{2}\.\d{4} \d{2}:\d{2})')
+    data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d.%m.%Y %H:%M', errors='coerce')
+    data['End Time'] = pd.to_datetime(data['End Time'], format='%d.%m.%Y %H:%M', errors='coerce')
+    
+    # Rename AREA to Bidding Zone and simplify the zone names
+    data.rename(columns={'AREA': 'Bidding Zone'}, inplace=True)
+    data['Bidding Zone'] = data['Bidding Zone'].str.replace(' SCA', '')
+    
+    # Remove unnecessary columns
+    data.drop(columns=['ISP', 'Reserve Type', 'Type of Product', 'Unavailable'], inplace=True)
+    
+    # Split into upwards and downwards activations
+    data[['Offered', 'Activated']] = data[['Offered', 'Activated']].apply(pd.to_numeric, errors='coerce')
+    up_activation_df = data[data['Direction'] == "Up"].reset_index(drop=True).drop(columns=['Direction'])
+    down_activation_df = data[data['Direction'] == "Down"].reset_index(drop=True).drop(columns=['Direction'])
+    
+    return up_activation_df, down_activation_df
+
 
 
 def merge_and_align(spot_prices, mfrr_prices):

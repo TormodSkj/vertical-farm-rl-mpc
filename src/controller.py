@@ -1,8 +1,9 @@
 import casadi as ca
 import numpy as np
-from market import Market, Bid
+from market import Market
 from model import *
 from config import Config
+from bid import Bid
 from utils import *
 import time
 import os
@@ -217,7 +218,7 @@ class Controller():
         end_time = time.time()
         sol['elapsed_time'] = end_time - start_time
         
-        self.save_run('Bidding', sol, x, u, B=B)
+        self.save_run('Bidding', sol, x, u, B=B, U_nom=self.u_base)
 
         if not self.surpress_output: print('Bids optimized')
         return 0
@@ -411,7 +412,7 @@ class Controller():
         sol['f'] = self.mpc_model.baseline_obj_function(N, spot_prices, X, U) + self.mpc_model.bidding_obj_function(N, spot_prices, X, B, U_nom, self.market)
         sol['elapsed_time'] = end_time - start_time
         
-        self.save_run('MPC Bidding', sol, np.array(X), np.array(U).flatten(), B=np.array(B))
+        self.save_run('MPC Bidding', sol, np.array(X), np.array(U).flatten(), B=np.array(B), U_nom=U_nom.flatten())
 
         if not self.surpress_output: print('Bids optimized using MPC')
         return 0
@@ -608,13 +609,17 @@ class Controller():
         if not self.surpress_output: print('Generated rigid baseline')
         return 0
 
-    def save_run(self, run_id, sol, x, u, B = None):
+    def save_run(self, run_id, sol, x, u, B = None, U_nom = None):
 
         timeseries_data = {
             't'     : self.t,
             'x'     : x,
             'u'     : u
         }
+
+        if U_nom is not None:
+            timeseries_data['u_nom'] = U_nom
+
         
         f       = float(sol['f'])
         eps     = float(sol['x'][-1])

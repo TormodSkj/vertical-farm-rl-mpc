@@ -13,7 +13,7 @@ class Config():
     plot_format = (10, 6)
 
     spotprice_data_path: str
-    mfrr_data_path: str
+    mfrr_clearing_price_data_path: str
 
     seed: int
 
@@ -38,7 +38,8 @@ class Config():
         # Path for data
         self.data_path = os.path.join(self.path, "data/")
         self.spotprice_data_path = os.path.join(self.data_path, 'spotpriser.csv')
-        self.mfrr_data_path = os.path.join(self.data_path, 'mFRR_NO1_balancing_prices_2023.csv')
+        self.mfrr_clearing_price_data_path = os.path.join(self.data_path, 'mFRR_NO1_balancing_prices_2023.csv')
+        self.mfrr_activation_data_path = os.path.join(self.data_path, 'mFRR_bids_NO1_01_01_to_12_04_2024.csv')
 
         # Path for data
         self.data_analysis_path = os.path.join(self.path, "data_analysis/")

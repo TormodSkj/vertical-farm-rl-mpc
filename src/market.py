@@ -71,6 +71,8 @@ class Market:
             'Cond covariance spot - Down'   : conditional_variance_dn,
             }
             
+        self.mfrr_activation_data_analysis()
+
 
 
     
@@ -150,13 +152,13 @@ class Market:
         # Probability of the grid needing down regulation.
         # TODO implement actual model from Erlend when that's ready
 
-        return 1/3
+        return self.up_activation_ratio
     
     def Pr_D_up(self):
         # Probability of the grid needing up regulation.
         # TODO implement actual model from Erlend when that's ready
 
-        return 1/3
+        return self.down_activation_ratio
 
 
     def analyze_price_covariances(self):
@@ -198,18 +200,16 @@ class Market:
             print("Performing price analysis as no precomputed data found.")
             # Paths to CSV files
             spot_price_file = self.config.spotprice_data_path
-            mfrr_price_file = self.config.mfrr_data_path
+            mfrr_price_file = self.config.mfrr_clearing_price_data_path
 
             # Column names to extract
             spot_timestamp_col = "DatoTid"  # Spot price timestamp column
             spot_price_col = 'NO1'  # Spot price column of interest
-            mfrr_time_interval_col = "Time Interval"  # mFRR time interval column
-            mfrr_up_price_col = "Up price"  # mFRR up price column
-            mfrr_down_price_col = "Down Price"  # mFRR down price column
+           
 
             # Load data
             spot_prices = utils.load_spot_prices(spot_price_file, spot_timestamp_col, spot_price_col)
-            mfrr_prices = utils.load_mfrr_prices(mfrr_price_file, mfrr_time_interval_col, mfrr_up_price_col, mfrr_down_price_col)
+            mfrr_prices = utils.load_mfrr_prices(mfrr_price_file)
 
             # Merge datasets
             merged_data = utils.merge_and_align(spot_prices, mfrr_prices)
@@ -319,43 +319,53 @@ class Market:
         return activation_demands
 
     
+
+    def mfrr_activation_data_analysis(self):
+        
+        filepath = self.config.mfrr_activation_data_path
+        # utils.clean_mfrr_csv_file(filepath)
+
+        up_activation_df, down_activation_df = utils.load_mfrr_activation_data(filepath)
+        self.up_activation_df, self.down_activation_df = up_activation_df, down_activation_df
+
+        # Activation rate of each offered MW of capacity 
+        self.up_activation_ratio    = np.sum(up_activation_df['Activated']) / np.sum(up_activation_df['Offered'])
+        self.down_activation_ratio  = np.sum(down_activation_df['Activated']) / np.sum(down_activation_df['Offered'])
+        
+        # Arrays denoting activation occurances
+        up_activation_occurances   = np.where(np.array(up_activation_df['Activated'])>0, 1, 0)
+        down_activation_occurances = np.where(np.array(down_activation_df['Activated'])>0, 1, 0)
+
+        # % of QH where activations occur
+        self.up_activation_occurance_rate     = len(up_activation_occurances)/len(up_activation_df['Activated'])
+        self.down_activation_occurance_rate   = len(down_activation_occurances)/len(down_activation_df['Activated'])
+
+        return 0
     
-class Bid():
+    def get_clearing_prices(self, date):
 
-    volume_up:      float
-    volume_down:    float
-    price_up:       float
-    price_down:     float
+        filepath = self.config.mfrr_clearing_price_data_path
 
-    '''
-    activated_up:   float
-    activated_down: float
-    '''
+        clearing_prices_df = utils.load_mfrr_prices(filepath)
 
+        # Remove dates before simdate
+        clearing_prices_df = clearing_prices_df.where(clearing_prices_df['Timestamp']>pd.to_datetime(date)).dropna()
 
-    def __init__(self, volume_up = 0, volume_down = 0, 
-                        price_up = 0, price_down = 0, 
-                        activated_up = None, activated_down = None):
-        
-        self.volume_up      = volume_up
-        self.volume_down    = volume_down
-        self.price_up       = price_up
-        self.price_down     = price_down
+        clearing_prices_up = np.array(clearing_prices_df['Up Price']).repeat(4)[:self.N]
+        clearing_prices_dn = np.array(clearing_prices_df['Down Price']).repeat(4)[:self.N]
 
-        '''
+        return clearing_prices_up, clearing_prices_dn
+    
+    def get_activation_demands(self, date):
 
-        if activated_up: 
-            self.activated_up = activated_up
-        else:
-            self.activated_up = Market.Pr_a_up(price_up)
+        up_activation_df, down_activation_df = self.up_activation_df, self.down_activation_df
 
-        if activated_down: 
-            self.activated_down = activated_down
-        else:
-            self.activated_down = Market.Pr_a_dn(price_down)
+        # Remove dates before simdate
+        up_activations_df = up_activation_df.where(up_activation_df['Start Time']>pd.to_datetime(date)).dropna()
+        down_activations_df = down_activation_df.where(down_activation_df['Start Time']>pd.to_datetime(date)).dropna()
 
-        '''
-        
-    def as_array(self):
+        demands_up = np.array(up_activations_df['Activated'])[:self.N]
+        demands_dn = np.array(down_activations_df['Activated'])[:self.N]
 
-        return np.array([self.volume_up, self.volume_down, self.price_up, self.price_up])
+        return demands_up, demands_dn
+    

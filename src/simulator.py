@@ -1,5 +1,6 @@
 import numpy as np
-from market import Market, Bid
+from market import Market
+from bid import Bid
 from model import *
 from config import Config
 from controller import Controller
@@ -109,13 +110,6 @@ class Simulator():
         return freshweights
 
 
-    
-
-
-
-
-
-
     def Simulate_mpc(self):
 
         # TODO let's get to work
@@ -187,12 +181,72 @@ class Simulator():
         return 0
     
 
+    def apply_mfrr_clearing_prices(self, controller: Controller):
+        '''
+        '''
+        # Generate activation demands
+        # Generate clearing prices
+        
+        # Filter out accepted bids
+        # Simulate the plant now with only the accepted bids
+        market = controller.market
+        N = controller.N
+        dt = controller.dt
+        date = market.date
+        spot_prices = controller.spot_prices
+        F = controller.model.casadi_function_fe()
+
+        clearing_prices_up, clearing_prices_dn = market.get_clearing_prices(date)
+        
+
+        bidding_runs = [run for run in controller.optimization_results['runs'] if 'bidding result' in controller.optimization_results['runs'][run]]
+
+        for run in bidding_runs:
+
+            U = controller.optimization_results['runs'][run]['timeseries']['u']
+            U_nom = controller.optimization_results['runs'][run]['timeseries']['u_nom']
 
 
+            assert 'Bidding' in controller.optimization_results['runs'], 'Unable to perform random bid activations due to lack of bidding data'
+            
+            # Get bidding data
+            bidding_vol_up      = controller.optimization_results['runs']['Bidding']['timeseries']['P_up']
+            bidding_vol_dn      = controller.optimization_results['runs']['Bidding']['timeseries']['P_dn']
+            bidding_price_up    = controller.optimization_results['runs']['Bidding']['timeseries']['C_up']
+            bidding_price_dn    = controller.optimization_results['runs']['Bidding']['timeseries']['C_dn']
+            B = np.vstack((bidding_vol_up, bidding_vol_dn, bidding_price_up, bidding_price_dn))
             
 
+            activation_demands_up, activation_demands_dn = market.get_activation_demands(date)
+
+            u = U_nom + 1000*(np.where(np.logical_and(activation_demands_dn == 1, bidding_price_dn < clearing_prices_dn), bidding_vol_dn, 0)\
+                             - np.where(np.logical_and(activation_demands_up == 1, bidding_price_up < clearing_prices_up), bidding_vol_up, 0))/controller.model.C_conv_PPFD
+
+            X = np.zeros((controller.model.nx, N+1))
+            X[:,0] = controller.model.x_init.flatten()
+            
+            for k in range(N):
+                #Forward euler
+                # X[:,k+1] = X[:,k] + dt*np.array(controller.model.derivative(X[:,k], np.array([u[k]]))).reshape(1, -1)
+                X[:,k+1] = np.array(F(X[:,k], np.array([u[k]]))).reshape(1, -1)
 
 
+            f = self.model.C_conv_PPFD * np.sum(np.multiply(spot_prices,controller.u_base)) \
+                + np.sum(np.where(np.logical_and(activation_demands_dn == 1, bidding_price_dn < clearing_prices_dn), np.multiply((1000*spot_prices - controller.market.C_eur2nok * bidding_price_dn), bidding_vol_dn), 0)) \
+                - np.sum(np.where(np.logical_and(activation_demands_up == 1, bidding_price_up < clearing_prices_up), np.multiply((1000*spot_prices + controller.market.C_eur2nok * bidding_price_up), bidding_vol_up), 0))
 
 
+            Eps = self.model.freshweight(X[:,-1]) - self.model.Final_fw_sht
+
+            sol = {}
+            sol['x'] = np.array([Eps])
+            sol['f'] = f
+            sol['elapsed_time'] = 0
         
+
+            controller.save_run('Realized ' + run, sol, X, u, B, U_nom)
+        
+        return 0
+
+
+#'''

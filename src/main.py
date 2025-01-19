@@ -8,13 +8,13 @@ from globals import *
 from simulator import Simulator
 
 
-SIM_NAME        = "mpc_testing_fe"
+SIM_NAME        = "clearing_price_real_data"
 HORIZON_DAYS    = 10
 FINAL_WEIGHT    = 4                 # 1 day
 # FINAL_WEIGHT    = 36.66             # 7 Days
 # FINAL_WEIGHT    = 136.7             # 20 Days 
 # FINAL_WEIGHT    = 2.05              # 20 Days [Directly from germination]
-SIMULATION_DATE = '2024-01-01'
+SIMULATION_DATE = '2023-12-01'
 BIDDING_ZONE    = 'NO3'
 import_file     = 'scaled_optimal_intensities.json'
 search_cache    = 1
@@ -35,8 +35,8 @@ def main():
     market      = Market(config, HORIZON_DAYS, BIDDING_ZONE, SIMULATION_DATE)
     controller  = Controller(HORIZON_DAYS, plant, mpc_plant, market, config, MPC_TH, MPC_steplength, search_cache = search_cache, warm_start=True, import_file = import_file, calculate_fw=True)         #Baseline: 'opt' / 'rigid'
     
-    # mpc_controller = Controller(HORIZON_DAYS, mpc_plant, None, market, config, MPC_TH, MPC_steplength, surpress_output = False, calculate_fw=True)     # Instance of controller used in mpc
-    # simulator = Simulator(HORIZON_DAYS, mpc_plant, market, config, mpc_controller, time_horizon=MPC_TH, time_iteration=MPC_steplength)
+    mpc_controller = Controller(HORIZON_DAYS, mpc_plant, None, market, config, MPC_TH, MPC_steplength, surpress_output = False, calculate_fw=True)     # Instance of controller used in mpc
+    simulator = Simulator(HORIZON_DAYS, mpc_plant, market, config, mpc_controller, time_horizon=MPC_TH, time_iteration=MPC_steplength)
   
 
     ''' OPTIMIZAION AND PLOTTING '''
@@ -44,11 +44,13 @@ def main():
     # controller.import_baseline()
     controller.optimize_baseline()
     controller.optimize_bidding()
-    controller.optimize_bidding_mpc()
+    # controller.optimize_bidding_mpc()
 
+    simulator.apply_mfrr_clearing_prices(controller)
     controller.status_report()
     # controller.export_intensity_to_json('Baseline')
     controller.save_to_json()
+
 
     plotter = Plotter(config, controller)
     plotter.save_ocp_plots()

@@ -1,6 +1,7 @@
 import numpy as np
 import casadi as ca
-from market import Market, Bid
+from market import Market
+from bid import Bid
 from globals import *
 
 class PlantModel:
