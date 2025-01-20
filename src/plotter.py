@@ -459,8 +459,8 @@ class Plotter():
         plt.figure(figsize=config.plot_format)
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=config.plot_format, sharex=True)
 
-        n = int(len(spot_prices)/10)
-        idx = np.ceil(np.linspace(1,len(spot_prices)-1,n))
+        n = int(np.ceil(len(spot_prices)/10))
+        idx = np.int64(np.ceil(np.linspace(1,len(spot_prices)-1,n)))
         ax1.scatter(spot_prices[idx], mfrr_prices_up[idx], color='blue', label='Clearing price up', s=0.1)
         ax1.plot(line_x, line_x * 0.78*1000/market.C_eur2nok, label='Lower limit: 0.78 x spot', color='grey', alpha=0.4)
         ax1.set_ylabel("Bidding price (€/MWh)")
@@ -504,6 +504,24 @@ class Plotter():
         filename = "histogram_relative_clearing_prices"
         plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
+
+        
+
+        '''
+        ###########################################################
+        plt.figure(figsize=config.plot_format)
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=config.plot_format, sharex=True)
+
+        # Plot bar chart of number of activations made every month we have data
+        # Make clear distinctions between up and down regulation.
+        # Goal: Find the month with the most frequent activations in order to generate an interesting place to do analysis.
+
+
+        plt.suptitle('Activation frequencies')
+
+        filename = "activation_frequencies"
+        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        '''
        
 
 

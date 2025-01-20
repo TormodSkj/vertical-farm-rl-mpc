@@ -197,7 +197,8 @@ class Simulator():
         F = controller.model.casadi_function_fe()
 
         clearing_prices_up, clearing_prices_dn = market.get_clearing_prices(date)
-        
+        assert len(clearing_prices_up)==N and len(clearing_prices_dn)==N, f'Clearing price arrays have inconsistent lengths with simulation duration. N = {self.N}, len(clearing prices up) = {len(clearing_prices_up)}, len(clearing prices down) = {len(clearing_prices_dn)}'
+
 
         bidding_runs = [run for run in controller.optimization_results['runs'] if 'bidding result' in controller.optimization_results['runs'][run]]
 
@@ -218,6 +219,7 @@ class Simulator():
             
 
             activation_demands_up, activation_demands_dn = market.get_activation_demands(date)
+            assert len(activation_demands_dn)==N and len(activation_demands_up)==N, f'Activation demand arrays have inconsistent lengths with simulation duration. N = {self.N}, len(demands up) = {len(activation_demands_up)}, len(demands down) = {len(activation_demands_dn)}'
 
             u = U_nom + 1000*(np.where(np.logical_and(activation_demands_dn == 1, bidding_price_dn < clearing_prices_dn), bidding_vol_dn, 0)\
                              - np.where(np.logical_and(activation_demands_up == 1, bidding_price_up < clearing_prices_up), bidding_vol_up, 0))/controller.model.C_conv_PPFD
@@ -239,7 +241,7 @@ class Simulator():
             Eps = self.model.freshweight(X[:,-1]) - self.model.Final_fw_sht
 
             sol = {}
-            sol['x'] = np.array([Eps])
+            sol['eps'] = Eps
             sol['f'] = f
             sol['elapsed_time'] = 0
         

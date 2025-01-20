@@ -6,15 +6,15 @@ from plotter import Plotter
 import numpy as np
 from globals import *
 from simulator import Simulator
+from utils import vertigrow_calculate_energy_consumption
 
-
-SIM_NAME        = "clearing_price_real_data"
-HORIZON_DAYS    = 10
+SIM_NAME        = "price_comparison"
+HORIZON_DAYS    = 18
 FINAL_WEIGHT    = 4                 # 1 day
 # FINAL_WEIGHT    = 36.66             # 7 Days
 # FINAL_WEIGHT    = 136.7             # 20 Days 
 # FINAL_WEIGHT    = 2.05              # 20 Days [Directly from germination]
-SIMULATION_DATE = '2023-12-01'
+SIMULATION_DATE = '2024-01-01'
 BIDDING_ZONE    = 'NO3'
 import_file     = 'scaled_optimal_intensities.json'
 search_cache    = 1
@@ -41,12 +41,12 @@ def main():
 
     ''' OPTIMIZAION AND PLOTTING '''
 
-    # controller.import_baseline()
+    controller.import_baseline()
     controller.optimize_baseline()
-    controller.optimize_bidding()
+    # controller.optimize_bidding()
     # controller.optimize_bidding_mpc()
 
-    simulator.apply_mfrr_clearing_prices(controller)
+    # simulator.apply_mfrr_clearing_prices(controller)
     controller.status_report()
     # controller.export_intensity_to_json('Baseline')
     controller.save_to_json()
@@ -54,8 +54,9 @@ def main():
 
     plotter = Plotter(config, controller)
     plotter.save_ocp_plots()
-    # plotter.plot_spot_mfrr_prices() 
 
+    market.analyze_price_covariances()
+    plotter.plot_spot_mfrr_prices() 
     # market.optimal_bidding_price_prediction(controller.spot_prices)
     # plotter.plot_price_prediction()
 

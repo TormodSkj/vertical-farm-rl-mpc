@@ -210,13 +210,15 @@ class Controller():
 
         # Extract solution
 
-        sol = sol
         x = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
         B = np.array(sol['x'][(nx*(N+1)):(nx*(N+1) + 4*N)].reshape((4, N)))
         u = np.array(self.model.get_u(self, B)).flatten()
+        eps   = float(sol['x'][-1])
+
         
         end_time = time.time()
         sol['elapsed_time'] = end_time - start_time
+        sol['eps'] = eps
         
         self.save_run('Bidding', sol, x, u, B=B, U_nom=self.u_base)
 
@@ -303,7 +305,8 @@ class Controller():
         elapsed_time = end_time - start_time
 
         sol['elapsed_time'] = elapsed_time
-        
+        sol['eps'] = eps
+
         self.save_run('Baseline', sol, x, u)
         self.u_base = u
         self.x_base = x
@@ -408,7 +411,7 @@ class Controller():
 
         end_time = time.time()
         sol = {}
-        sol['x'] = np.array([Eps])
+        sol['eps'] = Eps
         sol['f'] = self.mpc_model.baseline_obj_function(N, spot_prices, X, U) + self.mpc_model.bidding_obj_function(N, spot_prices, X, B, U_nom, self.market)
         sol['elapsed_time'] = end_time - start_time
         
@@ -599,6 +602,7 @@ class Controller():
         sol['elapsed_time'] = elapsed_time
         sol['f'] = self.model.baseline_obj_function(N, self.spot_prices, x, u)
         sol['x'] = np.hstack((x.flatten(), u, 0))
+        sol['eps'] = 0
         
         self.save_run('Rigid', sol, x, u)
         self.u_base = u
@@ -622,7 +626,7 @@ class Controller():
 
         
         f       = float(sol['f'])
-        eps     = float(sol['x'][-1])
+        eps     = float(sol['eps'])
 
 
         metrics_data = {
@@ -799,6 +803,7 @@ class Controller():
         sol['elapsed_time'] = elapsed_time
         sol['f'] = self.model.baseline_obj_function(N, self.spot_prices, x, u)
         sol['x'] = np.hstack((x.flatten(), u, 0))
+        sol['eps'] = 0
         
         self.save_run('Imported', sol, x, u)
         self.u_base = u

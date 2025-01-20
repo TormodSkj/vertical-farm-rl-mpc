@@ -169,47 +169,41 @@ class Market:
         analysis_file = os.path.join(self.config.data_path, "price_analysis.json")
 
         # Check if the JSON file exists
-        if os.path.exists(analysis_file):
+        #TODO remove the false here. Wanted to disable it for a while
+        if False and os.path.exists(analysis_file):
             print("Loading precomputed price analysis data from JSON file.")
-            try:
-                with open(analysis_file, 'r') as file:
-                    analysis_data = json.load(file)
-                
-                # Load means and covariance matrix
-                self.price_means = pd.Series(analysis_data["means"])
-                self.price_cov = np.array(analysis_data["covariance_matrix"])
-                
-                # Load additional data arrays into a DataFrame
-                merged_data = pd.DataFrame({
-                    "Timestamp": pd.to_datetime(analysis_data["Timestamp"]),
-                    "Spot Price": analysis_data["spot_prices"],
-                    "Up Price": analysis_data["up_prices"],
-                    "Down Price": analysis_data["down_prices"]
-                })
-                
-                self.spot_price_data = merged_data['Spot Price']
-                self.mfrr_prices_up = merged_data['Up Price']
-                self.mfrr_prices_dn = merged_data['Down Price']
-                self.timestamps = merged_data['Timestamp']
-                self.merged_data = merged_data
 
-            except Exception as e:
-                print(f"Error loading JSON file: {e}")
-                # return -1  # Indicate an error
+            with open(analysis_file, 'r') as file:
+                analysis_data = json.load(file)
+            
+            # Load means and covariance matrix
+            self.price_means = pd.Series(analysis_data["means"])
+            self.price_cov = np.array(analysis_data["covariance_matrix"])
+            
+            # Load additional data arrays into a DataFrame
+            merged_data = pd.DataFrame({
+                "Start Time": pd.to_datetime(analysis_data["Start Time"]),
+                "Spot Price": analysis_data["spot_prices"],
+                "Up Price": analysis_data["up_prices"],
+                "Down Price": analysis_data["down_prices"]
+            })
+            
+            self.spot_price_data = merged_data['Spot Price']
+            self.mfrr_prices_up = merged_data['Up Price']
+            self.mfrr_prices_dn = merged_data['Down Price']
+            self.timestamps = merged_data['Start Time']
+            self.merged_data = merged_data
+
         else:
             print("Performing price analysis as no precomputed data found.")
             # Paths to CSV files
             spot_price_file = self.config.spotprice_data_path
-            mfrr_price_file = self.config.mfrr_clearing_price_data_path
+            mfrr_price_datapath = self.config.mfrr_clearing_price_data_path
 
-            # Column names to extract
-            spot_timestamp_col = "DatoTid"  # Spot price timestamp column
-            spot_price_col = 'NO1'  # Spot price column of interest
-           
 
             # Load data
-            spot_prices = utils.load_spot_prices(spot_price_file, spot_timestamp_col, spot_price_col)
-            mfrr_prices = utils.load_mfrr_prices(mfrr_price_file)
+            spot_prices = utils.load_spot_prices(spot_price_file, self.bidding_zone)
+            mfrr_prices = utils.load_mfrr_prices(mfrr_price_datapath)
 
             # Merge datasets
             merged_data = utils.merge_and_align(spot_prices, mfrr_prices)
@@ -228,7 +222,7 @@ class Market:
                 self.spot_price_data = np.array(merged_data['Spot Price'])
                 self.mfrr_prices_up = np.array(merged_data['Up Price'])
                 self.mfrr_prices_dn = np.array(merged_data['Down Price'])
-                self.timestamps = merged_data['Timestamp']
+                self.timestamps = merged_data['Start Time']
                 self.merged_data = merged_data
 
                 # Ensure the directory exists
@@ -238,7 +232,7 @@ class Market:
                         json.dump({
                             "means": self.price_means.to_dict(),
                             "covariance_matrix": self.price_cov.tolist(),
-                            "Timestamp": merged_data['Timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S').tolist(),
+                            "Start Time": merged_data['Start Time'].dt.strftime('%Y-%m-%d %H:%M:%S').tolist(),
                             "spot_prices": self.spot_price_data.tolist(),
                             "up_prices": self.mfrr_prices_up.tolist(),
                             "down_prices": self.mfrr_prices_dn.tolist()
@@ -322,10 +316,10 @@ class Market:
 
     def mfrr_activation_data_analysis(self):
         
-        filepath = self.config.mfrr_activation_data_path
+        data_path = self.config.mfrr_activation_data_path
         # utils.clean_mfrr_csv_file(filepath)
 
-        up_activation_df, down_activation_df = utils.load_mfrr_activation_data(filepath)
+        up_activation_df, down_activation_df = utils.load_mfrr_activation_data(data_path)
         self.up_activation_df, self.down_activation_df = up_activation_df, down_activation_df
 
         # Activation rate of each offered MW of capacity 
@@ -344,12 +338,12 @@ class Market:
     
     def get_clearing_prices(self, date):
 
-        filepath = self.config.mfrr_clearing_price_data_path
+        clearing_price_datapath = self.config.mfrr_clearing_price_data_path
 
-        clearing_prices_df = utils.load_mfrr_prices(filepath)
+        clearing_prices_df = utils.load_mfrr_prices(clearing_price_datapath)
 
         # Remove dates before simdate
-        clearing_prices_df = clearing_prices_df.where(clearing_prices_df['Timestamp']>pd.to_datetime(date)).dropna()
+        clearing_prices_df = clearing_prices_df.where(clearing_prices_df['Start Time']>pd.to_datetime(date)).dropna()
 
         clearing_prices_up = np.array(clearing_prices_df['Up Price']).repeat(4)[:self.N]
         clearing_prices_dn = np.array(clearing_prices_df['Down Price']).repeat(4)[:self.N]

@@ -129,7 +129,7 @@ def get_metrics_table(runs):
 
     return generate_table(metrics_table, header = list(runs.keys()), sumrow=False, diffcol=False)
 
-def load_spot_prices(file_path, timestamp_col, price_col):
+def load_spot_prices(file_path, bidding_zone):
     """
     Load spot prices, parse timestamps, and extract the price column.
 
@@ -141,50 +141,134 @@ def load_spot_prices(file_path, timestamp_col, price_col):
     Returns:
     - pandas DataFrame with 'Timestamp' and 'Spot Price' columns
     """
+
+    # Column names to extract
+    timestamp_col = "Dato/klokkeslett"  # Spot price timestamp column
+    price_col = bidding_zone  # Spot price column of interest
+           
     # Load the CSV file with UTF-8 encoding to prevent issues with special characters
-    data = pd.read_csv(file_path, delimiter=",", encoding="utf-8")
+    data = pd.read_csv(file_path, delimiter=";", encoding="utf-8")
     
     # Clean timestamp format (remove 'Kl.' and split by '-')
-    data['Timestamp'] = data[timestamp_col].str.replace("Kl. ", "", regex=False)  # Remove "Kl. "
+    data['Start Time'] = data[timestamp_col].str.replace("Kl. ", "", regex=False)  # Remove "Kl. "
     
     # Split the timestamp into date and time components (first part of '01-02' becomes '01')
-    data['Timestamp'] = data['Timestamp'].apply(lambda x: x.split(" ")[0] + " " + x.split(" ")[1].split("-")[0] + ":00")
+    data['Start Time'] = data['Start Time'].apply(lambda x: x.split(" ")[0] + " " + x.split(" ")[1].split("-")[0] + ":00")
     
     # Convert the string to a datetime object (with date and hour set to the first hour of the range)
-    data['Timestamp'] = pd.to_datetime(data['Timestamp'], format='%Y-%m-%d %H:%M', errors='coerce')
+    data['Start Time'] = pd.to_datetime(data['Start Time'], format='%Y-%m-%d %H:%M', errors='coerce')
     
     # Return the relevant columns with the 'Spot Price' column renamed
-    return data[['Timestamp', price_col]].rename(columns={price_col: 'Spot Price'})
+    return data[['Start Time', price_col]].rename(columns={price_col: 'Spot Price'})
 
 
-def load_mfrr_prices(file_path):
+def load_mfrr_prices(data_folder):
     """
-    Load mFRR prices, parse timestamps, and extract up and down price columns.
+    Load mFRR balancing prices from all relevant files in a folder, parse timestamps,
+    and merge them into a single DataFrame with 'Start Time', 'End Time', 'Up Price',
+    and 'Down Price' columns.
 
     Parameters:
-    - file_path: str, path to the CSV file
-    - time_interval_col: str, name of the time interval column
-    - up_price_col: str, name of the up price column
-    - down_price_col: str, name of the down price column
+    - data_folder: str, path to the folder containing CSV files.
 
     Returns:
-    - pandas DataFrame with 'Timestamp', 'Up Price', and 'Down Price' columns
+    - pandas DataFrame: Merged dataset sorted by 'Start Time'.
     """
-    time_interval_col = "Time Interval"  # mFRR time interval column
-    up_price_col = "Up price"  # mFRR up price column
-    down_price_col = "Down Price"  # mFRR down price column
 
-    # Load the mFRR data with UTF-8 encoding
-    data = pd.read_csv(file_path, delimiter=",", encoding="utf-8")
+    standardize_balancing_price_files(data_folder)
+
+    all_files = [f for f in os.listdir(data_folder) if "mFRR_NO1_balancing_prices" in f and f.endswith(".csv")]
+    all_data = []
+
+    for file in all_files:
+        filepath = os.path.join(data_folder, file)
+
+        # Load the mFRR data
+        data = pd.read_csv(filepath, delimiter=",", encoding="utf-8")
+
+        # Parse 'Start Time' and 'End Time' from the 'Time Interval' column
+        time_interval_col = "Time Interval"  # Adjust if your column name is different
+        data[['Start Time', 'End Time']] = data[time_interval_col].str.extract(
+            r'(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}) - (\d{2}\.\d{2}\.\d{4} \d{2}:\d{2})'
+        )
+        data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d.%m.%Y %H:%M', errors='coerce')
+        data['End Time'] = pd.to_datetime(data['End Time'], format='%d.%m.%Y %H:%M', errors='coerce')
+
+        # Select and rename relevant columns
+        up_price_col = "Up price"  # Adjust if your column name is different
+        down_price_col = "Down Price"  # Adjust if your column name is different
+
+        data = data[['Start Time', 'End Time', up_price_col, down_price_col]].rename(
+            columns={up_price_col: 'Up Price', down_price_col: 'Down Price'}
+        )
+        
+        # Append processed data to the list
+        all_data.append(data)
+
+    # Merge all data and sort by 'Start Time'
+    merged_data = pd.concat(all_data, ignore_index=True)
+    merged_data.sort_values(by='Start Time', inplace=True)
+
+    return merged_data
+
+
+def standardize_balancing_price_files(folder_path):
+    """
+    Detect 'fricked' CSV files in a folder and clean them.
+
+    Parameters:
+    - folder_path: str, path to the folder containing CSV files.
+    """
+    # List all CSV files in the folder
+    all_files = [f for f in os.listdir(folder_path) if f.endswith(".csv")]
     
-    # Parse the timestamp from the time interval, taking the first part (start time)
-    data['Timestamp'] = pd.to_datetime(
-        data[time_interval_col].str.split(" - ").str[0], format='%d.%m.%Y %H:%M', errors='coerce'
-    )
-    
-    return data[['Timestamp', up_price_col, down_price_col]].rename(
-        columns={up_price_col: 'Up Price', down_price_col: 'Down Price'}
-    )
+    for file in all_files:
+        file_path = os.path.join(folder_path, file)
+
+        # Try reading the header to check if the file parses correctly
+        df = pd.read_csv(file_path, nrows=0)
+        if len(df.columns) == 1:  # Single column implies problematic formatting
+            # print(f"File '{file}' is problematic. Fixing it...")
+
+            with open(file_path, "r") as infile:
+                lines = infile.readlines()
+
+            # Remove enclosing quotation marks and replace doubled quotes
+            cleaned_lines = []
+            for line in lines:
+                line = line.strip()
+
+                # Remove the outermost quotation marks if they exist
+                if line.startswith('"') and line.endswith('"'):
+                    line = line[1:-1]  # Slice to remove first and last characters
+
+                # Replace doubled quotes with single quotes
+                line = line.replace('""', '"')
+
+                cleaned_lines.append(line)
+
+            # Write cleaned lines back to the file
+            with open(file_path, "w") as outfile:
+                outfile.write("\n".join(cleaned_lines) + "\n")  # Re-add a final newline
+
+            # print(f"Successfully cleaned: {file}")
+        # else:
+            # print(f"File '{file}' is properly formatted. Skipping...")
+
+        # Read the cleaned file
+        df = pd.read_csv(file_path)
+
+        # Clean price columns with commas, convert to float
+        price_columns = ['Up price', 'Down Price']  # Assuming these are the price columns
+        for col in price_columns:
+            df[col] = df[col].replace({',': ''}, regex=True)  # Remove commas
+            df[col] = pd.to_numeric(df[col], errors='coerce')  # Convert to numeric values
+
+        # Save the cleaned file back
+        df.to_csv(file_path, index=False)
+
+        # print(f"Successfully cleaned and standardized: {file}")
+
 
 
 def clean_mfrr_csv_file(filepath):
@@ -209,42 +293,64 @@ def clean_mfrr_csv_file(filepath):
     print(f"File cleaned successfully: {filepath}")
 
 
-def load_mfrr_activation_data(filepath):
+def load_mfrr_activation_data(data_folder):
     """
-    Load mFRR activation data, split into upwards and downwards activations,
-    and process columns as per user specifications.
+    Load mFRR activation data from all relevant files in a folder, merge all data for 
+    upward and downward activations separately, and sort them by date.
 
     Parameters:
-    - file_path: str, path to the CSV file
+    - data_folder: str, path to the folder containing CSV files.
 
     Returns:
-    - Tuple of two pandas DataFrames: (upwards_activations, downwards_activations)
+    - Tuple of two pandas DataFrames: (merged_upward_activations, merged_downward_activations)
     """
-    # Load the data
-    data = pd.read_csv(filepath, quotechar='"', skipinitialspace=True)
+    all_files = [f for f in os.listdir(data_folder) if "mFRR_bids_NO1" in f and f.endswith(".csv")]
+    
+    all_upwards = []
+    all_downwards = []
 
-    # Clean column names (remove extra quotes and whitespace)
-    data.columns = data.columns.str.replace("'", '').str.strip()
-    data = data.apply(lambda x: x.str.replace("'", '').str.strip() if x.dtype == "object" else x)
+    for file in all_files:
+        filepath = os.path.join(data_folder, file)
+        
+        # Load the data
+        data = pd.read_csv(filepath, quotechar='"', skipinitialspace=True)
+        
+        # Clean column names (remove extra quotes and whitespace)
+        data.columns = data.columns.str.replace("'", '').str.strip()
+        data = data.apply(lambda x: x.str.replace("'", '').str.strip() if x.dtype == "object" else x)
+        
+        # Split ISP into 'Start Time' and 'End Time'
+        data[['Start Time', 'End Time']] = data['ISP'].str.extract(r'(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}) - (\d{2}\.\d{2}\.\d{4} \d{2}:\d{2})')
+        data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d.%m.%Y %H:%M', errors='coerce')
+        data['End Time'] = pd.to_datetime(data['End Time'], format='%d.%m.%Y %H:%M', errors='coerce')
+        
+        # Rename AREA to Bidding Zone and simplify the zone names
+        data.rename(columns={'AREA': 'Bidding Zone'}, inplace=True)
+        data['Bidding Zone'] = data['Bidding Zone'].str.replace(' SCA', '')
+        
+        # Remove unnecessary columns
+        data.drop(columns=['ISP', 'Reserve Type', 'Type of Product', 'Unavailable'], inplace=True)
+        
+        # Convert 'Offered' and 'Activated' to numeric
+        data[['Offered', 'Activated']] = data[['Offered', 'Activated']].apply(pd.to_numeric, errors='coerce')
+        
+        # Split into upwards and downwards activations
+        up_activation_df = data[data['Direction'] == "Up"].reset_index(drop=True).drop(columns=['Direction'])
+        down_activation_df = data[data['Direction'] == "Down"].reset_index(drop=True).drop(columns=['Direction'])
+        
+        # Append to lists
+        all_upwards.append(up_activation_df)
+        all_downwards.append(down_activation_df)
     
-    # Split ISP into 'Start Time' and 'End Time'
-    data[['Start Time', 'End Time']] = data['ISP'].str.extract(r'(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}) - (\d{2}\.\d{2}\.\d{4} \d{2}:\d{2})')
-    data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d.%m.%Y %H:%M', errors='coerce')
-    data['End Time'] = pd.to_datetime(data['End Time'], format='%d.%m.%Y %H:%M', errors='coerce')
+    # Merge all upwards and downwards data separately
+    merged_upwards = pd.concat(all_upwards, ignore_index=True)
+    merged_downwards = pd.concat(all_downwards, ignore_index=True)
     
-    # Rename AREA to Bidding Zone and simplify the zone names
-    data.rename(columns={'AREA': 'Bidding Zone'}, inplace=True)
-    data['Bidding Zone'] = data['Bidding Zone'].str.replace(' SCA', '')
+    # Sort each dataset by Start Time
+    merged_upwards.sort_values(by='Start Time', inplace=True)
+    merged_downwards.sort_values(by='Start Time', inplace=True)
     
-    # Remove unnecessary columns
-    data.drop(columns=['ISP', 'Reserve Type', 'Type of Product', 'Unavailable'], inplace=True)
-    
-    # Split into upwards and downwards activations
-    data[['Offered', 'Activated']] = data[['Offered', 'Activated']].apply(pd.to_numeric, errors='coerce')
-    up_activation_df = data[data['Direction'] == "Up"].reset_index(drop=True).drop(columns=['Direction'])
-    down_activation_df = data[data['Direction'] == "Down"].reset_index(drop=True).drop(columns=['Direction'])
-    
-    return up_activation_df, down_activation_df
+    return merged_upwards, merged_downwards
 
 
 
@@ -260,7 +366,7 @@ def merge_and_align(spot_prices, mfrr_prices):
     - pandas DataFrame with aligned data
     """
     # Merge the two DataFrames on the 'Timestamp' column, ensuring alignment
-    merged_data = pd.merge(spot_prices, mfrr_prices, on='Timestamp', how='inner')
+    merged_data = pd.merge(spot_prices, mfrr_prices, on='Start Time', how='inner')
     
     return merged_data
 
@@ -589,3 +695,42 @@ def propagate_process_covariance(controller, x_bid, u_bid, bidding_volumes_up, b
     fw_variances = ((1-model.c_T)/(model.c_d * model.PCD))**2 * dw_variances[:, 1:].flatten()
 
     return fw_variances #, z_upper, z_lower
+
+
+
+
+
+def vertigrow_calculate_energy_consumption(controller):
+
+    inty_to_power = {
+        0: 0,
+        10: 18,
+        20: 30,
+        30: 44,
+        40: 57,
+        50: 70,
+        60: 84,
+        70: 97,
+        80: 112,
+        90: 126,
+        100: 140
+    }
+
+
+    for run in controller.optimization_results['runs']:
+        u = controller.optimization_results['runs'][run]['timeseries']['u']
+
+        print("Analysing: "+run)
+
+        total_energy = 0
+        total_cost = 0
+        for k in range(controller.N):
+            
+            current_energy = inty_to_power[np.round((u[k]/controller.model.C_PPFD_max * 100)/10)*10]/4
+
+            total_energy += current_energy
+            total_cost += controller.spot_prices[k] * current_energy
+
+
+        print(f'Total energy: {total_energy} Wh')
+        print(f'Cost: {total_cost} NOK')
