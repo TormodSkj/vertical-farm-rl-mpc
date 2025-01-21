@@ -505,24 +505,134 @@ class Plotter():
         plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
 
-        
-
-        '''
+   
         ###########################################################
         plt.figure(figsize=config.plot_format)
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=config.plot_format, sharex=True)
 
         # Plot bar chart of number of activations made every month we have data
         # Make clear distinctions between up and down regulation.
         # Goal: Find the month with the most frequent activations in order to generate an interesting place to do analysis.
 
+        up_activations_df, down_activations_df = market.up_activation_df, market.down_activation_df
 
-        plt.suptitle('Activation frequencies')
+        # Process data up
+        up_activations_df['Start Time'] = pd.to_datetime(up_activations_df['Start Time'])
+        up_activations_df.loc[:, 'Year-Month'] = up_activations_df['Start Time'].dt.to_period('M')
+        n_up_activations = up_activations_df[(up_activations_df.filter(like='Activated').sum(axis=1)) > 0]
+        n_up_activations = n_up_activations.copy()
 
-        filename = "activation_frequencies"
+        # Count activations and total timestamps by Year-Month
+        monthly_counts_up = n_up_activations['Year-Month'].value_counts().sort_index()
+        total_counts_up = up_activations_df['Year-Month'].value_counts().sort_index()
+        activation_rate_up = (monthly_counts_up / total_counts_up * 100).sort_index()
+
+        # Process data down
+        down_activations_df['Start Time'] = pd.to_datetime(down_activations_df['Start Time'])
+        down_activations_df.loc[:, 'Year-Month'] = down_activations_df['Start Time'].dt.to_period('M')
+        n_down_activations = down_activations_df[(down_activations_df.filter(like='Activated').sum(axis=1)) > 0]
+        n_down_activations = n_down_activations.copy()
+
+        # Count activations and total timestamps by Year-Month
+        monthly_counts_down = n_down_activations['Year-Month'].value_counts().sort_index()
+        total_counts_down = down_activations_df['Year-Month'].value_counts().sort_index()
+        activation_rate_down = (monthly_counts_down / total_counts_down * 100).sort_index()
+
+        # Combine the two datasets into a single DataFrame
+        combined_monthly_activation_rates = pd.DataFrame({
+            'Up Activation Rate': activation_rate_up,
+            'Down Activation Rate': activation_rate_down
+        }).fillna(0)  # Fill missing months with 0
+
+        # Plot the stacked bar chart
+        combined_monthly_activation_rates.plot(kind='bar', stacked=True, figsize=(12, 6), color=['skyblue', 'lightcoral'], edgecolor='gray')
+        plt.title(f'Monthly activation rates in {market.bidding_zone} bidding zone')
+        plt.xlabel('Year-Month')
+        plt.ylabel('Percentage of MTUs where activations occur')
+        plt.xticks(rotation=45)
+        plt.legend(title='Activation Direction')
+        plt.tight_layout()
+
+        filename = f"{market.bidding_zone}_mFRR_monthly_activation_frequencies"
         plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
-        '''
-       
+
+
+        ###############################################3333
+        # Daily activation rates
+        plt.figure(figsize=config.plot_format)
+
+        # Process data up
+        up_activations_df['Start Time'] = pd.to_datetime(up_activations_df['Start Time'])
+        up_activations_df.loc[:, 'Date'] = up_activations_df['Start Time'].dt.date
+
+        # Ensure all dates from the full range are present for counting
+        date_range_up = pd.date_range(start=up_activations_df['Date'].min(), end=up_activations_df['Date'].max())
+        all_dates_up = pd.DataFrame({'Date': date_range_up})
+
+        # Count activations and total timestamps by Date
+        daily_counts_up = (
+            up_activations_df[(up_activations_df.filter(like='Activated').sum(axis=1)) > 0]
+            .groupby('Date')
+            .size()
+            .reindex(date_range_up, fill_value=0)  # Include all dates, even with zero activations
+        )
+        total_counts_up_daily = up_activations_df.groupby('Date').size().reindex(date_range_up, fill_value=0)
+
+        # Compute activation rate
+        activation_rate_up_daily = (daily_counts_up / total_counts_up_daily * 100).fillna(0)
+
+        # Process data down
+        down_activations_df['Start Time'] = pd.to_datetime(down_activations_df['Start Time'])
+        down_activations_df.loc[:, 'Date'] = down_activations_df['Start Time'].dt.date
+
+        # Ensure all dates from the full range are present for counting
+        date_range_down = pd.date_range(start=down_activations_df['Date'].min(), end=down_activations_df['Date'].max())
+        all_dates_down = pd.DataFrame({'Date': date_range_down})
+
+        # Count activations and total timestamps by Date
+        daily_counts_down = (
+            down_activations_df[(down_activations_df.filter(like='Activated').sum(axis=1)) > 0]
+            .groupby('Date')
+            .size()
+            .reindex(date_range_down, fill_value=0)  # Include all dates, even with zero activations
+        )
+        total_counts_down_daily = down_activations_df.groupby('Date').size().reindex(date_range_down, fill_value=0)
+
+        # Compute activation rate
+        activation_rate_down_daily = (daily_counts_down / total_counts_down_daily * 100).fillna(0)
+
+        # Combine the two datasets into a single DataFrame
+        combined_daily_rates = pd.DataFrame({
+            'Date': date_range_up,
+            'Up Activation Rate': activation_rate_up_daily.values,
+            'Down Activation Rate': activation_rate_down_daily.values
+        })
+
+        # Limit x-ticks to the first day of each month
+        first_of_month = combined_daily_rates['Date'][combined_daily_rates['Date'].dt.day == 1]
+
+        # Plot the stacked bar chart
+        ax = combined_daily_rates.set_index('Date')[['Up Activation Rate', 'Down Activation Rate']].plot(
+            kind='bar', stacked=True, figsize=(15, 6), color=['skyblue', 'lightcoral']
+        )
+
+        # Ensure that we only set x-ticks for the first of each month
+        first_of_month_indexes = combined_daily_rates[combined_daily_rates['Date'].dt.day == 1].index
+        ax.set_xticks(first_of_month_indexes)
+
+        # Add x-tick labels for the first of each month
+        ax.set_xticklabels([date.strftime('%Y-%m-%d') for date in first_of_month], rotation=45)
+
+        # Add labels and title
+        plt.title(f'Daily activation rates in {market.bidding_zone} bidding zone')
+        plt.xlabel('Date')
+        plt.ylabel('Percentage of MTUs where activations occur')
+        plt.legend(title='Activation Direction')
+        plt.tight_layout()
+
+        filename = f"{market.bidding_zone}_mFRR_daily_activation_frequencies"
+        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+
 
 
     def save_mpc_plots(self):

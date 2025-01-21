@@ -162,7 +162,7 @@ def load_spot_prices(file_path, bidding_zone):
     return data[['Start Time', price_col]].rename(columns={price_col: 'Spot Price'})
 
 
-def load_mfrr_prices(data_folder):
+def load_mfrr_prices(data_folder, bidding_zone):
     """
     Load mFRR balancing prices from all relevant files in a folder, parse timestamps,
     and merge them into a single DataFrame with 'Start Time', 'End Time', 'Up Price',
@@ -177,7 +177,7 @@ def load_mfrr_prices(data_folder):
 
     standardize_balancing_price_files(data_folder)
 
-    all_files = [f for f in os.listdir(data_folder) if "mFRR_NO1_balancing_prices" in f and f.endswith(".csv")]
+    all_files = [f for f in os.listdir(data_folder) if "mFRR_balancing_prices" in f and bidding_zone in f and f.endswith(".csv")]
     all_data = []
 
     for file in all_files:
@@ -187,16 +187,16 @@ def load_mfrr_prices(data_folder):
         data = pd.read_csv(filepath, delimiter=",", encoding="utf-8")
 
         # Parse 'Start Time' and 'End Time' from the 'Time Interval' column
-        time_interval_col = "Time Interval"  # Adjust if your column name is different
+        time_interval_col = "ISP (CET/CEST)"  # Adjust if your column name is different
         data[['Start Time', 'End Time']] = data[time_interval_col].str.extract(
-            r'(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}) - (\d{2}\.\d{2}\.\d{4} \d{2}:\d{2})'
+            r'(\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}) - (\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2})'
         )
-        data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d.%m.%Y %H:%M', errors='coerce')
-        data['End Time'] = pd.to_datetime(data['End Time'], format='%d.%m.%Y %H:%M', errors='coerce')
+        data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
+        data['End Time'] = pd.to_datetime(data['End Time'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
 
         # Select and rename relevant columns
-        up_price_col = "Up price"  # Adjust if your column name is different
-        down_price_col = "Down Price"  # Adjust if your column name is different
+        up_price_col = "Price Up (EUR/MWh)"  # Adjust if your column name is different
+        down_price_col = "Price Down (EUR/MWh)"  # Adjust if your column name is different
 
         data = data[['Start Time', 'End Time', up_price_col, down_price_col]].rename(
             columns={up_price_col: 'Up Price', down_price_col: 'Down Price'}
@@ -208,6 +208,7 @@ def load_mfrr_prices(data_folder):
     # Merge all data and sort by 'Start Time'
     merged_data = pd.concat(all_data, ignore_index=True)
     merged_data.sort_values(by='Start Time', inplace=True)
+    merged_data.dropna(inplace=True)
 
     return merged_data
 
@@ -259,7 +260,7 @@ def standardize_balancing_price_files(folder_path):
         df = pd.read_csv(file_path)
 
         # Clean price columns with commas, convert to float
-        price_columns = ['Up price', 'Down Price']  # Assuming these are the price columns
+        price_columns = ['Price Up (EUR/MWh)', 'Price Down (EUR/MWh)']  # Assuming these are the price columns
         for col in price_columns:
             df[col] = df[col].replace({',': ''}, regex=True)  # Remove commas
             df[col] = pd.to_numeric(df[col], errors='coerce')  # Convert to numeric values
@@ -293,7 +294,7 @@ def clean_mfrr_csv_file(filepath):
     print(f"File cleaned successfully: {filepath}")
 
 
-def load_mfrr_activation_data(data_folder):
+def load_mfrr_activation_data(data_folder, bidding_zone):
     """
     Load mFRR activation data from all relevant files in a folder, merge all data for 
     upward and downward activations separately, and sort them by date.
@@ -304,7 +305,7 @@ def load_mfrr_activation_data(data_folder):
     Returns:
     - Tuple of two pandas DataFrames: (merged_upward_activations, merged_downward_activations)
     """
-    all_files = [f for f in os.listdir(data_folder) if "mFRR_bids_NO1" in f and f.endswith(".csv")]
+    all_files = [f for f in os.listdir(data_folder) if "mFRR_activations" in f and bidding_zone in f and f.endswith(".csv")]
     
     all_upwards = []
     all_downwards = []
@@ -320,19 +321,19 @@ def load_mfrr_activation_data(data_folder):
         data = data.apply(lambda x: x.str.replace("'", '').str.strip() if x.dtype == "object" else x)
         
         # Split ISP into 'Start Time' and 'End Time'
-        data[['Start Time', 'End Time']] = data['ISP'].str.extract(r'(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}) - (\d{2}\.\d{2}\.\d{4} \d{2}:\d{2})')
-        data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d.%m.%Y %H:%M', errors='coerce')
-        data['End Time'] = pd.to_datetime(data['End Time'], format='%d.%m.%Y %H:%M', errors='coerce')
+        data['Start Time'] = data['ISP'].str.extract(r'(\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2})')
+        data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
+        # data['End Time'] = pd.to_datetime(data['End Time'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
         
         # Rename AREA to Bidding Zone and simplify the zone names
-        data.rename(columns={'AREA': 'Bidding Zone'}, inplace=True)
+        data.rename(columns={'Area': 'Bidding Zone'}, inplace=True)
         data['Bidding Zone'] = data['Bidding Zone'].str.replace(' SCA', '')
         
         # Remove unnecessary columns
-        data.drop(columns=['ISP', 'Reserve Type', 'Type of Product', 'Unavailable'], inplace=True)
+        data.drop(columns=['ISP', 'Reserve Type', 'Type of Product', 'Unavailable (MW)'], inplace=True)
         
         # Convert 'Offered' and 'Activated' to numeric
-        data[['Offered', 'Activated']] = data[['Offered', 'Activated']].apply(pd.to_numeric, errors='coerce')
+        data[['Offered', 'Activated']] = data[['Offered (MW)', 'Activated (MW)']].apply(pd.to_numeric, errors='coerce')
         
         # Split into upwards and downwards activations
         up_activation_df = data[data['Direction'] == "Up"].reset_index(drop=True).drop(columns=['Direction'])
@@ -734,3 +735,57 @@ def vertigrow_calculate_energy_consumption(controller):
 
         print(f'Total energy: {total_energy} Wh')
         print(f'Cost: {total_cost} NOK')
+
+
+
+def strip_entsoe_activation_data(data_folder, filename):
+    """
+    Filters the rows of a CSV file, keeping only those that have 'mFRR' in the 'Reserve Type'
+    column and 'Local' in the 'Type of Product' column, while also removing rows with 'n/e'
+    in the columns 'Offered (MW)', 'Activated (MW)', or 'Unavailable (MW)'. Overwrites the 
+    original file with the filtered data.
+
+    Parameters:
+    - filename: str, path to the CSV file to be processed.
+    """
+
+    filepath = data_folder + filename + ".csv"
+
+    # Open the file for reading and writing
+    with open(filepath, 'r') as infile:
+        lines = infile.readlines()
+
+    # Get the header (the first line) and filter the relevant columns by their names
+    header = lines[0].strip()
+    columns = header.split(',')
+    
+    reserve_type_index = columns.index('"Reserve Type"')
+    type_of_product_index = columns.index('"Type of Product"')
+    offered_mw_index = columns.index('"Offered (MW)"')
+    activated_mw_index = columns.index('"Activated (MW)"')
+    unavailable_mw_index = columns.index('"Unavailable (MW)"')
+
+    # Filter lines based on conditions
+    filtered_lines = [lines[0]]  # Start with the header
+    for line in lines[1:]:  # Skip the header and check the remaining lines
+        columns = line.strip().split(',')
+
+        # Check if the line satisfies the conditions
+        if len(columns) > max(reserve_type_index, type_of_product_index, offered_mw_index, activated_mw_index, unavailable_mw_index):  # Avoid IndexError
+            reserve_type = columns[reserve_type_index]
+            type_of_product = columns[type_of_product_index]
+            offered_mw = columns[offered_mw_index]
+            activated_mw = columns[activated_mw_index]
+            unavailable_mw = columns[unavailable_mw_index]
+
+            # Check for 'mFRR' in 'Reserve Type' and 'Local' in 'Type of Product'
+            if '"mFRR"' in reserve_type and '"Local"' in type_of_product:
+                # Check for 'n/e' in the MW columns
+                if offered_mw != '"n/e"' and activated_mw != '"n/e"' and unavailable_mw != '"n/e"':
+                    filtered_lines.append(line)
+
+    # Write the filtered lines back to the file, overwriting the original file
+    with open(filepath, 'w') as outfile:
+        outfile.writelines(filtered_lines)
+
+    print(f"File '{filepath}' has been filtered successfully.")

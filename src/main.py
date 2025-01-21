@@ -6,16 +6,16 @@ from plotter import Plotter
 import numpy as np
 from globals import *
 from simulator import Simulator
-from utils import vertigrow_calculate_energy_consumption
+from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 
 SIM_NAME        = "price_comparison"
-HORIZON_DAYS    = 18
+HORIZON_DAYS    = 20
 FINAL_WEIGHT    = 4                 # 1 day
 # FINAL_WEIGHT    = 36.66             # 7 Days
 # FINAL_WEIGHT    = 136.7             # 20 Days 
 # FINAL_WEIGHT    = 2.05              # 20 Days [Directly from germination]
-SIMULATION_DATE = '2024-01-01'
-BIDDING_ZONE    = 'NO3'
+SIMULATION_DATE = '2023-12-07'
+BIDDING_ZONE    = 'NO1'
 import_file     = 'scaled_optimal_intensities.json'
 search_cache    = 1
 
@@ -26,7 +26,6 @@ def main():
 
     # x_init = 0.031415 * np.array([5, 1])   # From germination [calibrated from 18d experiment]
     x_init = np.array([5, 1])   # Specify init vector [structural and non structural dry weight in grams]
-
 
     ''' CREATING OBJECTS '''
     config      = Config(SIM_NAME, filetype="pdf", seed=1133)
@@ -41,19 +40,19 @@ def main():
 
     ''' OPTIMIZAION AND PLOTTING '''
 
-    controller.import_baseline()
-    controller.optimize_baseline()
+    # controller.import_baseline()
+    # controller.optimize_baseline()
     # controller.optimize_bidding()
     # controller.optimize_bidding_mpc()
-
     # simulator.apply_mfrr_clearing_prices(controller)
-    controller.status_report()
-    # controller.export_intensity_to_json('Baseline')
-    controller.save_to_json()
 
+    # controller.status_report()
+    # controller.save_to_json()
+
+    # controller.export_intensity_to_json('Baseline')
 
     plotter = Plotter(config, controller)
-    plotter.save_ocp_plots()
+    # plotter.save_ocp_plots()
 
     market.analyze_price_covariances()
     plotter.plot_spot_mfrr_prices() 

@@ -203,7 +203,7 @@ class Market:
 
             # Load data
             spot_prices = utils.load_spot_prices(spot_price_file, self.bidding_zone)
-            mfrr_prices = utils.load_mfrr_prices(mfrr_price_datapath)
+            mfrr_prices = utils.load_mfrr_prices(mfrr_price_datapath, self.bidding_zone)
 
             # Merge datasets
             merged_data = utils.merge_and_align(spot_prices, mfrr_prices)
@@ -319,7 +319,7 @@ class Market:
         data_path = self.config.mfrr_activation_data_path
         # utils.clean_mfrr_csv_file(filepath)
 
-        up_activation_df, down_activation_df = utils.load_mfrr_activation_data(data_path)
+        up_activation_df, down_activation_df = utils.load_mfrr_activation_data(data_path, self.bidding_zone)
         self.up_activation_df, self.down_activation_df = up_activation_df, down_activation_df
 
         # Activation rate of each offered MW of capacity 
