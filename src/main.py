@@ -8,13 +8,13 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 
-SIM_NAME        = "real_clearing_prices_test_2"
+SIM_NAME        = "real_clearing_prices_test_3"
 HORIZON_DAYS    = 20
 FINAL_WEIGHT    = 4                 # 1 day
 # FINAL_WEIGHT    = 36.66             # 7 Days
 # FINAL_WEIGHT    = 136.7             # 20 Days 
 # FINAL_WEIGHT    = 2.05              # 20 Days [Directly from germination]
-SIMULATION_DATE = '2024-02-14'
+SIMULATION_DATE = '2023-10-14'
 BIDDING_ZONE    = 'NO2'
 import_file     = 'scaled_optimal_intensities.json'
 search_cache    = 1
@@ -51,7 +51,7 @@ def main():
 
     # controller.export_intensity_to_json('Baseline')
 
-    plotter = Plotter(config, controller)
+    plotter = Plotter(config, controller, simulator)
     plotter.save_ocp_plots()
 
     # market.analyze_price_covariances()
@@ -64,10 +64,10 @@ def main():
 
     # simulator.Simulate_mpc()
     # simulator.solve_mpc()
-    # simulator.simulate_random_activation(controller, 1)
+    # simulator.simulate_random_activation(controller, 20)
     # plotter.save_mpc_plots()
 
-    # plotter.plot_random_activations(10)
+    # plotter.plot_random_activations(30)
 
 
 

@@ -808,7 +808,7 @@ class Controller():
 
         # Transform from hourly to quarter hourly basis
         # Scale from percentage based schedule to light intensity
-        u_base = 250/100*np.repeat(light_schedule, 4)     
+        u_base = self.model.C_PPFD_max/100*np.repeat(light_schedule, 4)     
 
         assert len(u_base) >= self.N, f"Imported light schedule too short. Len: {len(u_base)}, N: {N}"
 

@@ -633,18 +633,18 @@ def propagate_process_covariance(controller, x_bid, u_bid, bidding_volumes_up, b
     for k in range(N):
         # Input uncertainty terms
         a, b = 1000*bidding_volumes_up[k]/model.C_conv_PPFD, 1000*bidding_volumes_dn[k]/model.C_conv_PPFD
-        p_a = market.Pr_a_up(spot_prices[k], bidding_prices_up[k])
-        p_b = market.Pr_a_dn(spot_prices[k], bidding_prices_dn[k])
+        p_up = market.Pr_a_up(spot_prices[k], bidding_prices_up[k])
+        p_dn = market.Pr_a_dn(spot_prices[k], bidding_prices_dn[k])
 
         # Expected values of u_a and u_b
-        E_u_a = a * p_a
-        E_u_b = b * p_b
-        E_u = u_bid[k] + E_u_a + E_u_b
+        E_u_up = a * p_up
+        E_u_dn = b * p_dn
+        E_u = u_bid[k] - E_u_up + E_u_dn
 
         # Variance of u
-        Var_u_a = a**2 * p_a * (1 - p_a)
-        Var_u_b = b**2 * p_b * (1 - p_b)
-        Var_u = Var_u_a + Var_u_b - 2 * (E_u_a * E_u_b)
+        Var_u_a = a**2 * p_up * (1 - p_up)
+        Var_u_b = b**2 * p_dn * (1 - p_dn)
+        Var_u = Var_u_a + Var_u_b - 2 * (E_u_up * E_u_dn)
 
         # # Skewness of u
         # Skew_u_a = -((1 - 2*p_a) / (np.sqrt(Var_u_a) if Var_u_a > 0 else 1e-6) if Var_u_b>1 else 0)

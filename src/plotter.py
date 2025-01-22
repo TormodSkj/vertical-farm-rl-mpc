@@ -45,12 +45,39 @@ class Plotter():
 
         bidding_runs = [run for run in controller.optimization_results['runs'] if 'bidding result' in controller.optimization_results['runs'][run]]
 
-        # BEGIN PLOTTING (or more like saving plots, but you get it)
+        # BEGIN PLOTTING
         ##################################################
         
         if self.controller.model.title == "Vertical Farm" or self.controller.model.title == "Gjermund plant model":
 
+            
+            ######################################################
+
+            plt.figure(figsize=config.plot_format)
+            
+
             for run_name in controller.optimization_results['runs']:
+
+                if(run_name in bidding_runs and 'Realized' not in run_name):
+
+                    bid_ts  = self.controller.optimization_results['runs'][run_name]['timeseries']
+                    bid_volume_up   = bid_ts['P_up']    # Volume up
+                    bid_volume_dn   = bid_ts['P_dn']    # Volume down
+                    bid_price_up    = bid_ts['C_up']    # Price up
+                    bid_price_dn    = bid_ts['C_dn']    # Price down
+
+                    u_nom = controller.optimization_results['runs'][run_name]['timeseries']['u_nom']
+                    x_bid = controller.optimization_results['runs'][run_name]['timeseries']['x']
+                    # fw_interval = calculate_freshweight_interval(controller, u_bid, b_p_up, b_p_dn, b_c_up, b_c_dn)
+                    fw_variance = propagate_process_covariance(controller, x_bid, u_nom, bid_volume_up, bid_volume_dn, bid_price_up, bid_price_dn)
+                    fw_sd = np.sqrt(fw_variance)
+                    fw = np.array(controller.model.freshweight(x_bid[:,1:])).flatten()
+
+                    fw_ub = fw + 1.96*fw_sd
+                    fw_lb = fw - 1.96*fw_sd
+
+                    plt.fill_between(t, fw_lb, fw_ub, color='green', alpha=0.2)
+
                 x = controller.optimization_results['runs'][run_name]['timeseries']['x']
                 x_fw = controller.model.freshweight(x[:,1:])
                 plt.plot(t, x_fw, label=f"{run_name} (g/plant)")
@@ -60,6 +87,9 @@ class Plotter():
             plt.xlabel("Time (days)")
             plt.legend(loc="upper left")
             plt.title(f"Expected freshweight of plant growth (g/plant). ({controller.market.date}, {controller.market.bidding_zone})")
+
+
+
 
         if self.controller.model.title == "Battery":
 
@@ -223,32 +253,6 @@ class Plotter():
             plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
 
-            ######################################################
-
-            plt.figure(figsize=config.plot_format)
-            
-            u_bid = controller.optimization_results['runs'][run]['timeseries']['u']
-            x_bid = controller.optimization_results['runs'][run]['timeseries']['x']
-            # fw_interval = calculate_freshweight_interval(controller, u_bid, b_p_up, b_p_dn, b_c_up, b_c_dn)
-            fw_variance = propagate_process_covariance(controller, x_bid, u_bid, bid_volume_up, bid_volume_dn, bid_price_up, bid_price_dn)
-            fw_sd = np.sqrt(fw_variance)
-            fw = np.array(controller.model.freshweight(x_bid[:,1:])).flatten()
-
-            fw_ub = fw + 1.96*fw_sd
-            fw_lb = fw - 1.96*fw_sd
-
-            # plt.fill_between(t, fw-3*fw_sd, fw+3*fw_sd, color='green', alpha=0.2)
-            # plt.fill_between(t, fw-2*fw_sd, fw+2*fw_sd, color='green', alpha=0.2)
-            plt.fill_between(t, fw_lb, fw_ub, color='green', alpha=0.6)
-            plt.axhline(y=controller.model.Final_fw_sht, color='gray', linestyle=':', label="Required Freshweight (g/plant)")
-            plt.ylabel("Fresh weight (g/plant)")
-            plt.xlabel("Time (days)")
-            plt.title(f'{run}: 95% confidence interval of freshweight throughout one growth cycle')
-
-            filename = f"{run_sanitized}_freshweight_variance"
-            plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
-
-
             #################################################################################
             # Bidding volumes and activation chances
 
@@ -316,22 +320,39 @@ class Plotter():
         ##################################################
         plt.figure(figsize=config.plot_format)
 
+        bidding_runs = [run for run in controller.optimization_results['runs'] if 'bidding result' in controller.optimization_results['runs'][run]]
+
+        for run_name in bidding_runs:
+            if 'Realized' in run_name:
+                continue 
+            bid_ts  = self.controller.optimization_results['runs'][run_name]['timeseries']
+            bid_volume_up   = bid_ts['P_up']    # Volume up
+            bid_volume_dn   = bid_ts['P_dn']    # Volume down
+            bid_price_up    = bid_ts['C_up']    # Price up
+            bid_price_dn    = bid_ts['C_dn']    # Price down
+
+            u_nom = controller.optimization_results['runs'][run_name]['timeseries']['u_nom']
+            x_bid = controller.optimization_results['runs'][run_name]['timeseries']['x']
+            # fw_interval = calculate_freshweight_interval(controller, u_bid, b_p_up, b_p_dn, b_c_up, b_c_dn)
+            fw_variance = propagate_process_covariance(controller, x_bid, u_nom, bid_volume_up, bid_volume_dn, bid_price_up, bid_price_dn)
+            fw_sd = np.sqrt(fw_variance)
+            fw = np.array(controller.model.freshweight(x_bid[:,1:])).flatten()
+
+            fw_ub = fw + 1.96*fw_sd
+            fw_lb = fw - 1.96*fw_sd
+
+            plt.fill_between(t, fw_lb, fw_ub, color='green', alpha=0.4)
+
         for case in range(freshwewights.shape[0]):
-            plt.plot(t, freshwewights[case,:], color='green', alpha=0.2)
+            plt.plot(t, freshwewights[case,:], color='blue', alpha=0.2)
         plt.axhline(y=controller.model.Final_fw_sht, color='gray', linestyle=':', label="Required Freshweight (g/plant)")
         plt.ylabel("Fresh weight (g/plant)")
         plt.xlabel("Time (days)")
         plt.title(f'Simulated {m} different cases of plausible activations')
         # plt.legend()
 
-
         filename = "random_activations"
         plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
-
-
-
-
-
 
     def plot_spot_mfrr_prices(self):
 

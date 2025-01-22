@@ -47,7 +47,7 @@ class PlantModel:
 
 
     A_crop = 15000                                  # Total growth area [m^2]
-    C_PPFD_max = 250                                # Max lighting capacity (or max tolerated light level for the plants) [mol / m^2/s]
+    C_PPFD_max = 230                                # Max lighting capacity (or max tolerated light level for the plants) [mol / m^2/s]
     C_conv = 0.217                                  # W / PPFD
     eta_light = 0.8                                 # LED efficiency coefficient
     C_conv_PPFD = C_conv*A_crop/(eta_light*1000)    # Conversion factor between PPFD and power. Expressed in kW
