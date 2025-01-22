@@ -8,14 +8,14 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 
-SIM_NAME        = "price_comparison"
+SIM_NAME        = "real_clearing_prices_test_2"
 HORIZON_DAYS    = 20
 FINAL_WEIGHT    = 4                 # 1 day
 # FINAL_WEIGHT    = 36.66             # 7 Days
 # FINAL_WEIGHT    = 136.7             # 20 Days 
 # FINAL_WEIGHT    = 2.05              # 20 Days [Directly from germination]
-SIMULATION_DATE = '2023-12-07'
-BIDDING_ZONE    = 'NO1'
+SIMULATION_DATE = '2024-02-14'
+BIDDING_ZONE    = 'NO2'
 import_file     = 'scaled_optimal_intensities.json'
 search_cache    = 1
 
@@ -41,21 +41,24 @@ def main():
     ''' OPTIMIZAION AND PLOTTING '''
 
     # controller.import_baseline()
-    # controller.optimize_baseline()
-    # controller.optimize_bidding()
+    controller.optimize_baseline()
+    controller.optimize_bidding()
     # controller.optimize_bidding_mpc()
-    # simulator.apply_mfrr_clearing_prices(controller)
+    simulator.apply_mfrr_clearing_prices(controller)
 
-    # controller.status_report()
-    # controller.save_to_json()
+    controller.status_report()
+    controller.save_to_json()
 
     # controller.export_intensity_to_json('Baseline')
 
     plotter = Plotter(config, controller)
-    # plotter.save_ocp_plots()
+    plotter.save_ocp_plots()
 
-    market.analyze_price_covariances()
-    plotter.plot_spot_mfrr_prices() 
+    # market.analyze_price_covariances()
+    ''''''
+    # plotter.plot_spot_mfrr_prices() 
+
+    ''''''
     # market.optimal_bidding_price_prediction(controller.spot_prices)
     # plotter.plot_price_prediction()
 

@@ -217,12 +217,16 @@ class Simulator():
             bidding_price_dn    = controller.optimization_results['runs']['Bidding']['timeseries']['C_dn']
             B = np.vstack((bidding_vol_up, bidding_vol_dn, bidding_price_up, bidding_price_dn))
             
-
             activation_demands_up, activation_demands_dn = market.get_activation_demands(date)
             assert len(activation_demands_dn)==N and len(activation_demands_up)==N, f'Activation demand arrays have inconsistent lengths with simulation duration. N = {self.N}, len(demands up) = {len(activation_demands_up)}, len(demands down) = {len(activation_demands_dn)}'
+            
+            # Evaluate activations
+            activation_up = np.where(np.logical_and(activation_demands_up > 0, bidding_price_up < clearing_prices_up), 1, 0)
+            activation_dn = np.where(np.logical_and(activation_demands_dn > 0, bidding_price_dn < clearing_prices_dn), 1, 0)
+            A = np.vstack((activation_up, activation_dn))
 
-            u = U_nom + 1000*(np.where(np.logical_and(activation_demands_dn == 1, bidding_price_dn < clearing_prices_dn), bidding_vol_dn, 0)\
-                             - np.where(np.logical_and(activation_demands_up == 1, bidding_price_up < clearing_prices_up), bidding_vol_up, 0))/controller.model.C_conv_PPFD
+            u = U_nom + 1000*(np.where(activation_dn == 1, bidding_vol_dn, 0)\
+                             - np.where(activation_up == 1, bidding_vol_up, 0))/controller.model.C_conv_PPFD
 
             X = np.zeros((controller.model.nx, N+1))
             X[:,0] = controller.model.x_init.flatten()
@@ -234,11 +238,11 @@ class Simulator():
 
 
             f = self.model.C_conv_PPFD * np.sum(np.multiply(spot_prices,controller.u_base)) \
-                + np.sum(np.where(np.logical_and(activation_demands_dn == 1, bidding_price_dn < clearing_prices_dn), np.multiply((1000*spot_prices - controller.market.C_eur2nok * bidding_price_dn), bidding_vol_dn), 0)) \
-                - np.sum(np.where(np.logical_and(activation_demands_up == 1, bidding_price_up < clearing_prices_up), np.multiply((1000*spot_prices + controller.market.C_eur2nok * bidding_price_up), bidding_vol_up), 0))
+                + np.sum(np.where(activation_dn == 1, np.multiply((1000*spot_prices - controller.market.C_eur2nok * bidding_price_dn), bidding_vol_dn), 0)) \
+                - np.sum(np.where(activation_up == 1, np.multiply((1000*spot_prices + controller.market.C_eur2nok * bidding_price_up), bidding_vol_up), 0))
 
 
-            Eps = self.model.freshweight(X[:,-1]) - self.model.Final_fw_sht
+            Eps = max(0, controller.model.Final_fw_sht - self.model.freshweight(X[:,-1]))
 
             sol = {}
             sol['eps'] = Eps
@@ -246,7 +250,7 @@ class Simulator():
             sol['elapsed_time'] = 0
         
 
-            controller.save_run('Realized ' + run, sol, X, u, B, U_nom)
+            controller.save_run('Realized ' + run, sol, X, u, A, B, U_nom)
         
         return 0
 

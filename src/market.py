@@ -27,10 +27,10 @@ class Market:
     sigma_up: float     # € / MW
     sigma_dn: float     # € / MW
 
-    mean_prices_up: np.array
-    mean_prices_dn: np.array
-    opt_prices_up: np.array
-    opt_prices_dn: np.array
+    mean_prices_up: np.array    # Array of most likely clearing prices for up-regulation at each time step (length: N)
+    mean_prices_dn: np.array    # Array of most likely clearing prices for down-regulation at each time step (length: N)
+    opt_prices_up: np.array     # Array of most profitable bidding prices for up-regulation at each time step (length: N)
+    opt_prices_dn: np.array     # Array of most profitable bidding prices for down-regulation at each time step (length: N)
 
     spot_prices:    np.array
     mfrr_prices_up: np.array
@@ -122,6 +122,7 @@ class Market:
         
         spot_prices_hours = np.array(df[self.bidding_zone].iloc[start_idx:start_idx+n_hours].values)
         spot_prices = np.repeat(spot_prices_hours, 4)[0:N]
+        assert len(spot_prices) == N, "Insufficient spot price data"
         return spot_prices
     
 
@@ -152,13 +153,13 @@ class Market:
         # Probability of the grid needing down regulation.
         # TODO implement actual model from Erlend when that's ready
 
-        return self.up_activation_ratio
+        return self.up_activation_occurance_rate
     
     def Pr_D_up(self):
         # Probability of the grid needing up regulation.
         # TODO implement actual model from Erlend when that's ready
 
-        return self.down_activation_ratio
+        return self.down_activation_occurance_rate
 
 
     def analyze_price_covariances(self):
@@ -331,8 +332,8 @@ class Market:
         down_activation_occurances = np.where(np.array(down_activation_df['Activated'])>0, 1, 0)
 
         # % of QH where activations occur
-        self.up_activation_occurance_rate     = len(up_activation_occurances)/len(up_activation_df['Activated'])
-        self.down_activation_occurance_rate   = len(down_activation_occurances)/len(down_activation_df['Activated'])
+        self.up_activation_occurance_rate     = up_activation_occurances[np.where(up_activation_occurances)].size/len(up_activation_df['Activated'])
+        self.down_activation_occurance_rate   = down_activation_occurances[np.where(down_activation_occurances)].size/len(down_activation_df['Activated'])
 
         return 0
     
@@ -340,7 +341,7 @@ class Market:
 
         clearing_price_datapath = self.config.mfrr_clearing_price_data_path
 
-        clearing_prices_df = utils.load_mfrr_prices(clearing_price_datapath)
+        clearing_prices_df = utils.load_mfrr_prices(clearing_price_datapath, self.bidding_zone)
 
         # Remove dates before simdate
         clearing_prices_df = clearing_prices_df.where(clearing_prices_df['Start Time']>pd.to_datetime(date)).dropna()
@@ -351,6 +352,11 @@ class Market:
         return clearing_prices_up, clearing_prices_dn
     
     def get_activation_demands(self, date):
+        '''
+        Returns numpy arrays of length N containing the MW total activated during each quarter hour from the start time.
+        Start time is always assumed at 00:00 at the given start date.
+        '''
+
 
         up_activation_df, down_activation_df = self.up_activation_df, self.down_activation_df
 

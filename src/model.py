@@ -68,7 +68,7 @@ class PlantModel:
     labels = ["Structural dry weight (g/m^2)", 
               "Non-structural dry weight (g/m^2)"]
     x_unit = "Weight (g/m^2)"
-    u_unit = "PPFD (umol/m^2/s)"
+    u_unit = "PPFD"
 
 
     #Constants

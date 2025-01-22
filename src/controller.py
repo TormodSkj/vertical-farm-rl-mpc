@@ -11,6 +11,7 @@ import json
 from globals import *
 from tabulate import tabulate
 from datetime import datetime
+from tqdm import tqdm
 
 class Controller():
     """The controller handles open-loop optimization given a model and a set of constraints."""
@@ -477,8 +478,18 @@ class Controller():
 
         g_eq, g_ineq = self.mpc_model.get_process_constraints(g_eq, g_ineq, N_TH, self.dt, X, x0, U, Eps, ref_weight)
 
-        [opti.subject_to(equality_constraint == 0) for equality_constraint in g_eq]
-        [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
+        # [opti.subject_to(equality_constraint == 0) for equality_constraint in g_eq]
+        # [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
+
+        with tqdm(total=len(g_eq), desc="MPC: Adding equality constraints") as pbar:
+            for equality_constraint in g_eq:
+                opti.subject_to(equality_constraint == 0)
+                pbar.update(1)
+        
+        with tqdm(total=len(g_eq), desc="MPC: Adding inequality constraints") as pbar:
+            for inequality_constraint in g_ineq:
+                opti.subject_to(inequality_constraint >= 0)
+                pbar.update(1)
 
         return opti
 
@@ -613,7 +624,7 @@ class Controller():
         if not self.surpress_output: print('Generated rigid baseline')
         return 0
 
-    def save_run(self, run_id, sol, x, u, B = None, U_nom = None):
+    def save_run(self, run_id, sol, x, u, A = None, B = None, U_nom = None):
 
         timeseries_data = {
             't'     : self.t,
@@ -645,13 +656,24 @@ class Controller():
             metrics_data['Earnings'] = 0
             metrics_data['Total'] = costs - 0
         else:
+
             b_p_up = B[0,:]
             b_p_dn = B[1,:]
             b_c_up = B[2,:]
             b_c_dn = B[3,:]
-            b_a_up = self.market.Pr_a_up(self.spot_prices, b_c_up)
-            b_a_dn = self.market.Pr_a_dn(self.spot_prices, b_c_dn)
 
+            if A is None:
+                b_a_up = np.array(self.market.Pr_a_up(self.spot_prices, b_c_up)).flatten()
+                b_a_dn = np.array(self.market.Pr_a_dn(self.spot_prices, b_c_dn)).flatten()
+                prob_a_up = b_a_up
+                prob_a_dn = b_a_dn
+            else:
+                b_a_up = A[0,:]
+                b_a_dn = A[1,:]
+                timeseries_data['A_up'] = b_a_up
+                timeseries_data['A_dn'] = b_a_dn
+                prob_a_up = np.array(self.market.Pr_a_up(self.spot_prices, b_c_up)).flatten()
+                prob_a_dn = np.array(self.market.Pr_a_dn(self.spot_prices, b_c_dn)).flatten()
 
             timeseries_data['P_up'] = b_p_up
             timeseries_data['P_dn'] = b_p_dn
@@ -670,10 +692,14 @@ class Controller():
             metrics_data['Earnings']    = bidding_earnings
             metrics_data['Total']       = bidding_total
 
-            b_a_up  = np.array(self.market.Pr_a_up(self.spot_prices, b_c_up))
-            b_a_dn  = np.array(self.market.Pr_a_dn(self.spot_prices,b_c_dn))
-            up_bids = np.where(b_a_up.flatten() > 1e-6)
-            dn_bids = np.where(b_a_dn.flatten() > 1e-6)
+            # b_a_up  = np.array(self.market.Pr_a_up(self.spot_prices, b_c_up))
+            # b_a_dn  = np.array(self.market.Pr_a_dn(self.spot_prices,b_c_dn))
+
+            activation_th   = 0.01
+            volume_th       = 0.001
+
+            up_bids = np.where(np.logical_and(prob_a_up > activation_th, b_p_up > volume_th))
+            dn_bids = np.where(np.logical_and(prob_a_dn > activation_th, b_p_dn > volume_th))
 
             filtered_b_p_up = b_p_up[up_bids]
             filtered_b_p_dn = b_p_dn[dn_bids]
@@ -688,13 +714,15 @@ class Controller():
                     'Bids submitted'            : len(filtered_b_a_up),
                     'Avg bid size'              : np.average(filtered_b_p_up),
                     'Avg bid price'             : np.average(filtered_b_c_up),
-                    'Avg activation rate'       : np.average(filtered_b_a_up)
+                    'Avg activation rate'       : np.average(filtered_b_a_up),
+                    'Consumption impact'        : np.sum(np.multiply(b_p_up, b_a_up))
                 },
                 'Down-regulation'   : {
                     'Bids submitted'            : len(filtered_b_a_dn),
                     'Avg bid size'              : np.average(filtered_b_p_dn),
                     'Avg bid price'             : np.average(filtered_b_c_dn),
-                    'Avg activation rate'       : np.average(filtered_b_a_dn)
+                    'Avg activation rate'       : np.average(filtered_b_a_dn),
+                    'Consumption impact'        : np.sum(np.multiply(b_p_dn, b_a_dn))
                 }
             }     
 
@@ -871,11 +899,12 @@ class Controller():
             bidding_result_dn = self.optimization_results['runs'][run]['bidding result']['Down-regulation']
             
             bidding_data = [
-                ['Avg bid size',                        bidding_result_up['Avg bid size'],                                  bidding_result_dn['Avg bid size'],                               "MW"], 
-                ['Avg bid price',                       bidding_result_up['Avg bid price'],                                 bidding_result_dn['Avg bid price'],                              "€/MW"], 
-                ['Avg activation rate',                 bidding_result_up['Avg activation rate'],                           bidding_result_dn['Avg activation rate'],                        "%"], 
-                ['Chance of activation given demand',   bidding_result_up['Avg activation rate']/self.market.Pr_D_up(),     bidding_result_dn['Avg activation rate']/self.market.Pr_D_up(),  "%"],
-                ['Submitted bids',                      bidding_result_up['Bids submitted'],                                bidding_result_dn['Bids submitted'],                             "-"]
+                ['Avg bid size',                        bidding_result_up['Avg bid size'],                              bidding_result_dn['Avg bid size'],                              "MW"], 
+                ['Avg bid price',                       bidding_result_up['Avg bid price'],                             bidding_result_dn['Avg bid price'],                             "€/MW"], 
+                ['Avg activation rate',                 bidding_result_up['Avg activation rate'],                       bidding_result_dn['Avg activation rate'],                       "%"], 
+                ['Chance of activation given demand',   bidding_result_up['Avg activation rate']/self.market.Pr_D_up(), bidding_result_dn['Avg activation rate']/self.market.Pr_D_up(), "%"],
+                ['Impact on consumption',               bidding_result_up['Consumption impact'],                        bidding_result_dn['Consumption impact'],                        "MW"],
+                ['Submitted bids',                      bidding_result_up['Bids submitted'],                            bidding_result_dn['Bids submitted'],                            "-"]
             ]
             bidding_header = ['', 'Up-regulation', 'Down-regulation', 'Unit']
 
