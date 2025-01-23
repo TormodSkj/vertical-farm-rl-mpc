@@ -22,8 +22,8 @@ class Market:
     price_means: np.ndarray
     price_cov: np.ndarray
 
-    mu_up = 50          # € / MW
-    mu_dn = 30          # € / MW
+    mu_up: float        # € / MW
+    mu_dn: float        # € / MW
     sigma_up: float     # € / MW
     sigma_dn: float     # € / MW
 
@@ -32,9 +32,10 @@ class Market:
     opt_prices_up: np.array     # Array of most profitable bidding prices for up-regulation at each time step (length: N)
     opt_prices_dn: np.array     # Array of most profitable bidding prices for down-regulation at each time step (length: N)
 
-    spot_prices:    np.array
-    mfrr_prices_up: np.array
-    mfrr_prices_dn: np.array
+    spot_prices:    np.array    # Array of spot prices used in optimization (length: N)
+    mfrr_prices_up: np.array    # mFRR clearing prices up used in data analysis
+    mfrr_prices_dn: np.array    # mFRR clearing prices down used in data analysis
+    spot_price_data: np.array   # Array of spot prices used in data analysis 
     timestamps:     np.array
 
     n_given_bids = 2            # Number of time intervals with previously submitted bids
@@ -63,7 +64,6 @@ class Market:
         self.specs = {
             'bidding zone'                  : self.bidding_zone,
             'simdate'                       : self.date,
-            'bidding zone'                  : self.bidding_zone,
             'eur to nok'                    : self.C_eur2nok,
             'Avg activation price up'       : self.price_means.iloc[1],
             'Avg activation price down'     : self.price_means.iloc[2],          
@@ -337,8 +337,11 @@ class Market:
 
         return 0
     
-    def get_clearing_prices(self, date):
+    def get_clearing_prices(self, date=None):
 
+        if date==None:
+            date = self.date
+            
         clearing_price_datapath = self.config.mfrr_clearing_price_data_path
 
         clearing_prices_df = utils.load_mfrr_prices(clearing_price_datapath, self.bidding_zone)

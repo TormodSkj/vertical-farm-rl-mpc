@@ -627,7 +627,6 @@ def propagate_process_covariance(controller, x_bid, u_bid, bidding_volumes_up, b
     # Arrays to store results
     state_covariances = [P]
     dw_variances = np.zeros((1, N+1))
-    skewness_values = np.zeros((1, N+1))  # To store skewness
     dw_variances[:,0] = float(C @ P @ C.T)
 
     for k in range(N):
@@ -636,7 +635,7 @@ def propagate_process_covariance(controller, x_bid, u_bid, bidding_volumes_up, b
         p_up = market.Pr_a_up(spot_prices[k], bidding_prices_up[k])
         p_dn = market.Pr_a_dn(spot_prices[k], bidding_prices_dn[k])
 
-        # Expected values of u_a and u_b
+        # Expected values of u_tile_up and u_tilde_dn
         E_u_up = a * p_up
         E_u_dn = b * p_dn
         E_u = u_bid[k] - E_u_up + E_u_dn
@@ -645,14 +644,6 @@ def propagate_process_covariance(controller, x_bid, u_bid, bidding_volumes_up, b
         Var_u_a = a**2 * p_up * (1 - p_up)
         Var_u_b = b**2 * p_dn * (1 - p_dn)
         Var_u = Var_u_a + Var_u_b - 2 * (E_u_up * E_u_dn)
-
-        # # Skewness of u
-        # Skew_u_a = -((1 - 2*p_a) / (np.sqrt(Var_u_a) if Var_u_a > 0 else 1e-6) if Var_u_b>1 else 0)
-        # Skew_u_b = ((1 - 2*p_b) / (np.sqrt(Var_u_b) if Var_u_b > 0 else 1e-6) if Var_u_b>1 else 0)
-        # Skew_u = Skew_u_a + Skew_u_b  # Approximate combined skewness
-
-        # # Store skewness for measurement
-        # skewness_values[:, k+1] = Skew_u
 
         if Var_u < 0: Var_u = 0
         Q = ca.DM([float(Var_u)])  # Input variance matrix
@@ -687,15 +678,9 @@ def propagate_process_covariance(controller, x_bid, u_bid, bidding_volumes_up, b
         state_covariances.append(P)
         dw_variances[:, k+1] = float(C @ P @ C.T)
 
-    # # Adjust confidence intervals with skewness (Cornish-Fisher expansion)
-    # z = 1.96  # For 95% confidence
-    # skew_adjustment = skewness_values[:, 1:].flatten() * (z**2 - 1) / 6
-    # z_upper = z + skew_adjustment
-    # z_lower = z - skew_adjustment
-
     fw_variances = ((1-model.c_T)/(model.c_d * model.PCD))**2 * dw_variances[:, 1:].flatten()
 
-    return fw_variances #, z_upper, z_lower
+    return fw_variances
 
 
 
@@ -789,3 +774,10 @@ def strip_entsoe_activation_data(data_folder, filename):
         outfile.writelines(filtered_lines)
 
     print(f"File '{filepath}' has been filtered successfully.")
+
+
+
+
+
+
+    # def export_timeseries_to_csv()

@@ -37,7 +37,7 @@ class Config():
 
         # Path for data
         self.data_path = os.path.join(self.path, "data/")
-        self.spotprice_data_path = os.path.join(self.data_path, 'Spotprices_norway.csv')
+        self.spotprice_data_path = os.path.join(self.data_path, 'spotprices_norway_jan_2020_dec_2024.csv')
         self.mfrr_clearing_price_data_path = os.path.join(self.data_path, 'mFRR_balancing_prices/')
         self.mfrr_activation_data_path = os.path.join(self.data_path, 'mFRR_activations/')
 

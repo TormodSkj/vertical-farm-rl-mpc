@@ -28,18 +28,19 @@ def main():
     x_init = np.array([5, 1])   # Specify init vector [structural and non structural dry weight in grams]
 
     ''' CREATING OBJECTS '''
-    config      = Config(SIM_NAME, filetype="pdf", seed=1133)
-    plant       = PlantModel(x_init, FINAL_WEIGHT)
-    mpc_plant   = MpcPlantModel(x_init, FINAL_WEIGHT)
-    market      = Market(config, HORIZON_DAYS, BIDDING_ZONE, SIMULATION_DATE)
-    controller  = Controller(HORIZON_DAYS, plant, mpc_plant, market, config, MPC_TH, MPC_steplength, search_cache = search_cache, warm_start=True, import_file = import_file, calculate_fw=True)         #Baseline: 'opt' / 'rigid'
+    config          = Config(SIM_NAME, filetype="pdf", seed=1133)
+    plant           = PlantModel(x_init, FINAL_WEIGHT)
+    mpc_plant       = MpcPlantModel(x_init, FINAL_WEIGHT)
+    market          = Market(config, HORIZON_DAYS, BIDDING_ZONE, SIMULATION_DATE)
+    controller      = Controller(HORIZON_DAYS, plant, mpc_plant, market, config, MPC_TH, MPC_steplength, search_cache = search_cache, warm_start=True, import_file = import_file, calculate_fw=True)         #Baseline: 'opt' / 'rigid'
     
-    mpc_controller = Controller(HORIZON_DAYS, mpc_plant, None, market, config, MPC_TH, MPC_steplength, surpress_output = False, calculate_fw=True)     # Instance of controller used in mpc
-    simulator = Simulator(HORIZON_DAYS, mpc_plant, market, config, mpc_controller, time_horizon=MPC_TH, time_iteration=MPC_steplength)
+    mpc_controller  = Controller(HORIZON_DAYS, mpc_plant, None, market, config, MPC_TH, MPC_steplength, surpress_output = False, calculate_fw=True)     # Instance of controller used in mpc
+    simulator       = Simulator(HORIZON_DAYS, mpc_plant, market, config, mpc_controller, time_horizon=MPC_TH, time_iteration=MPC_steplength)
   
+    plotter = Plotter(config, controller, simulator)
 
     ''' OPTIMIZAION AND PLOTTING '''
-
+    # '''
     # controller.import_baseline()
     controller.optimize_baseline()
     controller.optimize_bidding()
@@ -49,14 +50,16 @@ def main():
     controller.status_report()
     controller.save_to_json()
 
-    # controller.export_intensity_to_json('Baseline')
-
-    plotter = Plotter(config, controller, simulator)
+    # PLOTTING
     plotter.save_ocp_plots()
+
+    #'''
+
+    # controller.export_intensity_to_json('Baseline')
 
     # market.analyze_price_covariances()
     ''''''
-    # plotter.plot_spot_mfrr_prices() 
+    plotter.plot_spot_mfrr_prices() 
 
     ''''''
     # market.optimal_bidding_price_prediction(controller.spot_prices)
