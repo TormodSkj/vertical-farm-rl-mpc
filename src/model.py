@@ -193,7 +193,7 @@ class PlantModel:
     
     
 
-    def bidding_objective_function(self, controller, X, U, B):
+    def bidding_obj_function(self, controller, X, U, B, U_nom):
         
         N = controller.N
         spot_prices = controller.spot_prices
@@ -206,15 +206,15 @@ class PlantModel:
         L = 0
 
         for k in range(0, N): #from k = 2, to N-1. 
-            L += spot_prices[k] * self.C_conv_PPFD * controller.u_base[k] \
-                  + (1000*spot_prices[k] - controller.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * controller.market.Pr_a_dn(spot_prices[k], Bc_dn[k])\
-                  - (1000*spot_prices[k] + controller.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * controller.market.Pr_a_up(spot_prices[k], Bc_up[k])
+            L += spot_prices[k] * self.C_conv_PPFD * U_nom[k] \
+                  + (1000*spot_prices[k] - controller.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * controller.market.activation_prob_dn(spot_prices[k], Bc_dn[k])\
+                  - (1000*spot_prices[k] + controller.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * controller.market.activation_prob_up(spot_prices[k], Bc_up[k])
 
         L = L/4
 
         return L
 
-    def baseline_obj_function(self, N, spot_prices, X, U):
+    def spotopt_obj_function(self, N, spot_prices, X, U):
 
         L = 0
         for k in range(N):
@@ -237,7 +237,7 @@ class PlantModel:
 
         return Eps * 10**6
 
-    def get_bidding_constraints(self, controller, g_eq, g_ineq, B):
+    def get_mfrr_constraints(self, controller, g_eq, g_ineq, B):
 
         # Enforce initial bids
 
@@ -291,33 +291,31 @@ class PlantModel:
         return g_eq, g_ineq
     
 
-    def get_u(self, controller, B):
+    def get_u(self, controller, B, U_nom):
 
         N = controller.N
         spot_prices = controller.spot_prices
-        u_bar = controller.u_base
         U = np.array([])
 
         for k in range(N):
-
             if(k<controller.market.n_given_activations):
                 u_tilde = 1000*(B[1,k]*controller.A_down[k] - B[0,k]*controller.A_up[k])/self.C_conv_PPFD
             else:
-                u_tilde = 1000*(B[1,k]*controller.market.Pr_a_dn(spot_prices[k], B[3,k]) - B[0,k]*controller.market.Pr_a_up(spot_prices[k], B[2,k]))/self.C_conv_PPFD
+                u_tilde = 1000*(B[1,k]*controller.market.activation_prob_dn(spot_prices[k], B[3,k]) - B[0,k]*controller.market.activation_prob_up(spot_prices[k], B[2,k]))/self.C_conv_PPFD
 
-            U = np.append(U, u_bar[k] + u_tilde)
+            U = np.append(U, U_nom[k] + u_tilde)
 
         return ca.vertcat(*U)
 
-    def get_bidding_bounds(self, controller):
+    def get_bidding_bounds(self, controller, U_nom):
 
         N = controller.N
 
         lb_B = 0 * np.ones((4, N))
-        ub_B = np.vstack((self.C_conv_PPFD * controller.u_base/1000,                             # Bid vol up
-                          self.C_conv_PPFD * (self.C_PPFD_max - controller.u_base)/1000,   # Bid vol down
-                          1000 * np.ones((1, N)),                                # Bid price up. Arbitrary limit of 1000€ / MW 
-                          1000 * np.ones((1, N))))                               # Bid price down. Arbitrary limit of 1000€ / MW 
+        ub_B = np.vstack((self.C_conv_PPFD * U_nom/1000,                        # Bid vol up
+                          self.C_conv_PPFD * (self.C_PPFD_max - U_nom)/1000,    # Bid vol down
+                          1000 * np.ones((1, N)),                               # Bid price up. Arbitrary limit of 1000€ / MW 
+                          1000 * np.ones((1, N))))                              # Bid price down. Arbitrary limit of 1000€ / MW 
         
         return lb_B, ub_B
     
@@ -355,6 +353,7 @@ class PlantModel:
 
 
         metrics_data['DLI_avg'] = np.average(DLI)
+        metrics_data['DLI variance'] = np.var(DLI)
         metrics_data['DLI_max'] = np.max(DLI)
         metrics_data['DLI_min'] = np.min(DLI)
         metrics_data['Final fresh weight'] = float(self.freshweight(x[:,-1]))
@@ -552,25 +551,25 @@ class MpcPlantModel:
     
     
 
-    def bidding_obj_function(self, N_TH, spot_prices, X, B, U_nom, market:Market):
+    def bidding_obj_function(self, N_TH, spot_prices, X, B_prices, B_volumes, U_nom, market:Market):
         
-        Bp_up = B[0,:]
-        Bp_dn = B[1,:]
-        Bc_up = B[2,:]
-        Bc_dn = B[3,:]
+        Bp_up = B_volumes[0,:]
+        Bp_dn = B_volumes[1,:]
+        Bc_up = B_prices[0,:]
+        Bc_dn = B_prices[1,:]
 
         L = 0
 
         for k in range(0, N_TH): #from k = 2, to N-1. 
             L += spot_prices[k] * self.C_conv_PPFD * U_nom[:,k] \
-                  + (1000*spot_prices[k] - market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * market.Pr_a_dn(spot_prices[k], Bc_dn[k])\
-                  - (1000*spot_prices[k] + market.C_eur2nok * Bc_up[k]) * Bp_up[k] * market.Pr_a_up(spot_prices[k], Bc_up[k])
+                  + (1000*spot_prices[k] - market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * market.activation_prob_dn(spot_prices[k], Bc_dn[k])\
+                  - (1000*spot_prices[k] + market.C_eur2nok * Bc_up[k]) * Bp_up[k] * market.activation_prob_up(spot_prices[k], Bc_up[k])
 
         L = L/4
 
         return L
 
-    def baseline_obj_function(self, N_TH, spot_prices, X, U):
+    def spotopt_obj_function(self, N_TH, spot_prices, X, U):
 
         L = 0
         for k in range(N_TH):
@@ -601,19 +600,13 @@ class MpcPlantModel:
         return Eps * 10**6
 
     
-    def get_bidding_constraints(self, g_eq, g_ineq, N_TH, B, U_base):
+    def get_bidding_constraints(self, g_eq, g_ineq, N_TH, B_prices, U_nom):
 
-        lb_B, ub_B = self.get_bidding_bounds(N_TH, U_base)
-
-        Bp_up = B[0,:]
-        Bp_dn = B[1,:]
+        lb_B_prices, _, _, _ = self.get_bidding_bounds(N_TH, U_nom)
 
         for k in range(N_TH):
-            for bid_param in range(4):
-                g_ineq.append(B[bid_param,k] - lb_B[bid_param,k])
-            
-            g_ineq.append(-Bp_up[k] + ub_B[0,k])
-            g_ineq.append(-Bp_dn[k] + ub_B[1,k])
+            for bid_param in range(2):
+                g_ineq.append(B_prices[bid_param,k] - lb_B_prices[bid_param,k])
 
         return g_eq, g_ineq
     
@@ -672,30 +665,33 @@ class MpcPlantModel:
 
         return g_eq, g_ineq
 
-    def get_u(self, U_base, B, spot_prices, market):
+    def get_u(self, U_nom, B_prices, B_volumes, spot_prices, market):
+
+        N_TH = U_nom.shape[1]
 
         U = np.array([])
     
-        for k in range(U_base.shape[1]):
-
+        for k in range(N_TH):
             # if(k<controller.market.n_given_activations):
             #     u_tilde = 1000*(B[1,k]*controller.A_down[k] - B[0,k]*controller.A_up[k])/self.C_conv_PPFD
             # else:
-            u_tilde = 1000*(B[1,k]*market.Pr_a_dn(spot_prices[k], B[3,k]) - B[0,k]*market.Pr_a_up(spot_prices[k], B[2,k]))/self.C_conv_PPFD
+            u_tilde = 1000*(B_volumes[1,k]*market.activation_prob_dn(spot_prices[k], B_prices[0,k]) - B_volumes[0,k]*market.activation_prob_up(spot_prices[k], B_prices[0,k]))/self.C_conv_PPFD
 
-            U = np.append(U, U_base[:,k] + u_tilde)
+            U = np.append(U, U_nom[:,k] + u_tilde)
 
         return ca.vertcat(*U)
 
     def get_bidding_bounds(self, N_TH, U_nom):
 
-        lb_B = ca.DM.zeros(4, N_TH)
-        ub_B = ca.vertcat(self.C_conv_PPFD * U_nom/1000,                           # Bid vol up
-                          self.C_conv_PPFD * (self.C_PPFD_max - U_nom)/1000,       # Bid vol down
-                          1000 * ca.DM.ones((1, N_TH)),                             # Bid price up. Arbitrary limit of 1000€ / MW 
-                          1000 * ca.DM.ones((1, N_TH)))                             # Bid price down. Arbitrary limit of 1000€ / MW 
+        lb_B_prices = ca.DM.zeros(2, N_TH)
+        ub_B_prices = ca.vertcat(1000 * ca.DM.ones((1, N_TH)),                             # Bid price up. Arbitrary limit of 1000€ / MW 
+                                 1000 * ca.DM.ones((1, N_TH)))                             # Bid price down. Arbitrary limit of 1000€ / MW 
         
-        return lb_B, ub_B
+        lb_B_volumes = ca.DM.zeros(2, N_TH)
+        ub_B_volumes = ca.vertcat(self.C_conv_PPFD * U_nom/1000,                           # Bid vol up
+                                  self.C_conv_PPFD * (self.C_PPFD_max - U_nom)/1000)       # Bid vol down                       # Bid price down. Arbitrary limit of 1000€ / MW 
+
+        return lb_B_prices, ub_B_prices, lb_B_volumes, ub_B_volumes
     
     def get_state_bounds(self, N_TH):
 
@@ -787,7 +783,7 @@ class BatteryModel:
         return ca.vertcat(SOC_dot)
     
 
-    def bidding_objective_function(self, controller, X, U, B):
+    def bidding_objective_function(self, controller, X, U, B, U_nom):
         
         N = controller.N
         spot_prices = controller.spot_prices
@@ -800,15 +796,15 @@ class BatteryModel:
         L = 0
         
         for k in range(0, N): #from k = 2, to N-1. 
-            L += spot_prices[k] * controller.u_base[k] \
-                  + (1000*spot_prices[k] - controller.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * controller.market.Pr_a_dn(spot_prices, Bc_dn[k])\
-                  - (1000*spot_prices[k] + controller.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * controller.market.Pr_a_up(spot_prices, Bc_up[k])
+            L += spot_prices[k] * U_nom[k] \
+                  + (1000*spot_prices[k] - controller.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * controller.market.activation_prob_dn(spot_prices, Bc_dn[k])\
+                  - (1000*spot_prices[k] + controller.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * controller.market.activation_prob_up(spot_prices, Bc_up[k])
 
         L = L/4
 
         return L
 
-    def baseline_obj_function(self, controller, X, U):
+    def spotopt_obj_function(self, controller, X, U):
         N = controller.N
         spot_prices = controller.spot_prices
 
@@ -861,7 +857,7 @@ class BatteryModel:
     
 
 
-    def get_u(self, controller, B):
+    def get_u(self, controller, B, U_nom):
 
         N = controller.N
         spot_prices = controller.spot_prices
@@ -873,7 +869,7 @@ class BatteryModel:
             if(k<controller.market.n_given_activations):
                 u_tilde = 1000*(B[1,k]*controller.A_down[k] - B[0,k]*controller.A_up[k])
             else:
-                u_tilde = 1000*(B[1,k]*controller.market.Pr_a_dn(spot_prices[k], B[3,k]) - B[0,k]*controller.market.Pr_a_up(spot_prices[k], B[2,k]))
+                u_tilde = 1000*(B[1,k]*controller.market.activation_prob_dn(spot_prices[k], B[3,k]) - B[0,k]*controller.market.activation_prob_up(spot_prices[k], B[2,k]))
 
             U = np.append(U, u_bar[k] + u_tilde)
 
@@ -1146,19 +1142,19 @@ class Photosynthesis:
         L = 0
 
         # for k in range(0, N): #from k = 2, to N-1. 
-        #     L += (1000*spot_prices[k] - self.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * self.market.Pr_a_dn(Bc_dn[k])\
-        #           - (1000*spot_prices[k] + self.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * self.market.Pr_a_up(Bc_up[k])
+        #     L += (1000*spot_prices[k] - self.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * self.market.activation_prob_dn(Bc_dn[k])\
+        #           - (1000*spot_prices[k] + self.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * self.market.activation_prob_up(Bc_up[k])
         
         for k in range(0, N): #from k = 2, to N-1. 
             L += spot_prices[k] * self.C_conv_PPFD * controller.u_base[k] \
-                  + (1000*spot_prices[k] - controller.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * controller.market.Pr_a_dn(spot_prices[k], Bc_dn[k])\
-                  - (1000*spot_prices[k] + controller.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * controller.market.Pr_a_up(spot_prices[k], Bc_up[k])
+                  + (1000*spot_prices[k] - controller.market.C_eur2nok * Bc_dn[k]) * Bp_dn[k] * controller.market.activation_prob_dn(spot_prices[k], Bc_dn[k])\
+                  - (1000*spot_prices[k] + controller.market.C_eur2nok * Bc_up[k]) * Bp_up[k] * controller.market.activation_prob_up(spot_prices[k], Bc_up[k])
 
         L = L/4
 
         return L
 
-    def baseline_obj_function(self, controller, X, U):
+    def spotopt_obj_function(self, controller, X, U):
         N = controller.N
         spot_prices = controller.spot_prices
 
@@ -1239,21 +1235,21 @@ class Photosynthesis:
             if(k<controller.market.n_given_activations):
                 u_tilde = 1000*(B[1,k]*controller.A_down[k] - B[0,k]*controller.A_up[k])/self.C_conv_PPFD
             else:
-                u_tilde = 1000*(B[1,k]*controller.market.Pr_a_dn(spot_prices[k], B[3,k]) - B[0,k]*controller.market.Pr_a_up(spot_prices[k], B[2,k]))/self.C_conv_PPFD
+                u_tilde = 1000*(B[1,k]*controller.market.activation_prob_dn(spot_prices[k], B[3,k]) - B[0,k]*controller.market.activation_prob_up(spot_prices[k], B[2,k]))/self.C_conv_PPFD
 
             U = np.append(U, u_bar[k] + u_tilde)
 
         return ca.vertcat(*U)
 
-    def get_bidding_bounds(self, controller):
+    def get_bidding_bounds(self, controller, U_nom):
 
         N = controller.N
 
         lb_B = 0 * np.ones((4, N))
-        ub_B = np.vstack((self.C_conv_PPFD * controller.u_base/1000,                             # Bid vol up
-                          self.C_conv_PPFD * (self.C_PPFD_max - controller.u_base)/1000,   # Bid vol down
-                          1000 * np.ones((1, N)),                                # Bid price up. Arbitrary limit of 1000€ / MW 
-                          1000 * np.ones((1, N))))                               # Bid price down. Arbitrary limit of 1000€ / MW 
+        ub_B = np.vstack((self.C_conv_PPFD * U_nom/1000,                        # Bid vol up
+                          self.C_conv_PPFD * (self.C_PPFD_max - U_nom)/1000,    # Bid vol down
+                          1000 * np.ones((1, N)),                               # Bid price up. Arbitrary limit of 1000€ / MW 
+                          1000 * np.ones((1, N))))                              # Bid price down. Arbitrary limit of 1000€ / MW 
         
         # ub_B = 0 * np.ones((4, N)) # TODO Uncomment to set all bids to 0
 

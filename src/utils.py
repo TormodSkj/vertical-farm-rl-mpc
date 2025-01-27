@@ -564,8 +564,8 @@ def calculate_light_schedule_variance(controller, bidding_volumes_up, bidding_vo
     for k in range(2,N):        # Don't count the first 2 bids
 
 
-        p_up = market.Pr_a_up(spot_prices[k], bidding_prices_up[k])  # Bernoulli constant p for u_tilde_up
-        p_dn = market.Pr_a_dn(spot_prices[k], bidding_prices_dn[k])  # Bernoulli constant p for u_tilde_down
+        p_up = market.activation_prob_up(spot_prices[k], bidding_prices_up[k])  # Bernoulli constant p for u_tilde_up
+        p_dn = market.activation_prob_dn(spot_prices[k], bidding_prices_dn[k])  # Bernoulli constant p for u_tilde_down
         E_u_up = 1000 * bidding_volumes_up[k]/model.C_conv_PPFD * p_up
         E_u_dn = 1000 * bidding_volumes_dn[k]/model.C_conv_PPFD * p_dn
         
@@ -577,6 +577,37 @@ def calculate_light_schedule_variance(controller, bidding_volumes_up, bidding_vo
         assert not (u_var[:,k]) < -1e-6, 'Variance cannot be negative'
 
     return u_var.flatten()
+
+
+
+def calculate_freshweight_interval_old(controller, u_bid, b_p_up, b_p_dn, b_c_up, b_c_dn):
+    '''
+    Old function do not use. Calculates absolute worst cases what have probability of less than 1e-125 just for one day
+    '''
+
+    u_var = calculate_light_schedule_variance(controller, b_p_up, b_p_dn, b_c_up, b_c_dn)
+
+    model = controller.model
+    N = controller.N
+    dt = controller.dt
+    
+    u_sd = np.sqrt(u_var)       # Get standard deviation from variance
+
+    # upper and lower bounds on u defining the interval
+    u_ub = np.maximum(np.minimum(u_bid + u_sd, model.C_PPFD_max), 0)
+    u_lb = np.maximum(np.minimum(u_bid - u_sd, model.C_PPFD_max), 0)
+
+    X_ub = np.zeros((model.nx, N+1))
+    X_lb = np.zeros((model.nx, N+1))
+    X_ub[:,0] = model.x_init
+    X_lb[:,0] = model.x_init
+    for k in range(N):
+        #Forward euler
+        X_ub[:,k+1] = X_ub[:,k] + dt*np.array(controller.model.derivative(X_ub[:,k], np.array([u_ub[k]]))).reshape(1, -1)
+        X_lb[:,k+1] = X_lb[:,k] + dt*np.array(controller.model.derivative(X_lb[:,k], np.array([u_lb[k]]))).reshape(1, -1)
+
+    return np.vstack((np.array(model.freshweight(X_ub[:,1:])).flatten(),
+                      np.array(model.freshweight(X_lb[:,1:])).flatten()))
 
 
 
@@ -611,7 +642,6 @@ def calculate_freshweight_interval(controller, u_bid, b_p_up, b_p_dn, b_c_up, b_
 
 
 
-
 def propagate_process_covariance(controller, x_bid, u_bid, bidding_volumes_up, bidding_volumes_dn, bidding_prices_up, bidding_prices_dn):
     model = controller.model
     market = controller.market
@@ -632,8 +662,8 @@ def propagate_process_covariance(controller, x_bid, u_bid, bidding_volumes_up, b
     for k in range(N):
         # Input uncertainty terms
         a, b = 1000*bidding_volumes_up[k]/model.C_conv_PPFD, 1000*bidding_volumes_dn[k]/model.C_conv_PPFD
-        p_up = market.Pr_a_up(spot_prices[k], bidding_prices_up[k])
-        p_dn = market.Pr_a_dn(spot_prices[k], bidding_prices_dn[k])
+        p_up = market.activation_prob_up(spot_prices[k], bidding_prices_up[k])
+        p_dn = market.activation_prob_dn(spot_prices[k], bidding_prices_dn[k])
 
         # Expected values of u_tile_up and u_tilde_dn
         E_u_up = a * p_up
@@ -777,7 +807,41 @@ def strip_entsoe_activation_data(data_folder, filename):
 
 
 
+def sort_runs(optimization_results: dict):
+    '''
+    Sorts runs into one of three groups:
+    0:  Run is generated on its own. Can either be fixed or spot price optimized.
+    1:  Run contains mfrr bids and iterates on runs from level 0.
+    2:  Run subjects bids to real data. Iterates on runs from level 1.
 
+    Inputs: 
+    optimization_results    -    dictionary containing all run data
+
+    Outputs:
+    sorted_runs     -   Dict of run names sorted into the three categories mentioned above
+    group_sizes     -   List of group sizes
+    '''
+
+
+    sorted_runs = {0: [],
+                   1: [],
+                   2: []}
+
+    for run_id in optimization_results['runs']:
+        run_data = optimization_results['runs'][run_id]
+        
+        if 'bidding result' not in run_data:
+            sorted_runs[0].append(run_id)
+        elif 'bidding result' in run_data and ('A_up' not in run_data['timeseries'] or 'A_dn' not in run_data['timeseries']):
+            sorted_runs[1].append(run_id)
+        elif 'bidding result' in run_data and 'A_up' in run_data['timeseries'] and 'A_dn' in run_data['timeseries']:
+            sorted_runs[2].append(run_id)
+        else:
+            assert False, 'Processed run data does not fit any of the run groups'
+
+    group_sizes = [len(sorted_runs[i]) for i in sorted_runs]
+
+    return sorted_runs, group_sizes
 
 
     # def export_timeseries_to_csv()

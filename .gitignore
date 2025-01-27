@@ -5,7 +5,6 @@
 /__pycache__/
 /c_generated_code/
 /src/__pycache__/
-# /src/config.py
 /test/__pycache__/
 /simulations/
 /data_analysis/

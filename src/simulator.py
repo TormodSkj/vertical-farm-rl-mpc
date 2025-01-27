@@ -44,13 +44,9 @@ class Simulator():
         self.N_iter = int(np.ceil(self.T_iter * SECONDS_PER_QUARTER_HOUR * QUARTER_HOURS_PER_DAY/self.dt))
 
         self.bids_mpc = np.zeros((4, self.N))
-
-        self.mpc_controller.rigid_baseline()
-        ref_x = mpc_controller.optimization_results['runs']['Rigid']['timeseries']['x']
-        self.reference_weight = self.model.freshweight(ref_x)
         
 
-    def simulate_random_activation(self, controller: Controller, m: int):
+    def simulate_random_activation(self, controller: Controller, refrun_id: str, m: int):
         '''
         Simulate m number of cases where different activation demands and clearing prices are chosen randomly
         Results in a series of fresh-weights. 
@@ -65,18 +61,19 @@ class Simulator():
         market = controller.market
         N = controller.N
         dt = controller.dt
-        seed = None     # Set to None for random 
+        seed = None     # Set to None for new random outcome each time
         F = controller.model.casadi_function_fe()
 
-        u_base = controller.optimization_results['runs']['Baseline']['timeseries']['u']
-
-        assert 'Bidding' in controller.optimization_results['runs'], 'Unable to perform random bid activations due to lack of bidding data'
         
-        # Get bidding data
-        bidding_vol_up = controller.optimization_results['runs']['Bidding']['timeseries']['P_up']
-        bidding_vol_dn = controller.optimization_results['runs']['Bidding']['timeseries']['P_dn']
-        bidding_price_up = controller.optimization_results['runs']['Bidding']['timeseries']['C_up']
-        bidding_price_dn = controller.optimization_results['runs']['Bidding']['timeseries']['C_dn']
+        assert refrun_id in controller.optimization_results['runs'], 'Unable to perform random bid activations due to lack of bidding data'
+        
+        # Extract run data
+        refrun              = controller.optimization_results['runs'][refrun_id]
+        u_nom               = refrun['timeseries']['u_nom']
+        bidding_vol_up      = refrun['timeseries']['P_up']
+        bidding_vol_dn      = refrun['timeseries']['P_dn']
+        bidding_price_up    = refrun['timeseries']['C_up']
+        bidding_price_dn    = refrun['timeseries']['C_dn']
 
         # Preallocation
         freshweights = np.zeros((m, N))
@@ -84,8 +81,6 @@ class Simulator():
         for case in range(m):
 
             activation_demands = controller.market.generate_activation_demands(N, seed)
-            # clearing_prices_up = generate_samples_from_cdf(controller.market.mfrr_prices_up[:N], N, seed)  #TODO REMOVE check if we get better performance if we use january-data  
-            # clearing_prices_dn = generate_samples_from_cdf(controller.market.mfrr_prices_dn[:N], N, seed)   #TODO REMOVE
 
             mu_up = conditional_expectation(controller.spot_prices, market.price_means, market.price_cov)[0]
             mu_dn = conditional_expectation(controller.spot_prices, market.price_means, market.price_cov)[1]
@@ -93,15 +88,13 @@ class Simulator():
             clearing_prices_up = np.random.normal(loc=mu_up, scale=market.sigma_up)
             clearing_prices_dn = np.random.normal(loc=mu_dn, scale=market.sigma_dn)
 
-            u = u_base + 1000*(np.where(np.logical_and(activation_demands == -1, bidding_price_dn < clearing_prices_dn), bidding_vol_dn, 0)\
+            u = u_nom + 1000*(np.where(np.logical_and(activation_demands == -1, bidding_price_dn < clearing_prices_dn), bidding_vol_dn, 0)\
                              - np.where(np.logical_and(activation_demands == 1, bidding_price_up < clearing_prices_up), bidding_vol_up, 0))/controller.model.C_conv_PPFD
 
             X = np.zeros((controller.model.nx, N+1))
             X[:,0] = controller.model.x_init.flatten()
             
             for k in range(N):
-                #Forward euler
-                # X[:,k+1] = X[:,k] + dt*np.array(controller.model.derivative(X[:,k], np.array([u[k]]))).reshape(1, -1)
                 X[:,k+1] = np.array(F(X[:,k], np.array([u[k]]))).reshape(1, -1)
 
             fw = controller.model.freshweight(X)
@@ -140,8 +133,8 @@ class Simulator():
             
 
             # Decide next bids
-            self.mpc_controller.optimize_baseline()
-            self.mpc_controller.optimize_bidding()
+            self.mpc_controller.optimize_spotprice()
+            self.mpc_controller.optimize_mfrr()
 
             next_bid = self.mpc_controller.B_bid[:,0].flatten()
             Bids.append(Bid(next_bid[0], next_bid[1], next_bid[2], next_bid[3]))
@@ -182,7 +175,7 @@ class Simulator():
         return 0
     
 
-    def apply_mfrr_clearing_prices(self, controller: Controller):
+    def apply_mfrr_clearing_prices(self, controller: Controller, run_id, refrun_id):
         '''
         '''
         # Generate activation demands
@@ -190,6 +183,9 @@ class Simulator():
         
         # Filter out accepted bids
         # Simulate the plant now with only the accepted bids
+
+        start_time = time.time()
+
         market = controller.market
         N = controller.N
         dt = controller.dt
@@ -200,58 +196,48 @@ class Simulator():
         clearing_prices_up, clearing_prices_dn = market.get_clearing_prices(date)
         assert len(clearing_prices_up)==N and len(clearing_prices_dn)==N, f'Clearing price arrays have inconsistent lengths with simulation duration. N = {self.N}, len(clearing prices up) = {len(clearing_prices_up)}, len(clearing prices down) = {len(clearing_prices_dn)}'
 
+        assert refrun_id in controller.optimization_results['runs'], f"{run_id}| Error: {refrun_id} not in run data"
+        refrun = controller.optimization_results['runs'][refrun_id]
 
-        bidding_runs = [run for run in controller.optimization_results['runs'] if 'bidding result' in controller.optimization_results['runs'][run]]
-
-        for run in bidding_runs:
-
-            U = controller.optimization_results['runs'][run]['timeseries']['u']
-            U_nom = controller.optimization_results['runs'][run]['timeseries']['u_nom']
-
-
-            assert 'Bidding' in controller.optimization_results['runs'], 'Unable to perform random bid activations due to lack of bidding data'
-            
-            # Get bidding data
-            bidding_vol_up      = controller.optimization_results['runs']['Bidding']['timeseries']['P_up']
-            bidding_vol_dn      = controller.optimization_results['runs']['Bidding']['timeseries']['P_dn']
-            bidding_price_up    = controller.optimization_results['runs']['Bidding']['timeseries']['C_up']
-            bidding_price_dn    = controller.optimization_results['runs']['Bidding']['timeseries']['C_dn']
-            B = np.vstack((bidding_vol_up, bidding_vol_dn, bidding_price_up, bidding_price_dn))
-            
-            activation_demands_up, activation_demands_dn = market.get_activation_demands(date)
-            assert len(activation_demands_dn)==N and len(activation_demands_up)==N, f'Activation demand arrays have inconsistent lengths with simulation duration. N = {self.N}, len(demands up) = {len(activation_demands_up)}, len(demands down) = {len(activation_demands_dn)}'
-            
-            # Evaluate activations
-            activation_up = np.where(np.logical_and(activation_demands_up > 0, bidding_price_up < clearing_prices_up), 1, 0)
-            activation_dn = np.where(np.logical_and(activation_demands_dn > 0, bidding_price_dn < clearing_prices_dn), 1, 0)
-            A = np.vstack((activation_up, activation_dn))
-
-            u = U_nom + 1000*(np.where(activation_dn == 1, bidding_vol_dn, 0)\
-                             - np.where(activation_up == 1, bidding_vol_up, 0))/controller.model.C_conv_PPFD
-
-            X = np.zeros((controller.model.nx, N+1))
-            X[:,0] = controller.model.x_init.flatten()
-            
-            for k in range(N):
-                #Forward euler
-                # X[:,k+1] = X[:,k] + dt*np.array(controller.model.derivative(X[:,k], np.array([u[k]]))).reshape(1, -1)
-                X[:,k+1] = np.array(F(X[:,k], np.array([u[k]]))).reshape(1, -1)
-
-
-            f = self.model.C_conv_PPFD * np.sum(np.multiply(spot_prices,controller.u_base)) \
-                + np.sum(np.where(activation_dn == 1, np.multiply((1000*spot_prices - controller.market.C_eur2nok * bidding_price_dn), bidding_vol_dn), 0)) \
-                - np.sum(np.where(activation_up == 1, np.multiply((1000*spot_prices + controller.market.C_eur2nok * bidding_price_up), bidding_vol_up), 0))
-
-
-            Eps = max(0, controller.model.Final_fw_sht - self.model.freshweight(X[:,-1]))
-
-            sol = {}
-            sol['eps'] = Eps
-            sol['f'] = f
-            sol['elapsed_time'] = 0
+        # Get bidding data
+        U_nom               = refrun['timeseries']['u_nom']
+        bidding_vol_up      = refrun['timeseries']['P_up']
+        bidding_vol_dn      = refrun['timeseries']['P_dn']
+        bidding_price_up    = refrun['timeseries']['C_up']
+        bidding_price_dn    = refrun['timeseries']['C_dn']
+        B = np.vstack((bidding_vol_up, bidding_vol_dn, bidding_price_up, bidding_price_dn))
         
+        activation_demands_up, activation_demands_dn = market.mfrr_demands_up, market.mfrr_demands_dn
+        assert len(activation_demands_dn)==N and len(activation_demands_up)==N, f'Activation demand arrays have inconsistent lengths with simulation duration. N = {self.N}, len(demands up) = {len(activation_demands_up)}, len(demands down) = {len(activation_demands_dn)}'
+        
+        # Evaluate activations
+        activation_up = np.where(np.logical_and(activation_demands_up > 0, bidding_price_up < clearing_prices_up), 1, 0)
+        activation_dn = np.where(np.logical_and(activation_demands_dn > 0, bidding_price_dn < clearing_prices_dn), 1, 0)
+        A = np.vstack((activation_up, activation_dn))
 
-            controller.save_run('Realized ' + run, sol, X, u, A, B, U_nom)
+        u = U_nom + 1000*(np.where(activation_dn == 1, bidding_vol_dn, 0)\
+                            - np.where(activation_up == 1, bidding_vol_up, 0))/controller.model.C_conv_PPFD
+
+        X = np.zeros((controller.model.nx, N+1))
+        X[:,0] = controller.model.x_init.flatten()
+        
+        for k in range(N):
+            X[:,k+1] = np.array(F(X[:,k], np.array([u[k]]))).reshape(1, -1)
+
+
+        f = 0.25*(self.model.C_conv_PPFD * np.sum(np.multiply(spot_prices,U_nom)) \
+            + np.sum(np.where(activation_dn == 1, np.multiply((1000*spot_prices - controller.market.C_eur2nok * bidding_price_dn), bidding_vol_dn), 0)) \
+            - np.sum(np.where(activation_up == 1, np.multiply((1000*spot_prices + controller.market.C_eur2nok * bidding_price_up), bidding_vol_up), 0)))
+
+
+        Eps = max(0, controller.model.Final_fw_sht - self.model.freshweight(X[:,-1]))
+
+        sol = {}
+        sol['eps'] = Eps
+        sol['f'] = f
+        sol['elapsed_time'] = time.time() - start_time
+    
+        controller.save_run(run_id, sol, X, u, A, B, U_nom)
         
         return 0
 

@@ -35,7 +35,11 @@ class Plotter():
         t           = self.controller.t
         spot_prices = self.controller.spot_prices
 
-        bidding_runs = [run for run in controller.optimization_results['runs'] if 'bidding result' in controller.optimization_results['runs'][run]]
+        # bidding_runs = [run for run in controller.optimization_results['runs'] if 'bidding result' in controller.optimization_results['runs'][run]]
+
+        sorted_runs, group_sizes = sort_runs(controller.optimization_results)
+        max_level_run = max([i for i in range(len(group_sizes)) if len(sorted_runs[i]) > 0])
+
 
         # BEGIN PLOTTING
 
@@ -47,8 +51,7 @@ class Plotter():
 
         for run_name in controller.optimization_results['runs']:
 
-            if(run_name in bidding_runs and 'Realized' not in run_name):
-
+            if(run_name in sorted_runs[1]):
                 bid_ts  = self.controller.optimization_results['runs'][run_name]['timeseries']
                 bid_volume_up   = bid_ts['P_up']    # Volume up
                 bid_volume_dn   = bid_ts['P_dn']    # Volume down
@@ -95,12 +98,15 @@ class Plotter():
         ax.set_ylabel("NOK/kWh", rotation=0)
         ax.set_xlabel("Time (days)")
         ax.legend(loc="upper right")
+        fig.suptitle(f'Light schedules ({market.date}, {market.bidding_zone})')
 
         filename = "light_schedule"
         plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
-        if len(bidding_runs) > 0:
-            run = bidding_runs[-1]
+
+        for run in sorted_runs[max_level_run]:
+            if max_level_run == 0:
+                continue
 
             bid_ts          = self.controller.optimization_results['runs'][run]['timeseries']
             if 'A_up' in bid_ts and 'A_dn' in bid_ts:
@@ -110,6 +116,7 @@ class Plotter():
 
             run_sanitized   = run.lower().replace(" ", "_")
 
+            u_nom           = bid_ts['u_nom']
             bid_volume_up   = bid_ts['P_up']    # Volume up
             bid_volume_dn   = bid_ts['P_dn']    # Volume down
             bid_price_up    = bid_ts['C_up']    # Price up
@@ -119,8 +126,8 @@ class Plotter():
                 bid_activation_up = bid_ts['A_up']
                 bid_activation_dn = bid_ts['A_dn']
 
-            prob_activation_up  = np.array(self.controller.market.Pr_a_up(spot_prices, bid_price_up)).flatten()
-            prob_activation_dn  = np.array(self.controller.market.Pr_a_dn(spot_prices, bid_price_dn)).flatten()
+            prob_activation_up  = np.array(self.controller.market.activation_prob_up(spot_prices, bid_price_up)).flatten()
+            prob_activation_dn  = np.array(self.controller.market.activation_prob_dn(spot_prices, bid_price_dn)).flatten()
             
             # Filter out the unreasonably low bid activations
             activation_threshold   = 0.01
@@ -135,7 +142,7 @@ class Plotter():
 
             plt.figure(figsize=config.plot_format)
 
-            _, ub_B = self.controller.model.get_bidding_bounds(self.controller)
+            _, ub_B = self.controller.model.get_bidding_bounds(self.controller, u_nom)
             linewidth = 0.8
             plt.step(t, -ub_B[0,:], color='grey', label='Up-regulation volume limit', linewidth = linewidth)
             plt.step(t, ub_B[1,:], color='grey', label='Down-regulation volume limit',  linewidth = linewidth)
@@ -185,7 +192,7 @@ class Plotter():
             ax2.set_xlabel("Time (days)")
             ax1.legend(loc='upper left')
             ax2.legend(loc='upper left')
-            plt.title(f"{run} Activation Chances ({controller.market.date}, {controller.market.bidding_zone})")
+            fig.suptitle(f"{run} Activation Chances ({controller.market.date}, {controller.market.bidding_zone}) \nBar heights indicate expected activation probabilities per bid. Activated bids are highlighted in dark.")
 
             filename = f"{run_sanitized}_activations"
             plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
@@ -254,14 +261,14 @@ class Plotter():
                 ax2.legend()
 
                 ax3.fill_between(t, 0, filtered_bid_price_dn, color='grey', label="Submitted", alpha=0.4)
-                ax3.fill_between(t, 0, bid_prices_dn_activated, color='red', label="Down-activation", alpha=0.4)
+                ax3.fill_between(t, 0, bid_prices_dn_activated, color='red', label="Activated", alpha=0.4)
                 ax3.set_ylabel("Bid Price Down (€/MW)")
                 ax3.set_xlabel("Time (days)")
                 ax3.legend()
 
                 fig.suptitle(f"{run} activated prices and volumes. ({controller.market.date}, {controller.market.bidding_zone})")
 
-                filename = f"{run_sanitized}_results_bidding_vol_act"
+                filename = f"{run_sanitized}_results_activated_volumes_prices"
                 plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
                 ######################################################
@@ -762,15 +769,15 @@ class Plotter():
             b_p_dn  = bid_ts['P_dn']
             b_c_up  = bid_ts['C_up']
             b_c_dn  = bid_ts['C_dn']
-            b_a_up  = np.array(self.controller.market.Pr_a_up(spot_prices, b_c_up)).flatten()
-            b_a_dn  = np.array(self.controller.market.Pr_a_dn(spot_prices, b_c_dn)).flatten()
+            b_a_up  = np.array(self.controller.market.activation_prob_up(spot_prices, b_c_up)).flatten()
+            b_a_dn  = np.array(self.controller.market.activation_prob_dn(spot_prices, b_c_dn)).flatten()
             
 
             pred_prices_up = market.opt_prices_up.flatten()
             pred_prices_dn = market.opt_prices_dn.flatten()
 
-            pred_a_up = np.array(self.controller.market.Pr_a_up(spot_prices, pred_prices_up)).flatten()
-            pred_a_dn  = np.array(self.controller.market.Pr_a_dn(spot_prices, pred_prices_dn)).flatten()
+            pred_a_up = np.array(self.controller.market.activation_prob_up(spot_prices, pred_prices_up)).flatten()
+            pred_a_dn  = np.array(self.controller.market.activation_prob_dn(spot_prices, pred_prices_dn)).flatten()
 
             # Filter out the unreasonably low bid activations
             activation_th = 0.01

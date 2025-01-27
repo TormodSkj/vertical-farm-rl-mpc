@@ -8,7 +8,7 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 
-SIM_NAME        = "real_clearing_prices_test_3"
+SIM_NAME        = "erf_approx_test_3"
 HORIZON_DAYS    = 20
 FINAL_WEIGHT    = 4                 # 1 day
 # FINAL_WEIGHT    = 36.66             # 7 Days
@@ -17,10 +17,10 @@ FINAL_WEIGHT    = 4                 # 1 day
 SIMULATION_DATE = '2023-10-14'
 BIDDING_ZONE    = 'NO2'
 import_file     = 'scaled_optimal_intensities.json'
-search_cache    = 1
+search_cache    = 0
 
-MPC_TH = HORIZON_DAYS
-MPC_steplength = HORIZON_DAYS
+MPC_TH = 5
+MPC_steplength = 3
 
 def main():
 
@@ -31,7 +31,7 @@ def main():
     config          = Config(SIM_NAME, filetype="pdf", seed=1133)
     plant           = PlantModel(x_init, FINAL_WEIGHT)
     mpc_plant       = MpcPlantModel(x_init, FINAL_WEIGHT)
-    market          = Market(config, HORIZON_DAYS, BIDDING_ZONE, SIMULATION_DATE)
+    market          = Market(config, HORIZON_DAYS, BIDDING_ZONE, SIMULATION_DATE, optimistic = True)
     controller      = Controller(HORIZON_DAYS, plant, mpc_plant, market, config, MPC_TH, MPC_steplength, search_cache = search_cache, warm_start=True, import_file = import_file, calculate_fw=True)         #Baseline: 'opt' / 'rigid'
     
     mpc_controller  = Controller(HORIZON_DAYS, mpc_plant, None, market, config, MPC_TH, MPC_steplength, surpress_output = False, calculate_fw=True)     # Instance of controller used in mpc
@@ -40,12 +40,18 @@ def main():
     plotter = Plotter(config, controller, simulator)
 
     ''' OPTIMIZAION AND PLOTTING '''
+    market.optimal_bidding_price_prediction(controller.spot_prices)
+
+    
     # '''
-    # controller.import_baseline()
-    controller.optimize_baseline()
-    controller.optimize_bidding()
-    # controller.optimize_bidding_mpc()
-    simulator.apply_mfrr_clearing_prices(controller)
+    # controller.import_baseline('imported')
+    controller.optimize_spotprice('spot_opt')
+    controller.optimize_mfrr('mfrr_opt', 'spot_opt')
+    # controller.optimize_mfrr('mfrr_fixed', 'fixed')
+    # controller.optimize_mfrr_mpc('mfrr_mpc')
+    # simulator.apply_mfrr_clearing_prices(controller, 'apply_prices_mpc', 'mfrr_mpc')
+    simulator.apply_mfrr_clearing_prices(controller, 'mfrr_applied', 'mfrr_opt')
+    # simulator.apply_mfrr_clearing_prices(controller, 'mfrr_fixed_applied', 'mfrr_fixed')
 
     controller.status_report()
     controller.save_to_json()
@@ -62,7 +68,6 @@ def main():
     plotter.plot_spot_mfrr_prices() 
 
     ''''''
-    # market.optimal_bidding_price_prediction(controller.spot_prices)
     # plotter.plot_price_prediction()
 
     # simulator.Simulate_mpc()
