@@ -183,12 +183,13 @@ class Market:
         # Remove clear outliers
         
         mean_up = np.mean(up_prices_working_set['Clearing Price Up'])
-        var_up = np.var(up_prices_working_set['Clearing Price Up'])
+        std_up = np.sqrt(np.var(up_prices_working_set['Clearing Price Up']))
         mean_down = np.mean(down_prices_working_set['Clearing Price Down'])
-        var_down = np.var(down_prices_working_set['Clearing Price Down'])
+        std_down = np.sqrt(np.var(down_prices_working_set['Clearing Price Down']))
         
-        self.up_prices_working_set      = up_prices_working_set
-        self.down_prices_working_set    = down_prices_working_set      
+        # remove all entries outside 4 standard deviations. These should only be extreme cases
+        self.up_prices_working_set      = up_prices_working_set[np.abs(up_prices_working_set['Clearing Price Up'] - mean_up) / std_up <4]
+        self.down_prices_working_set    = down_prices_working_set[np.abs(down_prices_working_set['Clearing Price Down'] - mean_down) / std_down < 4]        
         
         return 0 
 

@@ -8,16 +8,16 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 
-SIM_NAME        = "optimistic_test_3"
+SIM_NAME        = "pessimistic_many_down_activations"
 HORIZON_DAYS    = 20
 FINAL_WEIGHT    = 4                 # 1 day
 # FINAL_WEIGHT    = 36.66             # 7 Days
 # FINAL_WEIGHT    = 136.7             # 20 Days 
 # FINAL_WEIGHT    = 2.05              # 20 Days [Directly from germination]
-SIMULATION_DATE = '2024-01-01'
+SIMULATION_DATE = '2024-02-14'
 BIDDING_ZONE    = 'NO2'
 import_file     = 'scaled_optimal_intensities.json'
-optimistic      = 1
+optimistic      = 0
 search_cache    = 1
 
 MPC_TH = 5

@@ -632,32 +632,32 @@ class Controller():
             metrics_data['Total'] = costs - 0
         else:
 
-            b_p_up = B[0,:]
-            b_p_dn = B[1,:]
-            b_c_up = B[2,:]
-            b_c_dn = B[3,:]
+            bid_volumes_up = B[0,:]
+            bid_volumes_down = B[1,:]
+            bid_prices_up = B[2,:]
+            bid_prices_down = B[3,:]
 
             if A is None:
-                b_a_up = np.array(self.market.activation_prob_up(self.spot_prices, b_c_up)).flatten()
-                b_a_dn = np.array(self.market.activation_prob_dn(self.spot_prices, b_c_dn)).flatten()
-                prob_a_up = b_a_up
-                prob_a_dn = b_a_dn
+                bid_activations_up = np.array(self.market.activation_prob_up(self.spot_prices, bid_prices_up)).flatten()
+                bid_activations_down = np.array(self.market.activation_prob_dn(self.spot_prices, bid_prices_down)).flatten()
+                prob_activations_up = bid_activations_up
+                prob_activations_down = bid_activations_down
             else:
-                b_a_up = A[0,:]
-                b_a_dn = A[1,:]
-                timeseries_data['A_up'] = b_a_up
-                timeseries_data['A_dn'] = b_a_dn
-                prob_a_up = np.array(self.market.activation_prob_up(self.spot_prices, b_c_up)).flatten()
-                prob_a_dn = np.array(self.market.activation_prob_dn(self.spot_prices, b_c_dn)).flatten()
+                bid_activations_up = A[0,:]
+                bid_activations_down = A[1,:]
+                timeseries_data['A_up'] = bid_activations_up
+                timeseries_data['A_dn'] = bid_activations_down
+                prob_activations_up = np.array(self.market.activation_prob_up(self.spot_prices, bid_prices_up)).flatten()
+                prob_activations_down = np.array(self.market.activation_prob_dn(self.spot_prices, bid_prices_down)).flatten()
 
-            timeseries_data['P_up'] = b_p_up
-            timeseries_data['P_dn'] = b_p_dn
-            timeseries_data['C_up'] = b_c_up
-            timeseries_data['C_dn'] = b_c_dn
+            timeseries_data['P_up'] = bid_volumes_up
+            timeseries_data['P_dn'] = bid_volumes_down
+            timeseries_data['C_up'] = bid_prices_up
+            timeseries_data['C_dn'] = bid_prices_down
 
 
-            bidding_earnings_up = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(b_a_up, b_p_up), b_c_up)
-            bidding_earnings_dn = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(b_a_dn, b_p_dn), b_c_dn)
+            bidding_earnings_up = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(bid_activations_up, bid_volumes_up), bid_prices_up)
+            bidding_earnings_dn = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(bid_activations_down, bid_volumes_down), bid_prices_down)
             bidding_earnings    = np.sum(bidding_earnings_up) + np.sum(bidding_earnings_dn)
 
             bidding_costs = self.model.spotopt_obj_function(self.N, self.spot_prices, x, u)
@@ -673,31 +673,31 @@ class Controller():
             activation_th   = 0.01
             volume_th       = 0.001
 
-            up_bids = np.where(np.logical_and(prob_a_up > activation_th, b_p_up > volume_th))
-            dn_bids = np.where(np.logical_and(prob_a_dn > activation_th, b_p_dn > volume_th))
+            up_bids = np.where(np.logical_and(prob_activations_up > activation_th, bid_volumes_up > volume_th))
+            dn_bids = np.where(np.logical_and(prob_activations_down > activation_th, bid_volumes_down > volume_th))
 
-            filtered_b_p_up = b_p_up[up_bids]
-            filtered_b_p_dn = b_p_dn[dn_bids]
-            filtered_b_c_up = b_c_up[up_bids]
-            filtered_b_c_dn = b_c_dn[dn_bids]
-            filtered_b_a_up = 100*b_a_up[up_bids]
-            filtered_b_a_dn = 100*b_a_dn[dn_bids]
+            filtered_bid_volumes_up = bid_volumes_up[up_bids]
+            filtered_bid_volumes_down = bid_volumes_down[dn_bids]
+            filtered_bid_prices_up = bid_prices_up[up_bids]
+            filtered_bid_prices_down = bid_prices_down[dn_bids]
+            filtered_bid_activations_up = 100*bid_activations_up[up_bids]
+            filtered_bid_activations_down = 100*bid_activations_down[dn_bids]
 
 
             bidding_data = {
                 'Up-regulation'     : {
-                    'Bids submitted'            : len(filtered_b_a_up),
-                    'Avg bid size'              : np.average(filtered_b_p_up),
-                    'Avg bid price'             : np.average(filtered_b_c_up),
-                    'Avg activation rate'       : np.average(filtered_b_a_up),
-                    'Consumption impact'        : np.sum(np.multiply(b_p_up, b_a_up))
+                    'Bids submitted'            : len(filtered_bid_activations_up),
+                    'Avg bid size'              : np.average(filtered_bid_volumes_up),
+                    'Avg bid price'             : np.average(filtered_bid_prices_up),
+                    'Avg activation rate'       : np.average(bid_activations_up)*100,
+                    'Consumption impact'        : np.sum(np.multiply(bid_volumes_up, bid_activations_up))
                 },
                 'Down-regulation'   : {
-                    'Bids submitted'            : len(filtered_b_a_dn),
-                    'Avg bid size'              : np.average(filtered_b_p_dn),
-                    'Avg bid price'             : np.average(filtered_b_c_dn),
-                    'Avg activation rate'       : np.average(filtered_b_a_dn),
-                    'Consumption impact'        : np.sum(np.multiply(b_p_dn, b_a_dn))
+                    'Bids submitted'            : len(filtered_bid_activations_down),
+                    'Avg bid size'              : np.average(filtered_bid_volumes_down),
+                    'Avg bid price'             : np.average(filtered_bid_prices_down),
+                    'Avg activation rate'       : np.average(bid_activations_down)*100,
+                    'Consumption impact'        : np.sum(np.multiply(bid_volumes_down, bid_activations_down))
                 }
             }     
 
