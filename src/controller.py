@@ -124,14 +124,11 @@ class Controller():
         # 
         start_time = time.time()
 
-        hash = generate_hash(self.optimization_results['specs'])
-        if self.search_cache:
-            if self.load_from_json(hash, run_id): 
-                # Identical run located. Using its solution instead
-                return 0
-            # No identical run located, or the needed run wasn't already produced. Optimizing from scratch
+        if not self.load_from_json(run_id): 
+            # Identical run located. Using its solution instead
+            return 0
         
-        if not self.surpress_output: print(f'{run_id} | No matching run found. Generating bidding strategy')
+        if not self.surpress_output: print(f'{run_id} | Generating bidding strategy')
         
 
         # Just check if there is a basline before proceeding
@@ -195,8 +192,8 @@ class Controller():
         if self.warm_start: 
             z0[:nx*(N+1)]                   = refrun['timeseries']['x'].flatten()   # TODO check if works as intended
             z0[nx*(N+1):nx*(N+1)+2*N]       = ub_B[:2,:].reshape(2*N,1)
-            z0[nx*(N+1)+2*N:nx*(N+1)+3*N]   = self.market.opt_prices_up
-            z0[nx*(N+1)+3*N:nx*(N+1)+4*N]   = self.market.opt_prices_dn
+            z0[nx*(N+1)+2*N:nx*(N+1)+3*N]   = self.market.expected_prices_up
+            z0[nx*(N+1)+3*N:nx*(N+1)+4*N]   = self.market.expected_prices_dn
         
         sol = solver(x0=z0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
 
@@ -224,16 +221,11 @@ class Controller():
         '''
         start_time = time.time()
 
-        hash = generate_hash(self.optimization_results['specs'])
-        if self.search_cache:
-            if self.load_from_json(hash, run_id): 
-                # Identical run located. Using its solution instead
-                # self.x_base = self.optimization_results['runs'][sim_id]['timeseries']['x']
-                # self.u_base = self.optimization_results['runs'][sim_id]['timeseries']['u']
-                return 0
-            # If no identical run was located, generate light schedule instead
+        if not self.load_from_json(run_id): 
+            # Identical run located. Using its solution instead
+            return 0
         
-        if not self.surpress_output: print(f'{run_id} | No matching run found. Optimizing light schedule based on spot price')
+        if not self.surpress_output: print(f'{run_id} | Optimizing light schedule based on spot price')
         
         assert refrun_id in self.optimization_results['runs'], f"{run_id} | Error: {refrun_id} has not been generated"   
         refrun = self.optimization_results['runs'][refrun_id]
@@ -313,13 +305,11 @@ class Controller():
         
         start_time = time.time()
 
-        hash = generate_hash(self.optimization_results['specs'])
-        if self.search_cache:
-            if self.load_from_json(hash, run_id): 
-                # Identical run located. Using its solution instead
-                return 0
-            # No identical run located, or the needed run wasn't already produced. Optimizing from scratch
-        if not self.surpress_output: print('No matching run found. Generating bidding strategy using mpc')
+        if not self.load_from_json(run_id): 
+            # Identical run located. Using its solution instead
+            return 0
+
+        if not self.surpress_output: print(f'{run_id} | Generating bidding strategy using mpc')
         
         N = self.N                      # Number of time steps for the whole optimization problem
         N_TH = self.mpc_N_horizon       # Number of time steps for internal open-loop solver
@@ -540,7 +530,7 @@ class Controller():
 
 
         # Expected value of clearing prices given spot prices
-        clearing_price_mu = conditional_expectation(spot_prices, self.market.price_means, self.market.price_cov)
+        clearing_price_mu = conditional_expectation(spot_prices, self.market.price_means, self.market.price_covs)
         clearing_price_mu_up = clearing_price_mu[0]
         clearing_price_mu_dn = clearing_price_mu[1]
 
@@ -743,11 +733,16 @@ class Controller():
             json.dump(runs_dict, json_file, indent=4)
 
 
-    def load_from_json(self, hash, run_name):
+    def load_from_json(self, run_id):
         """
         Load completed runs from saved JSON files and populate `completed_runs`.
+        Returns 0 if match is made.
+        Returns 1 if match is not made
         """
-        
+        if not self.search_cache: return 1
+
+        hash = generate_hash(self.optimization_results['specs'])
+
         for file_name in os.listdir(self.config.sim_path):
             if not file_name.endswith(".json"): continue
 
@@ -766,16 +761,17 @@ class Controller():
                 # Store the run data keyed by the extracted hash
                 conv_loaded_data = convert_lists_to_np_arrays(loaded_data)
 
-                if run_name not in conv_loaded_data['runs']:
+                if run_id not in conv_loaded_data['runs']:
                     return False
                 
-                self.optimization_results['runs'][run_name] = conv_loaded_data['runs'][run_name]
+                self.optimization_results['runs'][run_id] = conv_loaded_data['runs'][run_id]
                 # if run_name == 'Bidding': self.runs['bidding result'] = conv_loaded_data['bidding result']
 
-                if not self.surpress_output: print(f"Loaded run {run_name} from simulation \'{loaded_data['name']}\' dated {loaded_data['timestamp']}")
-                return True
+                if not self.surpress_output: print(f"Loaded run {run_id} from simulation \'{loaded_data['name']}\' dated {loaded_data['timestamp']}")
+                return 0
                 
-        return False
+        if not self.surpress_output: print(f'{run_id} | No matching run found')
+        return 1
 
     def import_light_schedule(self, sim_id):
         '''
@@ -884,7 +880,7 @@ class Controller():
                 ['Avg bid size',                        bidding_result_up['Avg bid size'],                              bidding_result_dn['Avg bid size'],                              "MW"], 
                 ['Avg bid price',                       bidding_result_up['Avg bid price'],                             bidding_result_dn['Avg bid price'],                             "€/MW"], 
                 ['Avg activation rate',                 bidding_result_up['Avg activation rate'],                       bidding_result_dn['Avg activation rate'],                       "%"], 
-                ['Chance of activation given demand',   bidding_result_up['Avg activation rate']/self.market.demand_prob_up(), bidding_result_dn['Avg activation rate']/self.market.demand_prob_up(), "%"],
+                ['Chance of activation given demand',   bidding_result_up['Avg activation rate']/self.market.demand_prob_up(), bidding_result_dn['Avg activation rate']/self.market.demand_prob_dn(), "%"],
                 ['Impact on consumption',               bidding_result_up['Consumption impact'],                        bidding_result_dn['Consumption impact'],                        "MW"],
                 ['Submitted bids',                      bidding_result_up['Bids submitted'],                            bidding_result_dn['Bids submitted'],                            "-"]
             ]
@@ -895,7 +891,9 @@ class Controller():
 
         # Print market metrics
         market_data = [
-            ['Clearing price mean', np.average(self.market.mean_prices_up), np.average(self.market.mean_prices_dn)],
+            ['Mean Expected clearing price', np.mean(self.market.expected_prices_up), np.mean(self.market.expected_prices_dn)],
+            ['Mean Recorded clearing price', np.mean(self.market.get_clearing_prices()[0]), np.mean(self.market.get_clearing_prices()[1])],
+            ['Mean Expected / Recorded clearing price delta',  np.mean(self.market.expected_prices_up - self.market.get_clearing_prices()[0]), np.mean(self.market.expected_prices_dn - self.market.get_clearing_prices()[1])],
             ['Clearing price standard deviation', self.market.sigma_up, self.market.sigma_dn], 
             ['Expected activation occurance rate', self.market.demand_prob_up(), self.market.demand_prob_dn()],
             ['Recorded activation occurance rate', np.mean(self.market.mfrr_demands_up), np.mean(self.market.mfrr_demands_dn)]

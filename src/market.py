@@ -15,27 +15,27 @@ class Market:
     seed: int
     bidding_zone: str
     date: str
-    optimistic: bool            # Optimistic market model assumes completely accurate forecasting of spot prices, clearing prices and activation occurances.
+    optimistic: bool            # Optimistic market model restricts analysis dataset to be only that of the growth cycle. Makes price distribution analysis more accurate
     
     config: Config
 
-    C_eur2nok = 11.76               # € -> NOK conversion rate as of nov 14 2024
-    price_means:        np.ndarray
-    price_cov:          np.ndarray
+    C_eur2nok = 11.76                           # € -> NOK conversion rate as of nov 14 2024
+    price_means:                np.ndarray
+    price_cov:                  np.ndarray
 
-    mean_prices_up:     np.array    # Array of most likely clearing prices for up-regulation at each time step      (length: N)
-    mean_prices_dn:     np.array    # Array of most likely clearing prices for down-regulation at each time step    (length: N)
-    opt_prices_up:      np.array    # Array of most profitable bidding prices for up-regulation at each time step   (length: N)
-    opt_prices_dn:      np.array    # Array of most profitable bidding prices for down-regulation at each time step (length: N)
-    spot_prices:        np.array    # Array of spot prices used in optimization                                     (length: N)
+    prices_full_set:            pd.DataFrame    # Full dataset of spot prices, clearing prices
+    prices_working_set:         pd.DataFrame    # Slice of full dataset used in market model for control. 
+    activations_full_set:       pd.DataFrame    # Full dataset of mfrr activations
+    activations_working_set:    pd.DataFrame    # Slice of full dataset used in market model for control.
 
-    mfrr_prices_up:     np.array    # mFRR clearing prices up used in data analysis     (Entire dataset)
-    mfrr_prices_dn:     np.array    # mFRR clearing prices down used in data analysis   (Entire dataset)
-    spot_price_data:    np.array    # Array of spot prices used in data analysis        (Entire dataset)
-    timestamps:         np.array
+    expected_prices_up:         np.array        # Array of most likely clearing prices for up-regulation at each time step      (length: N)
+    expected_prices_dn:         np.array        # Array of most likely clearing prices for down-regulation at each time step    (length: N)
+    opt_prices_up:              np.array        # Array of most profitable bidding prices for up-regulation at each time step   (length: N)
+    opt_prices_dn:              np.array        # Array of most profitable bidding prices for down-regulation at each time step (length: N)
+    spot_prices:                np.array        # Array of spot prices used in optimization                                     (length: N)
 
-    up_activation_occurance_rate: float      # Probability of an up-activation happening evey MTU   (Avg of entire dataset) [0, 1]
-    down_activation_occurance_rate: float    # Probability of a down-activation happening evey MTU  (Avg of entire dataset) [0, 1]
+    up_activation_occurance_rate:   float       # Probability of an up-activation happening evey MTU   (Avg of entire dataset) [0, 1]
+    down_activation_occurance_rate: float       # Probability of a down-activation happening evey MTU  (Avg of entire dataset) [0, 1]
     both_activation_occurance_rate: float
     mfrr_demands_up: np.array   # Array of when activations are made during current growth cycle (lenght: N)
     mfrr_demands_dn: np.array   # Array of when activations are made during current growth cycle (length: N)
@@ -52,25 +52,29 @@ class Market:
         self.seed = config.seed
         self.bidding_zone = bidding_zone
         self.date = date
-        self.optimistic = optimistic
-        self.spot_prices = self.get_spotprice()
+        self.optimistic = optimistic 
+
+        self.import_spot_mfrr_data()
+
+        self.spot_prices = self.get_spotprice() 
 
         self.analyze_price_covariances()
-        conditional_variance_up, conditional_variance_dn = utils.conditional_covariance(self.price_cov)
+        conditional_variance_up, conditional_variance_dn = utils.conditional_covariance(self.price_covs)
+        self.expected_prices_up, self.expected_prices_dn = utils.conditional_expectation(self.spot_prices, self.price_means, self.price_covs)
         self.sigma_up = np.sqrt(conditional_variance_up)
         self.sigma_dn = np.sqrt(conditional_variance_dn)
-        self.mean_prices_up = utils.conditional_expectation(self.spot_prices, self.price_means, self.price_cov)[0]
-        self.mean_prices_dn = utils.conditional_expectation(self.spot_prices, self.price_means, self.price_cov)[1]
-        self.opt_prices_up = np.zeros((1,self.N))
-        self.opt_prices_dn = np.zeros((1,self.N))
+        
+        # Initialize optimal prices on expected value.
+        self.opt_prices_up = self.expected_prices_up
+        self.opt_prices_dn = self.expected_prices_dn
 
         self.specs = {
             'bidding zone'                  : self.bidding_zone,
             'simdate'                       : self.date,
             'optimistic'                    : self.optimistic,
             'eur to nok'                    : self.C_eur2nok,
-            'Avg activation price up'       : self.price_means[1],
-            'Avg activation price down'     : self.price_means[2],          
+            'Avg activation price up'       : self.price_means[2],
+            'Avg activation price down'     : self.price_means[3],          
             'Cond covariance spot - up'     : conditional_variance_up,
             'Cond covariance spot - Down'   : conditional_variance_dn,
             }
@@ -84,40 +88,35 @@ class Market:
         N = self.N
         n_hours = int(np.ceil(N/4))
 
-
-        # df = pd.read_csv('../data/Spotprices_norway.csv', delimiter=';')
-        df = pd.read_csv(self.config.path + 'data/Spotprices_norway.csv', delimiter=';')
+        df = self.prices_full_set
+        start_idx = df[df['Start Time'] == pd.to_datetime(self.date)].index[0]
         
-        # Convert to datetime format
-        df['Dato/klokkeslett'] = pd.to_datetime(df['Dato/klokkeslett'].str.split().str[0])
-        start_idx = df[df['Dato/klokkeslett'] == pd.to_datetime(self.date)].index[0]
-        
-        spot_prices_hours = np.array(df[self.bidding_zone].iloc[start_idx:start_idx+n_hours].values)
+        spot_prices_hours = np.array(df['Spot Price'].iloc[start_idx:start_idx+n_hours].values)
         spot_prices = np.repeat(spot_prices_hours, 4)[0:N]
         assert len(spot_prices) == N, "Insufficient spot price data"
         return spot_prices
     
 
-    def activation_prob_up(self, spot_prices, Bc_up):
+    def activation_prob_up(self, spot_price, bid_price_up):
         
-        mu_up = utils.conditional_expectation(spot_prices, self.price_means, self.price_cov)[0]
+        mu_up = utils.conditional_expectation(spot_price, self.price_means, self.price_covs)[0]
         sigma_up = self.sigma_up
 
-        Bc_up_norm = (Bc_up - ca.vertcat(*mu_up))/sigma_up
+        bid_price_dn_normalized = (bid_price_up - ca.vertcat(*mu_up))/sigma_up
 
         # return norm.cdf(-Bc_up_norm)
-        return self.demand_prob_up() * (1.0 + self.error_function(-Bc_up_norm / ca.sqrt(2.0))) / 2.0
+        return self.demand_prob_up() * (1.0 + self.error_function(-bid_price_dn_normalized / ca.sqrt(2.0))) / 2.0
 
-    def activation_prob_dn(self, spot_prices, Bc_dn):
+    def activation_prob_dn(self, spot_price, bid_price_dn):
 
-        mu_dn = utils.conditional_expectation(spot_prices, self.price_means, self.price_cov)[1]
+        mu_dn = utils.conditional_expectation(spot_price, self.price_means, self.price_covs)[1]
         sigma_dn = self.sigma_dn
         
-        Bc_dn_norm = (Bc_dn - ca.vertcat(*mu_dn))/sigma_dn
+        bid_price_dn_normalized = (bid_price_dn - ca.vertcat(*mu_dn))/sigma_dn
 
         # return norm.cdf(-Bc_dn_norm)
         # return self.demand_prob_dn() * (1.0 + ca.erf(-Bc_dn_norm / ca.sqrt(2.0))) / 2.0
-        return self.demand_prob_dn() * (1.0 + self.error_function(-Bc_dn_norm / ca.sqrt(2.0))) / 2.0
+        return self.demand_prob_dn() * (1.0 + self.error_function(-bid_price_dn_normalized / ca.sqrt(2.0))) / 2.0
 
 
     def error_function(self, x):
@@ -149,92 +148,90 @@ class Market:
         return np.mean(self.mfrr_demands_dn)            # Use actual demand rate
 
 
+    def import_spot_mfrr_data(self):
+        
+        spot_price_file = self.config.spotprice_data_path
+        mfrr_price_datapath = self.config.mfrr_clearing_price_data_path
+        mfrr_activation_datapath = self.config.mfrr_activation_data_path
+        # Load data
+        spot_prices = utils.load_spot_prices(spot_price_file, self.bidding_zone)
+        mfrr_prices = utils.load_mfrr_prices(mfrr_price_datapath, self.bidding_zone)
+
+        # Merge datasets
+        price_data = pd.merge(spot_prices, mfrr_prices, on='Start Time', how='inner')
+        self.prices_full_set = price_data
+        activation_data = utils.load_mfrr_activation_data(mfrr_activation_datapath, self.bidding_zone)
+        self.activations_full_set = activation_data
+
+        up_prices_merged_data = pd.merge(price_data[['Start Time', 'Spot Price', 'Clearing Price Up']], activation_data[['Start Time', 'Offered Up', 'Activated Up']], on='Start Time', how='inner')
+        down_prices_merged_data = pd.merge(price_data[['Start Time', 'Spot Price', 'Clearing Price Down']], activation_data[['Start Time', 'Offered Down', 'Activated Down']], on='Start Time', how='inner')
+        self.up_prices_full_set = up_prices_merged_data
+        self.down_prices_full_set = down_prices_merged_data
+
+        if self.optimistic:
+            self.prices_working_set         = price_data[price_data['Start Time'] >= pd.to_datetime(self.date)].head(int(np.ceil(self.N/QUARTER_HOURS_PER_HOUR)))
+            self.activations_working_set    = activation_data[activation_data['Start Time'] >= pd.to_datetime(self.date)].head(int(np.ceil(self.N/QUARTER_HOURS_PER_HOUR)))
+            up_prices_working_set      = up_prices_merged_data.loc[(up_prices_merged_data['Start Time'] >= pd.to_datetime(self.date))].head(int(np.ceil(self.N / QUARTER_HOURS_PER_HOUR))).loc[(up_prices_merged_data['Activated Up'] > 0)]
+            down_prices_working_set    = down_prices_merged_data.loc[(down_prices_merged_data['Start Time'] >= pd.to_datetime(self.date))].head(int(np.ceil(self.N / QUARTER_HOURS_PER_HOUR))).loc[(down_prices_merged_data['Activated Down'] > 0)]
+    
+        else:
+            self.prices_working_set = self.prices_full_set
+            self.activations_working_set = self.activations_full_set
+            up_prices_working_set = self.up_prices_full_set
+            down_prices_working_set = self.down_prices_full_set
+        
+        # Remove clear outliers
+        
+        mean_up = np.mean(up_prices_working_set['Clearing Price Up'])
+        var_up = np.var(up_prices_working_set['Clearing Price Up'])
+        mean_down = np.mean(down_prices_working_set['Clearing Price Down'])
+        var_down = np.var(down_prices_working_set['Clearing Price Down'])
+        
+        self.up_prices_working_set      = up_prices_working_set
+        self.down_prices_working_set    = down_prices_working_set      
+        
+        return 0 
+
+
+
+
+
     def analyze_price_covariances(self):
         """
         Analyze price covariances or load precomputed results from a JSON file if it exists.
         """
-        # Define the path to the JSON file
-        analysis_file = os.path.join(self.config.data_path, "price_analysis.json")
+        
+        print("Performing price analysis.")
+        # Paths to CSV files
+    
+        up_price_data = self.up_prices_working_set
+        down_price_data = self.down_prices_working_set
 
-        # Check if the JSON file exists
-        #TODO remove the false here. Wanted to disable it for a while
-        if False and os.path.exists(analysis_file):
-            print("Loading precomputed price analysis data from JSON file.")
+        if up_price_data.empty:
+            print("The working dataset for up prices is empty. Using full dataset")
+            up_price_data = self.up_prices_full_set
+            assert not up_price_data.empty, 'Up price data is empty, date is likely not supported in the dataset'
+            return -1  # Indicate an error
+        elif down_price_data.empty:
+            print("The working dataset for down prices is empty. Using full dataset")
+            down_price_data = self.down_prices_full_set
+            assert not down_price_data.empty, 'Down price data is empty, date is likely not supported in the dataset'
+            return -1  # Indicate an error
 
-            with open(analysis_file, 'r') as file:
-                analysis_data = json.load(file)
-            
-            # Load means and covariance matrix
-            self.price_means = pd.Series(analysis_data["means"])
-            self.price_cov = np.array(analysis_data["covariance_matrix"])
-            
-            # Load additional data arrays into a DataFrame
-            merged_data = pd.DataFrame({
-                "Start Time": pd.to_datetime(analysis_data["Start Time"]),
-                "Spot Price": analysis_data["spot_prices"],
-                "Up Price": analysis_data["up_prices"],
-                "Down Price": analysis_data["down_prices"]
-            })
-            
-            self.spot_price_data = merged_data['Spot Price']
-            self.mfrr_prices_up = merged_data['Up Price']
-            self.mfrr_prices_dn = merged_data['Down Price']
-            self.timestamps = merged_data['Start Time']
-            self.merged_data = merged_data
+        # covariance_matrix = utils.calculate_covariance_matrix(price_data, ['Spot Price', 'Clearing Price Up', 'Clearing Price Down'])
+        
+        spot_up_cov     = np.cov(up_price_data[['Spot Price', 'Clearing Price Up']].T)
+        spot_down_cov   = np.cov(down_price_data[['Spot Price', 'Clearing Price Down']].T)
+        
+        mean_price_up       = up_price_data['Clearing Price Up'].mean()
+        mean_spot_price_up  = up_price_data['Spot Price'].mean()
 
-        else:
-            print("Performing price analysis as no precomputed data found.")
-            # Paths to CSV files
-            spot_price_file = self.config.spotprice_data_path
-            mfrr_price_datapath = self.config.mfrr_clearing_price_data_path
+        mean_price_down = down_price_data['Clearing Price Down'].mean()
+        mean_spot_price_down = down_price_data['Spot Price'].mean()
 
-
-            # Load data
-            spot_prices = utils.load_spot_prices(spot_price_file, self.bidding_zone)
-            mfrr_prices = utils.load_mfrr_prices(mfrr_price_datapath, self.bidding_zone)
-
-            # Merge datasets
-            merged_data = utils.merge_and_align(spot_prices, mfrr_prices)
-
-            if merged_data.empty:
-                print("The merged dataset is empty. Please check the alignment of timestamps.")
-                return -1  # Indicate an error
-            else:
-                # Calculate covariance matrix
-                
-                clearing_prices_up, clearing_prices_dn = self.get_clearing_prices(self.date)
-                data = np.vstack((self.spot_prices, clearing_prices_up, clearing_prices_dn))
-                covariance_matrix = np.cov(data)
-                means = np.mean(data, axis=1)
-
-                # covariance_matrix = utils.calculate_covariance_matrix(merged_data, ['Spot Price', 'Up Price', 'Down Price'])
-                # means = merged_data[['Spot Price', 'Up Price', 'Down Price']].mean()
-
-                # Save results
-                self.price_means = means
-                self.price_cov = covariance_matrix
-                self.spot_price_data = np.array(merged_data['Spot Price'])
-                self.mfrr_prices_up = np.array(merged_data['Up Price'])
-                self.mfrr_prices_dn = np.array(merged_data['Down Price'])
-                self.timestamps = merged_data['Start Time']
-                self.merged_data = merged_data
-
-                # Ensure the directory exists
-                os.makedirs(self.config.data_path, exist_ok=True)
-                try:
-                    with open(analysis_file, 'w') as file:
-                        json.dump({
-                            "means": self.price_means.to_dict(),
-                            "covariance_matrix": self.price_cov.tolist(),
-                            "Start Time": merged_data['Start Time'].dt.strftime('%Y-%m-%d %H:%M:%S').tolist(),
-                            "spot_prices": self.spot_price_data.tolist(),
-                            "up_prices": self.mfrr_prices_up.tolist(),
-                            "down_prices": self.mfrr_prices_dn.tolist()
-                        }, file)
-                    print("Price analysis data saved to JSON file.")
-                except Exception as e:
-                    print(f"Error saving JSON file: {e}")
-                    return -1  # Indicate an error
+        # Save results
+        self.price_means = np.array([mean_spot_price_up, mean_spot_price_down, mean_price_up, mean_price_down])
+        self.price_covs = np.array([spot_up_cov, spot_down_cov])
 
         return 0
 
@@ -245,7 +242,7 @@ class Market:
         start_time = time.time()
         print("Starting price prediction")
 
-        mu_up, mu_dn = utils.conditional_expectation(spot_prices, self.price_means, self.price_cov)
+        mu_up, mu_dn = utils.conditional_expectation(spot_prices, self.price_means, self.price_covs)
 
         # Create decision variables for the optimization problem
         N = len(spot_prices)
@@ -309,20 +306,16 @@ class Market:
 
     def mfrr_activation_data_analysis(self):
         
-        data_path = self.config.mfrr_activation_data_path
-        # utils.clean_mfrr_csv_file(filepath)
-
-        up_activation_df, down_activation_df = utils.load_mfrr_activation_data(data_path, self.bidding_zone)
-        self.up_activation_df, self.down_activation_df = up_activation_df, down_activation_df
+        activation_df = self.activations_working_set
 
         # Activation rate of each offered MW of capacity 
-        self.up_activation_ratio    = np.sum(up_activation_df['Activated']) / np.sum(up_activation_df['Offered'])
-        self.down_activation_ratio  = np.sum(down_activation_df['Activated']) / np.sum(down_activation_df['Offered'])
+        self.up_activation_capacity_ratio    = np.sum(activation_df['Activated Up']) / np.sum(activation_df['Offered Up'])
+        self.down_activation_capacity_ratio  = np.sum(activation_df['Activated Down']) / np.sum(activation_df['Offered Down'])
         
         # Arrays denoting activation occurances
-        up_activation_occurances   = np.where(np.array(up_activation_df['Activated'])>0, 1, 0)
-        down_activation_occurances = np.where(np.array(down_activation_df['Activated'])>0, 1, 0)
-        both_activation_occurances = np.where(np.logical_and(np.array(up_activation_df['Activated'])>0,np.array(down_activation_df['Activated'])>0), 1, 0)
+        up_activation_occurances   = np.where(np.array(activation_df['Activated Up'])>0, 1, 0)
+        down_activation_occurances = np.where(np.array(activation_df['Activated Down'])>0, 1, 0)
+        both_activation_occurances = np.where(np.logical_and(np.array(activation_df['Activated Up'])>0,np.array(activation_df['Activated Down'])>0), 1, 0)
 
         # % of QH where activations occur
         self.up_activation_occurance_rate     = np.mean(up_activation_occurances)
@@ -336,33 +329,33 @@ class Market:
         if date==None:
             date = self.date
 
-        clearing_price_datapath = self.config.mfrr_clearing_price_data_path
-
-        clearing_prices_df = utils.load_mfrr_prices(clearing_price_datapath, self.bidding_zone)
+        clearing_prices_df = self.prices_full_set
 
         # Remove dates before simdate
-        clearing_prices_df = clearing_prices_df.where(clearing_prices_df['Start Time']>pd.to_datetime(date)).dropna()
+        clearing_prices_df = clearing_prices_df.where(clearing_prices_df['Start Time']>=pd.to_datetime(date)).dropna()
 
-        clearing_prices_up = np.array(clearing_prices_df['Up Price']).repeat(4)[:self.N]
-        clearing_prices_dn = np.array(clearing_prices_df['Down Price']).repeat(4)[:self.N]
+        clearing_prices_up = np.array(clearing_prices_df['Clearing Price Up']).repeat(QUARTER_HOURS_PER_HOUR)[:self.N]
+        clearing_prices_dn = np.array(clearing_prices_df['Clearing Price Down']).repeat(QUARTER_HOURS_PER_HOUR)[:self.N]
 
         return clearing_prices_up, clearing_prices_dn
     
-    def get_activation_demands(self, date):
+    def get_activation_demands(self, date = None):
         '''
-        Returns numpy arrays of length N containing the MW total activated during each quarter hour from the start time.
+        Returns numpy arrays of length N with balancing demands during each quarter hour from the start time.
+        For every MTU, a 1 indicates that an activation was made and a 0 indicates that no activation was made.
         Start time is always assumed at 00:00 at the given start date.
         '''
 
+        if date is None:
+            date = self.date
 
-        up_activation_df, down_activation_df = self.up_activation_df, self.down_activation_df
+        activations_df = self.activations_working_set
 
         # Remove dates before simdate
-        up_activations_df = up_activation_df.where(up_activation_df['Start Time']>pd.to_datetime(date)).dropna()
-        down_activations_df = down_activation_df.where(down_activation_df['Start Time']>pd.to_datetime(date)).dropna()
+        activations_df = activations_df.where(activations_df['Start Time']>=pd.to_datetime(date)).dropna()
 
-        demands_up = np.array(up_activations_df['Activated'])[:self.N]
-        demands_dn = np.array(down_activations_df['Activated'])[:self.N]
+        demands_up = np.array(activations_df['Activated Up']).repeat(QUARTER_HOURS_PER_HOUR)[:self.N]
+        demands_dn = np.array(activations_df['Activated Down']).repeat(QUARTER_HOURS_PER_HOUR)[:self.N]
 
         return np.where(demands_up > 0, 1, 0), np.where(demands_dn > 0, 1, 0)
     

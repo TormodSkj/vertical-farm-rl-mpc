@@ -198,8 +198,8 @@ def load_mfrr_prices(data_folder, bidding_zone):
         up_price_col = "Price Up (EUR/MWh)"  # Adjust if your column name is different
         down_price_col = "Price Down (EUR/MWh)"  # Adjust if your column name is different
 
-        data = data[['Start Time', 'End Time', up_price_col, down_price_col]].rename(
-            columns={up_price_col: 'Up Price', down_price_col: 'Down Price'}
+        data = data[['Start Time', up_price_col, down_price_col]].rename(
+            columns={up_price_col: 'Clearing Price Up', down_price_col: 'Clearing Price Down'}
         )
         
         # Append processed data to the list
@@ -296,19 +296,23 @@ def clean_mfrr_csv_file(filepath):
 
 def load_mfrr_activation_data(data_folder, bidding_zone):
     """
-    Load mFRR activation data from all relevant files in a folder, merge all data for 
-    upward and downward activations separately, and sort them by date.
+    Load mFRR activation data from all relevant files in a folder, merge all data for upward 
+    and downward activations into a single DataFrame, and sort them by date.
 
     Parameters:
     - data_folder: str, path to the folder containing CSV files.
+    - bidding_zone: str, filter files by bidding zone.
 
     Returns:
-    - Tuple of two pandas DataFrames: (merged_upward_activations, merged_downward_activations)
+    - A pandas DataFrame with columns: ['Start Time', 'Offered Up', 'Activated Up', 
+      'Offered Down', 'Activated Down'].
     """
-    all_files = [f for f in os.listdir(data_folder) if "mFRR_activations" in f and bidding_zone in f and f.endswith(".csv")]
+    all_files = [
+        f for f in os.listdir(data_folder)
+        if "mFRR_activations" in f and bidding_zone in f and f.endswith(".csv")
+    ]
     
-    all_upwards = []
-    all_downwards = []
+    all_data = []
 
     for file in all_files:
         filepath = os.path.join(data_folder, file)
@@ -320,10 +324,9 @@ def load_mfrr_activation_data(data_folder, bidding_zone):
         data.columns = data.columns.str.replace("'", '').str.strip()
         data = data.apply(lambda x: x.str.replace("'", '').str.strip() if x.dtype == "object" else x)
         
-        # Split ISP into 'Start Time' and 'End Time'
+        # Extract 'Start Time' from ISP column
         data['Start Time'] = data['ISP'].str.extract(r'(\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2})')
         data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
-        # data['End Time'] = pd.to_datetime(data['End Time'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
         
         # Rename AREA to Bidding Zone and simplify the zone names
         data.rename(columns={'Area': 'Bidding Zone'}, inplace=True)
@@ -335,23 +338,34 @@ def load_mfrr_activation_data(data_folder, bidding_zone):
         # Convert 'Offered' and 'Activated' to numeric
         data[['Offered', 'Activated']] = data[['Offered (MW)', 'Activated (MW)']].apply(pd.to_numeric, errors='coerce')
         
-        # Split into upwards and downwards activations
-        up_activation_df = data[data['Direction'] == "Up"].reset_index(drop=True).drop(columns=['Direction'])
-        down_activation_df = data[data['Direction'] == "Down"].reset_index(drop=True).drop(columns=['Direction'])
+        # Separate upward and downward activations
+        up_data = data[data['Direction'] == "Up"].reset_index(drop=True).rename(columns={
+            'Offered': 'Offered Up',
+            'Activated': 'Activated Up'
+        })
+        down_data = data[data['Direction'] == "Down"].reset_index(drop=True).rename(columns={
+            'Offered': 'Offered Down',
+            'Activated': 'Activated Down'
+        })
         
-        # Append to lists
-        all_upwards.append(up_activation_df)
-        all_downwards.append(down_activation_df)
+        # Merge upward and downward activations on 'Start Time'
+        merged_data = pd.merge(
+            up_data[['Start Time', 'Offered Up', 'Activated Up']],
+            down_data[['Start Time', 'Offered Down', 'Activated Down']],
+            on='Start Time',
+            how='outer'
+        )
+        
+        # Append to the list
+        all_data.append(merged_data)
     
-    # Merge all upwards and downwards data separately
-    merged_upwards = pd.concat(all_upwards, ignore_index=True)
-    merged_downwards = pd.concat(all_downwards, ignore_index=True)
+    # Concatenate all data into a single DataFrame
+    combined_df = pd.concat(all_data, ignore_index=True)
     
-    # Sort each dataset by Start Time
-    merged_upwards.sort_values(by='Start Time', inplace=True)
-    merged_downwards.sort_values(by='Start Time', inplace=True)
+    # Sort by Start Time
+    combined_df.sort_values(by='Start Time', inplace=True)
     
-    return merged_upwards, merged_downwards
+    return combined_df
 
 
 
@@ -387,7 +401,7 @@ def calculate_covariance_matrix(data, columns):
     return np.cov(data[columns].T)
 
 
-def conditional_expectation(spot_price, means, cov_matrix):
+def conditional_expectation(spot_price, price_means, price_covs):
     """
     Calculate the expected Up and Down prices given a known Spot Price.
 
@@ -399,38 +413,43 @@ def conditional_expectation(spot_price, means, cov_matrix):
     Returns:
         tuple: Expected Up Price and Down Price.
     """
-    # Extract means
-    mean_spot, mean_up, mean_down = means
 
-    # Extract covariance submatrices
-    var_spot = cov_matrix[0, 0]  # Variance of Spot Price
-    cov_spot_up = cov_matrix[0, 1]  # Covariance between Spot and Up Price
-    cov_spot_down = cov_matrix[0, 2]  # Covariance between Spot and Down Price
-
-    # Covariances as vector
-    cov_spot_others = np.array([cov_spot_up, cov_spot_down])
+    
+    # cov_spot_others = np.array(price_covs[0][1,1], price_covs[1][1,1])
+    var_spot_up = price_covs[0][0,0]
+    cov_spot_up = price_covs[0][0,1]
+    var_spot_down = price_covs[1][0,0]
+    cov_spot_down = price_covs[1][0,1]
 
     # Means of Up and Down prices
-    means_others = np.array([mean_up, mean_down])
+    mean_spot_up    = price_means[0]
+    mean_spot_down  = price_means[1]
+    mean_up_price   = price_means[2]
+    mean_down_price = price_means[3]
 
     # Conditional expectation formula
     spot_price = np.array(spot_price)
-    conditional_means = np.repeat(means_others.reshape(2,1), spot_price.size ,axis=1 )\
-          + np.diag((cov_spot_others / var_spot)) @ (np.repeat(spot_price.reshape(1,-1),2,axis=0) - mean_spot)
-
-    return conditional_means
-
-def conditional_covariance(cov_matrix):
+    conditional_mean_up     = np.repeat(mean_up_price, spot_price.size)     + (cov_spot_up / var_spot_up)       * (spot_price.reshape(1,-1) - mean_spot_up)
+    conditional_mean_down   = np.repeat(mean_down_price, spot_price.size)   + (cov_spot_down / var_spot_down)   * (spot_price.reshape(1,-1) - mean_spot_down)
     
+    return conditional_mean_up, conditional_mean_down
+
+def conditional_covariance(price_covs):
+    
+    price_cov_up = price_covs[0]
+    price_cov_down = price_covs[1]
+
+
     # Extract covariance submatrices
-    var_spot = cov_matrix[0, 0]         # Variance of Spot Price
-    var_up = cov_matrix[1,1]            # Variance of up-price
-    var_down = cov_matrix[2,2]          # Variance of down-price
-    cov_spot_up = cov_matrix[0, 1]      # Covariance between Spot and Up Price
-    cov_spot_down = cov_matrix[0, 2]    # Covariance between Spot and Down Price
+    var_spot_up     = price_cov_up[0, 0]      # Variance of Spot Price for Up prices
+    var_spot_down   = price_cov_down[0, 0]    # Variance of Spot Price for Down prices
+    var_up          = price_cov_up[1,1]       # Variance of up-price
+    var_down        = price_cov_down[1,1]     # Variance of down-price
+    cov_spot_up     = price_cov_up[0, 1]      # Covariance between Spot and Up Price
+    cov_spot_down   = price_cov_down[0, 1]    # Covariance between Spot and Down Price
     
-    cond_cov_up = var_up - cov_spot_up * var_spot * cov_spot_up
-    cond_cov_down = var_down - cov_spot_down * var_spot * cov_spot_down
+    cond_cov_up = var_up - cov_spot_up * var_spot_up * cov_spot_up
+    cond_cov_down = var_down - cov_spot_down * var_spot_down * cov_spot_down
     
     return np.array([cond_cov_up, cond_cov_down])
 

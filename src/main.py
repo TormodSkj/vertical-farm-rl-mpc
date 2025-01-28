@@ -8,16 +8,17 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 
-SIM_NAME        = "erf_approx_test_3"
+SIM_NAME        = "optimistic_test_3"
 HORIZON_DAYS    = 20
 FINAL_WEIGHT    = 4                 # 1 day
 # FINAL_WEIGHT    = 36.66             # 7 Days
 # FINAL_WEIGHT    = 136.7             # 20 Days 
 # FINAL_WEIGHT    = 2.05              # 20 Days [Directly from germination]
-SIMULATION_DATE = '2023-10-14'
+SIMULATION_DATE = '2024-01-01'
 BIDDING_ZONE    = 'NO2'
 import_file     = 'scaled_optimal_intensities.json'
-search_cache    = 0
+optimistic      = 1
+search_cache    = 1
 
 MPC_TH = 5
 MPC_steplength = 3
@@ -31,7 +32,7 @@ def main():
     config          = Config(SIM_NAME, filetype="pdf", seed=1133)
     plant           = PlantModel(x_init, FINAL_WEIGHT)
     mpc_plant       = MpcPlantModel(x_init, FINAL_WEIGHT)
-    market          = Market(config, HORIZON_DAYS, BIDDING_ZONE, SIMULATION_DATE, optimistic = True)
+    market          = Market(config, HORIZON_DAYS, BIDDING_ZONE, SIMULATION_DATE, optimistic = optimistic)
     controller      = Controller(HORIZON_DAYS, plant, mpc_plant, market, config, MPC_TH, MPC_steplength, search_cache = search_cache, warm_start=True, import_file = import_file, calculate_fw=True)         #Baseline: 'opt' / 'rigid'
     
     mpc_controller  = Controller(HORIZON_DAYS, mpc_plant, None, market, config, MPC_TH, MPC_steplength, surpress_output = False, calculate_fw=True)     # Instance of controller used in mpc
@@ -40,7 +41,7 @@ def main():
     plotter = Plotter(config, controller, simulator)
 
     ''' OPTIMIZAION AND PLOTTING '''
-    market.optimal_bidding_price_prediction(controller.spot_prices)
+    # market.optimal_bidding_price_prediction(controller.spot_prices)
 
     
     # '''

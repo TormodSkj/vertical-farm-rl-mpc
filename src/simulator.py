@@ -82,14 +82,14 @@ class Simulator():
 
             activation_demands = controller.market.generate_activation_demands(N, seed)
 
-            mu_up = conditional_expectation(controller.spot_prices, market.price_means, market.price_cov)[0]
-            mu_dn = conditional_expectation(controller.spot_prices, market.price_means, market.price_cov)[1]
+            mu_up = conditional_expectation(controller.spot_prices, market.price_means, market.price_covs)[0]
+            mu_dn = conditional_expectation(controller.spot_prices, market.price_means, market.price_covs)[1]
 
             clearing_prices_up = np.random.normal(loc=mu_up, scale=market.sigma_up)
             clearing_prices_dn = np.random.normal(loc=mu_dn, scale=market.sigma_dn)
 
             u = u_nom + 1000*(np.where(np.logical_and(activation_demands == -1, bidding_price_dn < clearing_prices_dn), bidding_vol_dn, 0)\
-                             - np.where(np.logical_and(activation_demands == 1, bidding_price_up < clearing_prices_up), bidding_vol_up, 0))/controller.model.C_conv_PPFD
+                            - np.where(np.logical_and(activation_demands == 1, bidding_price_up < clearing_prices_up), bidding_vol_up, 0))/controller.model.C_conv_PPFD
 
             X = np.zeros((controller.model.nx, N+1))
             X[:,0] = controller.model.x_init.flatten()
@@ -216,7 +216,7 @@ class Simulator():
         A = np.vstack((activation_up, activation_dn))
 
         u = U_nom + 1000*(np.where(activation_dn == 1, bidding_vol_dn, 0)\
-                            - np.where(activation_up == 1, bidding_vol_up, 0))/controller.model.C_conv_PPFD
+                        - np.where(activation_up == 1, bidding_vol_up, 0))/controller.model.C_conv_PPFD
 
         X = np.zeros((controller.model.nx, N+1))
         X[:,0] = controller.model.x_init.flatten()
