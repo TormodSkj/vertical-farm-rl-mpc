@@ -12,6 +12,7 @@ import time
 class Market:
 
     N: int
+    T: float
     seed: int
     bidding_zone: str
     date: str
@@ -49,6 +50,7 @@ class Market:
     def __init__(self, config, time_horizon, bidding_zone, date, optimistic = False):
         self.config = config
         self.N = time_horizon * QUARTER_HOURS_PER_DAY
+        self.T = time_horizon
         self.seed = config.seed
         self.bidding_zone = bidding_zone
         self.date = date
@@ -81,6 +83,7 @@ class Market:
             
         self.mfrr_activation_data_analysis()
         self.mfrr_demands_up, self.mfrr_demands_dn = self.get_activation_demands(self.date)
+        self.analyze_market_potency(T = self.T)
     
 
     def get_spotprice(self) -> np.array:
@@ -192,8 +195,6 @@ class Market:
         self.down_prices_working_set    = down_prices_working_set[np.abs(down_prices_working_set['Clearing Price Down'] - mean_down) / std_down < 4]        
         
         return 0 
-
-
 
 
 
@@ -360,3 +361,60 @@ class Market:
 
         return np.where(demands_up > 0, 1, 0), np.where(demands_dn > 0, 1, 0)
     
+
+
+    def analyze_market_potency(self, T=20):
+        '''
+        Comb through clearing prices and activations to find the timespan of length `T`
+        with the highest potential profit in the mFRR market
+
+        `T`: Time window of market participation
+        '''
+
+        activaion_df = self.activations_full_set
+        clearing_prices_df = self.prices_full_set
+
+        # Merge dataframes to ensure data is present at all applicable time stamps
+        merged_df = pd.merge(clearing_prices_df, activaion_df, on='Start Time', how='inner')
+
+        merged_df.loc[:, 'Start Time'] = merged_df['Start Time'].dt.date
+        date_range = pd.date_range(start=merged_df['Start Time'].min(), end=merged_df['Start Time'].max())
+
+        market_potency_up = (
+            merged_df.loc[merged_df['Activated Up'] > 0, ['Start Time', 'Clearing Price Up']]
+            .groupby('Start Time', as_index=False)
+            .sum()
+        ).rename(columns={'Start Time': 'Date', 'Clearing Price Up': 'Potency Up'})
+
+        market_potency_down = (
+            merged_df.loc[merged_df['Activated Down'] > 0, ['Start Time', 'Clearing Price Down']]
+            .groupby('Start Time', as_index=False)
+            .sum()
+        ).rename(columns={'Start Time': 'Date', 'Clearing Price Down': 'Potency Down'})
+
+        # TODO Manage negative potency values better 
+        market_potency_up['Potency Up']     = np.maximum(0, market_potency_up['Potency Up'])
+        market_potency_down['Potency Down'] = np.maximum(0, market_potency_down['Potency Down'])
+
+        market_potency_df = pd.DataFrame({'Date': date_range})
+        market_potency_df = market_potency_df.merge(market_potency_up, on='Date',   how='left')
+        market_potency_df = market_potency_df.merge(market_potency_down, on='Date', how='left')
+
+        market_potency_df.fillna(0, inplace=True)
+
+        self.daily_market_potency_df = market_potency_df
+
+        # Rolling window potency:
+        rolling_market_potency_df = market_potency_df.copy()
+        rolling_market_potency_df['Total Potency'] = rolling_market_potency_df['Potency Up'] + rolling_market_potency_df['Potency Down']
+
+        rolling_market_potency_df['Rolling Potency Up']     = rolling_market_potency_df['Potency Up'].rolling(window=T,    min_periods=1).sum().shift(-(T-1))
+        rolling_market_potency_df['Rolling Potency Down']   = rolling_market_potency_df['Potency Down'].rolling(window=T,  min_periods=1).sum().shift(-(T-1))
+        rolling_market_potency_df['Rolling Total Potency']  = rolling_market_potency_df['Total Potency'].rolling(window=T, min_periods=1).sum().shift(-(T-1))
+
+        rolling_market_potency_df.dropna(inplace=True)
+
+        self.rolling_market_potency_df = rolling_market_potency_df
+
+        return 0
+

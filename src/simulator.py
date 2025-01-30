@@ -211,8 +211,8 @@ class Simulator():
         assert len(activation_demands_dn)==N and len(activation_demands_up)==N, f'Activation demand arrays have inconsistent lengths with simulation duration. N = {self.N}, len(demands up) = {len(activation_demands_up)}, len(demands down) = {len(activation_demands_dn)}'
         
         # Evaluate activations
-        activation_up = np.where(np.logical_and(activation_demands_up > 0, bidding_price_up < clearing_prices_up), 1, 0)
-        activation_dn = np.where(np.logical_and(activation_demands_dn > 0, bidding_price_dn < clearing_prices_dn), 1, 0)
+        activation_up = np.where(np.logical_and(activation_demands_up > 0, bidding_price_up <= clearing_prices_up), 1, 0)
+        activation_dn = np.where(np.logical_and(activation_demands_dn > 0, bidding_price_dn <= clearing_prices_dn), 1, 0)
         A = np.vstack((activation_up, activation_dn))
 
         u = U_nom + 1000*(np.where(activation_dn == 1, bidding_vol_dn, 0)\

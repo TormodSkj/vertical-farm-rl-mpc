@@ -345,11 +345,11 @@ class Plotter():
 
                 n_bins = 50
 
-                ax1.hist(mfrr_prices_up, label="Expected", color='grey', alpha=0.8, bins=n_bins, density=True)
-                ax2.hist(mfrr_prices_dn, label="Expected", color='grey', alpha=0.8, bins=n_bins, density=True)
+                ax1.hist(mfrr_prices_up, label="Expected", color=self.color_up, alpha=0.8, bins=n_bins, density=True)
+                ax2.hist(mfrr_prices_dn, label="Expected", color=self.color_dn, alpha=0.8, bins=n_bins, density=True)
                 
-                ax1.hist(clearing_prices_up, label="Recorded", color=self.color_up, alpha=0.8, bins=n_bins, density=True)
-                ax2.hist(clearing_prices_dn, label="Recorded", color=self.color_dn, alpha=0.8, bins=n_bins, density=True)
+                ax1.hist(clearing_prices_up, label="Recorded", color='navy', histtype='step', alpha=0.8, bins=n_bins, density=True)
+                ax2.hist(clearing_prices_dn, label="Recorded", color='maroon', histtype='step', alpha=0.8, bins=n_bins, density=True)
 
                 ax3.hist(activated_prices_up, label="Activated", color=self.color_up, alpha=0.8, bins=30, density=True)
                 ax4.hist(activated_prices_dn, label="Activated", color=self.color_dn, alpha=0.8, bins=30, density=True)
@@ -646,7 +646,7 @@ class Plotter():
         #           MONTHLY mFRR ACTIVATION FREQUENCIES
 
 
-        activations_df = market.activations_full_set
+        activations_df = market.activations_full_set.copy()
 
         # Process data up
         activations_df['Start Time'] = pd.to_datetime(activations_df['Start Time'])
@@ -727,6 +727,95 @@ class Plotter():
 
         filename = f"{market.bidding_zone}_mFRR_daily_activation_frequencies"
         plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+
+
+        ######################################################
+        #           ACTIVATION COUNTS HISTOGRAM
+
+        activations_df = market.activations_full_set.copy()
+        activation_counts_up = activations_df['Activated Up'].loc[activations_df['Activated Up'] > 0]
+        activation_counts_down = activations_df['Activated Down'].loc[activations_df['Activated Down'] > 0]
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=config.plot_format, sharex=True)
+
+        n_bins = 48
+
+        ax1.hist(activation_counts_up, label="Activated Up", color=self.color_up, alpha=0.8, bins=n_bins, density=True)
+        ax2.hist(activation_counts_down, label="Activated Down", color=self.color_dn, alpha=0.8, bins=n_bins, density=True)
+
+        p           = 1/4 * np.array([market.demand_prob_up(), market.demand_prob_dn()])       # Probability of activation in each 15-min slot
+        lmbda       = 1/np.array([np.mean(activation_counts_up), np.mean(activation_counts_down)])     # Exponential rate parameter (mean 200 MW per activation)
+        num_hours   = 100000    # Number of simulated hours
+        
+        # Simulate activation occurrences
+        random_activations = np.random.binomial(1, p, size=(num_hours, 4, 2))  
+        capacity_exp_values = np.random.exponential(scale=1/lmbda, size=(num_hours, 4, 2))  
+        # Apply activations
+        random_activated_capacities = random_activations * capacity_exp_values
+
+        # Sum over the 4 quarter-hour slots, keeping the (num_hours, 2) structure
+        hourly_totals = random_activated_capacities.sum(axis=1)
+
+        # Filter values to remove values lower than 10MW as this is the lower limit in the Norway mfrr market
+        hourly_totals = hourly_totals[
+            (hourly_totals[:, 0] >= 10) & (hourly_totals[:, 0] < max(activation_counts_up)) & 
+            (hourly_totals[:, 1] >= 10) & (hourly_totals[:, 1] < max(activation_counts_down))
+        ]
+
+        ax1.hist(hourly_totals[:,0], label=f"Random samples P={p[0]:.2f} lambda = 1/{(1/lmbda[0]):.2f}", color='navy', histtype='step', bins=n_bins, density=True)
+        ax2.hist(hourly_totals[:,1], label=f"Random samples P={p[1]:.2f}, lambda = 1/{(1/lmbda[1]):.2f}", color='maroon', histtype='step', bins=n_bins, density=True)
+
+        plt.suptitle(f'Activated capacity volumes in {market.bidding_zone} bidding zone')
+        ax1.set_xlabel('Power (MW)')
+        ax2.set_xlabel('Power (MW)')
+        ax1.set_ylabel('Probability of occurrence')
+        ax1.set_title('Activated Up')
+        ax2.set_title('Activated Down')
+        ax1.legend()
+        ax2.legend()
+        plt.tight_layout()
+
+        filename = f"mFRR_activation_volumes_{market.bidding_zone}"
+        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+
+        ######################################################
+        #           MARKET POTENCY BAR CHART
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=config.plot_format, sharex=False)
+
+        market_potency_df = market.daily_market_potency_df
+        rolling_market_potency_df = market.rolling_market_potency_df
+
+        market_potency_df.set_index('Date')[['Potency Up', 'Potency Down']].plot(
+            ax = ax2, kind='bar', stacked=True, figsize=(15, 6), color=['skyblue', 'lightcoral']
+        )
+
+        rolling_market_potency_df.set_index('Date')[['Rolling Potency Up', 'Rolling Potency Down', 'Rolling Total Potency']].plot(
+            ax=ax1, linewidth=2.5, linestyle='-', color=[self.color_up, self.color_dn, 'grey']
+        )
+
+        first_of_month_daily    = market_potency_df['Date'][market_potency_df['Date'].dt.day == 1]
+
+        ax1.legend(['Rolling Potency Up', 'Rolling Potency Down', 'Rolling Total Potency'], title='Activation Direction')
+        ax1.set_xlabel('Date')
+        ax1.set_ylabel('Rolling Window Market potency')
+        ax1.set_title(f'Market potency of next {market.T} days from given date')
+        
+        ax2.legend(['Potency Up', 'Potency Down'], title='Activation Direction')
+        ax2.set_xticks(first_of_month_daily.index)
+        ax2.set_xticklabels(first_of_month_daily.dt.strftime('%Y-%m-%d'), rotation=0)
+        ax2.set_ylabel('Market potency')
+        ax2.set_title('Daily market potencies')
+
+        plt.suptitle(f'Market potencies in bidding zone: {market.bidding_zone}\nCalculated from daily activation rate times mean clearing price')
+        plt.tight_layout()
+
+        filename = f"mFRR_market_potency_{market.bidding_zone}"
+        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+
 
         plt.close()
 

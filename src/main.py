@@ -8,17 +8,17 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 
-SIM_NAME        = "pessimistic_many_down_activations"
+SIM_NAME        = "market_potency_analysis"
 HORIZON_DAYS    = 20
 FINAL_WEIGHT    = 4                 # 1 day
 # FINAL_WEIGHT    = 36.66             # 7 Days
 # FINAL_WEIGHT    = 136.7             # 20 Days 
 # FINAL_WEIGHT    = 2.05              # 20 Days [Directly from germination]
-SIMULATION_DATE = '2024-02-14'
+SIMULATION_DATE = '2023-11-16'
 BIDDING_ZONE    = 'NO2'
 import_file     = 'scaled_optimal_intensities.json'
-optimistic      = 0
-search_cache    = 1
+optimistic      = 1
+search_cache    = 0
 
 MPC_TH = 5
 MPC_steplength = 3
@@ -42,33 +42,34 @@ def main():
 
     ''' OPTIMIZAION AND PLOTTING '''
     # market.optimal_bidding_price_prediction(controller.spot_prices)
-
     
     # '''
     # controller.import_baseline('imported')
-    controller.optimize_spotprice('spot_opt')
-    controller.optimize_mfrr('mfrr_opt', 'spot_opt')
+    controller.optimize_spotprice('spot_opt')         #
+    controller.generate_optimal_bidding_strategy('abs_opt', 'spot_opt')
+    # controller.optimize_mfrr('mfrr_opt', 'spot_opt')  #
     # controller.optimize_mfrr('mfrr_fixed', 'fixed')
     # controller.optimize_mfrr_mpc('mfrr_mpc')
     # simulator.apply_mfrr_clearing_prices(controller, 'apply_prices_mpc', 'mfrr_mpc')
-    simulator.apply_mfrr_clearing_prices(controller, 'mfrr_applied', 'mfrr_opt')
+    # simulator.apply_mfrr_clearing_prices(controller, 'mfrr_applied', 'mfrr_opt')
+    simulator.apply_mfrr_clearing_prices(controller, 'abs_applied', 'abs_opt')
     # simulator.apply_mfrr_clearing_prices(controller, 'mfrr_fixed_applied', 'mfrr_fixed')
 
     controller.status_report()
     controller.save_to_json()
 
+    #'''
     # PLOTTING
+    ''''''
     plotter.save_ocp_plots()
 
-    #'''
+    # plotter.plot_spot_mfrr_prices() 
+    ''''''
 
     # controller.export_intensity_to_json('Baseline')
 
     # market.analyze_price_covariances()
-    ''''''
-    plotter.plot_spot_mfrr_prices() 
 
-    ''''''
     # plotter.plot_price_prediction()
 
     # simulator.Simulate_mpc()

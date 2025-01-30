@@ -818,6 +818,122 @@ class Controller():
         return 0
 
 
+    def generate_optimal_bidding_strategy(self, run_id = 'optimal', refrun_id = 'fixed'):
+
+        start_time = time.time()
+
+        if not self.load_from_json(run_id): 
+            # Identical run located. Using its solution instead
+            return 0
+        
+        if not self.surpress_output: print(f'{run_id} | Generating theoretically optimal bidding strategy')
+        
+        # Just check if there is a basline before proceeding
+        assert refrun_id in self.optimization_results['runs'], f"{run_id} | Error: {refrun_id} has not been generated"   
+        refrun = self.optimization_results['runs'][refrun_id]
+
+        activations_up, activations_down = self.market.get_activation_demands()
+        clearing_prices_up, clearing_prices_down = self.market.get_clearing_prices()
+        U_nom = refrun['timeseries']['u']
+
+        N = self.N
+        T = self.T
+        dt = self.dt
+        spot_prices = self.spot_prices
+
+        # State and control dimensions
+        nx = self.model.nx                      # Dimension of state x (x1, x2)
+        nu = self.model.nu                      # Dimension of control u (scalar)
+
+        # Create decision variables for the optimization problem
+        X = ca.MX.sym('X', nx, N+1)                 # States over time (2x(N+1) vector)
+        B_volumes = ca.MX.sym('B_volumes', 2, N)    # Bids over time (Vol_up, Vol_down, Price_up, Price_down) (4xN vector)
+        Eps = ca.MX.sym('Eps', 1, 1)                # Slack variable for feasibility
+        
+        activations_up      = activations_up
+        activations_down    = activations_down
+        bid_volumes_up      = B_volumes[0,:]
+        bid_volumes_down    = B_volumes[1,:]
+        bid_prices_up       = clearing_prices_up
+        bid_prices_down     = clearing_prices_down
+
+       
+        U = np.array([])
+        for k in range(N):
+            u_tilde = 1000*(bid_volumes_down[k]*activations_down[k]\
+                             - bid_volumes_up[k]*activations_up[k])/self.model.C_conv_PPFD
+            U = np.append(U, U_nom[k] + u_tilde)
+
+        U = ca.vertcat(*U)
+
+
+        L = 0
+        for k in range(0, N): #from k = 2, to N-1. 
+            L += spot_prices[k] * self.model.C_conv_PPFD * U_nom[k] \
+                  + (1000*spot_prices[k] - self.market.C_eur2nok * bid_prices_down[k]) * bid_volumes_down[k] * activations_down[k]\
+                  - (1000*spot_prices[k] + self.market.C_eur2nok * bid_prices_up[k]) * bid_volumes_up[k] * activations_up[k]
+
+        J = L/4 + self.model.terminal_cost(self, X, U, Eps)
+
+
+        g_eq, g_ineq = [], []
+        g_eq, g_ineq = self.model.get_process_constraints(self, g_eq, g_ineq, X, U, Eps)
+        
+        # format constraints
+        n_eq    = ca.vertcat(*g_eq).size()[0]
+        n_ineq  = ca.vertcat(*g_ineq).size()[0]
+        g       = g_eq + g_ineq
+        lbg     = np.concatenate((np.zeros((1, n_eq + n_ineq))), axis=None)                         # \ Eq-constraints = 0
+        ubg     = np.concatenate((np.zeros((1, n_eq)), np.inf * np.ones((1, n_ineq))), axis=None)   # / Ineq-constraints >= 0
+
+
+        # Extract state and bidding bounds
+        lbx, ubx = self.model.get_state_bounds(self)
+        lb_B = np.zeros((2, N))
+        ub_B = np.vstack((self.model.C_conv_PPFD * U_nom/1000,                        # Bid vol up
+                          self.model.C_conv_PPFD * (self.model.C_PPFD_max - U_nom)/1000))    # Bid vol down
+        lb_eps, ub_eps = 0, np.inf
+
+        # Flatten decision variables and bounds
+        Z   = ca.vertcat(ca.reshape(X,   -1, 1), ca.reshape(B_volumes,    -1, 1), ca.reshape(Eps,    -1, 1))
+        lbz = ca.vertcat(ca.reshape(lbx, -1, 1), ca.reshape(lb_B, -1, 1), ca.reshape(lb_eps, -1, 1))
+        ubz = ca.vertcat(ca.reshape(ubx, -1, 1), ca.reshape(ub_B, -1, 1), ca.reshape(ub_eps, -1, 1))
+
+        # Nonlinear problem definition
+        nlp = {'x': Z, 'f': J, 'g': ca.vertcat(*g)}
+
+        # Create the solver
+        opts = {'ipopt.print_level': 0, 'print_time': 0}
+        solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
+
+        z0 = ca.DM.zeros((N + 1)*nx + N*2 + 1)  
+        if self.warm_start: 
+            z0[:nx*(N+1)]                   = refrun['timeseries']['x'].flatten()
+            z0[nx*(N+1):nx*(N+1)+2*N]       = ub_B[:2,:].reshape(2*N,1)
+        
+        sol = solver(x0=z0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
+
+        # Extract solution
+
+        x = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
+        B_volumes = np.array(sol['x'][(nx*(N+1)):(nx*(N+1) + 2*N)].reshape((2, N)))
+        B = np.vstack((B_volumes, clearing_prices_up, clearing_prices_down))
+        u = np.array(self.model.get_u(self, B, U_nom)).flatten()
+        eps   = float(sol['x'][-1])
+        A = np.vstack((activations_up, activations_down))
+        
+        end_time = time.time()
+        sol['elapsed_time'] = end_time - start_time
+        sol['eps'] = eps
+        
+        self.save_run(run_id, sol, x, u, B=B, U_nom=refrun['timeseries']['u'])
+
+        if not self.surpress_output: print(f'{run_id} | Generated theoretically optimal bid plan')
+        return 0
+
+
+
+
     def export_intensity_to_json(self, run_id: str):
 
         u = self.optimization_results['runs'][run_id]['timeseries']['u']
