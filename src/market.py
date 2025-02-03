@@ -47,7 +47,7 @@ class Market:
     specs: dict
 
 
-    def __init__(self, config, time_horizon, bidding_zone, date, optimistic = False):
+    def __init__(self, config, time_horizon, bidding_zone, date, outlier_max_dist, optimistic = False):
         self.config = config
         self.N = time_horizon * QUARTER_HOURS_PER_DAY
         self.T = time_horizon
@@ -55,6 +55,7 @@ class Market:
         self.bidding_zone = bidding_zone
         self.date = date
         self.optimistic = optimistic 
+        self.outlier_max_dist = outlier_max_dist
 
         self.import_spot_mfrr_data()
 
@@ -63,8 +64,10 @@ class Market:
         self.analyze_price_covariances()
         conditional_variance_up, conditional_variance_dn = utils.conditional_covariance(self.price_covs)
         self.expected_prices_up, self.expected_prices_dn = utils.conditional_expectation(self.spot_prices, self.price_means, self.price_covs)
-        self.sigma_up = np.sqrt(conditional_variance_up)
-        self.sigma_dn = np.sqrt(conditional_variance_dn)
+        
+        epsilon = 1e-6  # For numerical stability. Avoids 0-variance
+        self.sigma_up = np.sqrt(conditional_variance_up) + epsilon
+        self.sigma_dn = np.sqrt(conditional_variance_dn) + epsilon
         
         # Initialize optimal prices on expected value.
         self.opt_prices_up = self.expected_prices_up
@@ -79,6 +82,7 @@ class Market:
             'Avg activation price down'     : self.price_means[3],          
             'Cond covariance spot - up'     : conditional_variance_up,
             'Cond covariance spot - Down'   : conditional_variance_dn,
+            'Outlier max std-dev distance'  : self.outlier_max_dist
             }
             
         self.mfrr_activation_data_analysis()
@@ -191,8 +195,9 @@ class Market:
         std_down = np.sqrt(np.var(down_prices_working_set['Clearing Price Down']))
         
         # remove all entries outside 4 standard deviations. These should only be extreme cases
-        self.up_prices_working_set      = up_prices_working_set[np.abs(up_prices_working_set['Clearing Price Up'] - mean_up) / std_up <4]
-        self.down_prices_working_set    = down_prices_working_set[np.abs(down_prices_working_set['Clearing Price Down'] - mean_down) / std_down < 4]        
+        epsilon = 1e-6
+        self.up_prices_working_set      = up_prices_working_set[np.abs(up_prices_working_set['Clearing Price Up'] - mean_up) / (std_up + epsilon) < self.outlier_max_dist]
+        self.down_prices_working_set    = down_prices_working_set[np.abs(down_prices_working_set['Clearing Price Down'] - mean_down) / (std_down + epsilon) < self.outlier_max_dist]        
         
         return 0 
 
@@ -212,13 +217,11 @@ class Market:
         if up_price_data.empty:
             print("The working dataset for up prices is empty. Using full dataset")
             up_price_data = self.up_prices_full_set
-            assert not up_price_data.empty, 'Up price data is empty, date is likely not supported in the dataset'
-            return -1  # Indicate an error
+            assert False, 'Up price data is empty, date is likely not supported in the dataset. Or there are no activations of this type during the simulation time'
         elif down_price_data.empty:
             print("The working dataset for down prices is empty. Using full dataset")
             down_price_data = self.down_prices_full_set
-            assert not down_price_data.empty, 'Down price data is empty, date is likely not supported in the dataset'
-            return -1  # Indicate an error
+            assert False, 'Down price data is empty, date is likely not supported in the dataset Or there are no activations of this type during the simulation time'
 
         # covariance_matrix = utils.calculate_covariance_matrix(price_data, ['Spot Price', 'Clearing Price Up', 'Clearing Price Down'])
         

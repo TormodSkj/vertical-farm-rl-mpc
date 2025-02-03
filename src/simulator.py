@@ -11,7 +11,7 @@ from utils import *
 
 class Simulator():
     
-    model: MpcPlantModel
+    model: PlantModel
     market: Market
     config: Config
     mpc_controller: Controller
@@ -29,7 +29,7 @@ class Simulator():
     bids_mpc: np.array
 
 
-    def __init__(self, timehorizon, plantmodel: MpcPlantModel, market: Market, config: Config, mpc_controller: Controller, time_horizon = 3, time_iteration = 1):
+    def __init__(self, timehorizon, plantmodel, market: Market, config: Config, mpc_controller: Controller, time_horizon = 3, time_iteration = 1):
         self.T = timehorizon
         self.N = timehorizon * QUARTER_HOURS_PER_DAY
         self.model = plantmodel  
@@ -195,6 +195,9 @@ class Simulator():
 
         clearing_prices_up, clearing_prices_dn = market.get_clearing_prices(date)
         assert len(clearing_prices_up)==N and len(clearing_prices_dn)==N, f'Clearing price arrays have inconsistent lengths with simulation duration. N = {self.N}, len(clearing prices up) = {len(clearing_prices_up)}, len(clearing prices down) = {len(clearing_prices_dn)}'
+        
+        activation_demands_up, activation_demands_dn = market.mfrr_demands_up, market.mfrr_demands_dn
+        assert len(activation_demands_dn)==N and len(activation_demands_up)==N, f'Activation demand arrays have inconsistent lengths with simulation duration. N = {self.N}, len(demands up) = {len(activation_demands_up)}, len(demands down) = {len(activation_demands_dn)}'
 
         assert refrun_id in controller.optimization_results['runs'], f"{run_id}| Error: {refrun_id} not in run data"
         refrun = controller.optimization_results['runs'][refrun_id]
@@ -206,9 +209,6 @@ class Simulator():
         bidding_price_up    = refrun['timeseries']['C_up']
         bidding_price_dn    = refrun['timeseries']['C_dn']
         B = np.vstack((bidding_vol_up, bidding_vol_dn, bidding_price_up, bidding_price_dn))
-        
-        activation_demands_up, activation_demands_dn = market.mfrr_demands_up, market.mfrr_demands_dn
-        assert len(activation_demands_dn)==N and len(activation_demands_up)==N, f'Activation demand arrays have inconsistent lengths with simulation duration. N = {self.N}, len(demands up) = {len(activation_demands_up)}, len(demands down) = {len(activation_demands_dn)}'
         
         # Evaluate activations
         activation_up = np.where(np.logical_and(activation_demands_up > 0, bidding_price_up <= clearing_prices_up), 1, 0)

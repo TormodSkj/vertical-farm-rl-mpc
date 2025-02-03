@@ -8,20 +8,20 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 
-SIM_NAME        = "market_potency_analysis"
+SIM_NAME        = "optimistic_many_up_activations"
 HORIZON_DAYS    = 20
 FINAL_WEIGHT    = 4                 # 1 day
 # FINAL_WEIGHT    = 36.66             # 7 Days
 # FINAL_WEIGHT    = 136.7             # 20 Days 
 # FINAL_WEIGHT    = 2.05              # 20 Days [Directly from germination]
-SIMULATION_DATE = '2023-11-16'
+SIMULATION_DATE = '2024-01-01'
 BIDDING_ZONE    = 'NO2'
 import_file     = 'scaled_optimal_intensities.json'
 optimistic      = 1
-search_cache    = 0
+search_cache    = 1
 
 MPC_TH = 5
-MPC_steplength = 3
+MPC_steplength = 1
 
 def main():
 
@@ -31,12 +31,11 @@ def main():
     ''' CREATING OBJECTS '''
     config          = Config(SIM_NAME, filetype="pdf", seed=1133)
     plant           = PlantModel(x_init, FINAL_WEIGHT)
-    mpc_plant       = MpcPlantModel(x_init, FINAL_WEIGHT)
-    market          = Market(config, HORIZON_DAYS, BIDDING_ZONE, SIMULATION_DATE, optimistic = optimistic)
-    controller      = Controller(HORIZON_DAYS, plant, mpc_plant, market, config, MPC_TH, MPC_steplength, search_cache = search_cache, warm_start=True, import_file = import_file, calculate_fw=True)         #Baseline: 'opt' / 'rigid'
+    market          = Market(config, HORIZON_DAYS, BIDDING_ZONE, SIMULATION_DATE, outlier_max_dist= 2, optimistic = optimistic)
+    controller      = Controller(HORIZON_DAYS, plant, market, config, MPC_TH, MPC_steplength, search_cache = search_cache, warm_start=True, import_file = import_file, calculate_fw=True, surpress_output=False)         #Baseline: 'opt' / 'rigid'
     
-    mpc_controller  = Controller(HORIZON_DAYS, mpc_plant, None, market, config, MPC_TH, MPC_steplength, surpress_output = False, calculate_fw=True)     # Instance of controller used in mpc
-    simulator       = Simulator(HORIZON_DAYS, mpc_plant, market, config, mpc_controller, time_horizon=MPC_TH, time_iteration=MPC_steplength)
+    mpc_controller  = Controller(HORIZON_DAYS, plant, market, config, MPC_TH, MPC_steplength, surpress_output = False, calculate_fw=True)     # Instance of controller used in mpc
+    simulator       = Simulator(HORIZON_DAYS, plant, market, config, mpc_controller, time_horizon=MPC_TH, time_iteration=MPC_steplength)
   
     plotter = Plotter(config, controller, simulator)
 
@@ -45,14 +44,18 @@ def main():
     
     # '''
     # controller.import_baseline('imported')
+
     controller.optimize_spotprice('spot_opt')         #
-    controller.generate_optimal_bidding_strategy('abs_opt', 'spot_opt')
-    # controller.optimize_mfrr('mfrr_opt', 'spot_opt')  #
+    controller.optimize_mfrr('mfrr_opt', 'spot_opt')  #
+    simulator.apply_mfrr_clearing_prices(controller, 'mfrr_applied', 'mfrr_opt')
+    
+    controller.optimize_mfrr_mpc('mfrr_mpc')
+    simulator.apply_mfrr_clearing_prices(controller, 'apply_prices_mpc', 'mfrr_mpc')
+
+    # controller.generate_optimal_bidding_strategy('abs_opt', 'spot_opt')
+    # simulator.apply_mfrr_clearing_prices(controller, 'abs_applied', 'abs_opt')
+
     # controller.optimize_mfrr('mfrr_fixed', 'fixed')
-    # controller.optimize_mfrr_mpc('mfrr_mpc')
-    # simulator.apply_mfrr_clearing_prices(controller, 'apply_prices_mpc', 'mfrr_mpc')
-    # simulator.apply_mfrr_clearing_prices(controller, 'mfrr_applied', 'mfrr_opt')
-    simulator.apply_mfrr_clearing_prices(controller, 'abs_applied', 'abs_opt')
     # simulator.apply_mfrr_clearing_prices(controller, 'mfrr_fixed_applied', 'mfrr_fixed')
 
     controller.status_report()
@@ -61,7 +64,8 @@ def main():
     #'''
     # PLOTTING
     ''''''
-    plotter.save_ocp_plots()
+    # plotter.save_ocp_plots()
+    plotter.plot_financial_report()
 
     # plotter.plot_spot_mfrr_prices() 
     ''''''

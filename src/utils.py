@@ -129,6 +129,49 @@ def get_metrics_table(runs):
 
     return generate_table(metrics_table, header = list(runs.keys()), sumrow=False, diffcol=False)
 
+def get_metrics_table_raw(runs):
+    '''
+    Takes in a dict of runs containing metrics dicts. 
+    Each run has its own metrics dict, which will be unraveled and displayed here
+    '''
+    
+    any_run = next(iter(runs.values()))
+    any_metrics = any_run['metrics']
+    n_metrics = len(any_metrics)
+
+    metrics_table = []
+
+    for metric in any_metrics:      # Keys are the same for all metrics dicts regardless of run
+
+        metrics_row = [metric]
+        for run in runs:
+
+            data = runs[run]['metrics'][metric]
+            if type(data) == float or type(data) == np.float64:
+                data = f"{data:.2f}"
+            metrics_row.append(data)
+
+        metrics_table.append(metrics_row)
+
+    return metrics_table
+
+
+def dict_to_table(input_dict: dict):
+
+    table = []
+
+    for key in input_dict:
+
+        datapoint = input_dict[key]
+        if type(datapoint) == float or type(datapoint) == np.float64:
+            datapoint = f"{datapoint:.2f}"
+
+        table.append([key, str(datapoint)])
+
+    return table
+
+
+
 def load_spot_prices(file_path, bidding_zone):
     """
     Load spot prices, parse timestamps, and extract the price column.
@@ -429,10 +472,10 @@ def conditional_expectation(spot_price, price_means, price_covs):
 
     # Conditional expectation formula
     spot_price = np.array(spot_price)
-    conditional_mean_up     = np.repeat(mean_up_price, spot_price.size)     + (cov_spot_up / var_spot_up)       * (spot_price.reshape(1,-1) - mean_spot_up)
-    conditional_mean_down   = np.repeat(mean_down_price, spot_price.size)   + (cov_spot_down / var_spot_down)   * (spot_price.reshape(1,-1) - mean_spot_down)
+    conditional_mean_up     = np.repeat(mean_up_price, spot_price.size)     + (cov_spot_up / var_spot_up)       * (spot_price - mean_spot_up)
+    conditional_mean_down   = np.repeat(mean_down_price, spot_price.size)   + (cov_spot_down / var_spot_down)   * (spot_price - mean_spot_down)
     
-    return conditional_mean_up, conditional_mean_down
+    return np.array([conditional_mean_up]), np.array([conditional_mean_down])
 
 def conditional_covariance(price_covs):
     
@@ -865,5 +908,3 @@ def sort_runs(optimization_results: dict):
 
     # def export_timeseries_to_csv()
 
-
-    

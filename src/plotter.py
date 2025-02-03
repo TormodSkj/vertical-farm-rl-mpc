@@ -51,7 +51,15 @@ class Plotter():
 
         for run_name in controller.optimization_results['runs']:
 
-            if(run_name in sorted_runs[1]):
+            x = controller.optimization_results['runs'][run_name]['timeseries']['x']
+            x_fw = controller.model.freshweight(x[:,1:])
+
+            if(run_name in sorted_runs[2]):          # Level 2 runs are market based and contain activation data
+                plt.plot(t, x_fw, label=f"{run_name} (g/plant)")
+                continue
+
+            '''
+            if(run_name in sorted_runs[1]):          # Level 1 runs are market based, but do not have activation data
                 bid_ts  = self.controller.optimization_results['runs'][run_name]['timeseries']
                 bid_volumes_up   = bid_ts['P_up']    # Volume up
                 bid_volumes_dn   = bid_ts['P_dn']    # Volume down
@@ -67,10 +75,10 @@ class Plotter():
                 fw_lb = fw - 1.96*fw_sd
 
                 plt.fill_between(t, fw_lb, fw_ub, color='green', alpha=0.2)
-
-            x = controller.optimization_results['runs'][run_name]['timeseries']['x']
-            x_fw = controller.model.freshweight(x[:,1:])
+            '''
+                
             plt.plot(t, x_fw, label=f"{run_name} (g/plant)")
+
 
         plt.axhline(y=controller.model.Final_fw_sht, color='gray', linestyle=':', label="Required Freshweight (g/plant)")
         plt.ylabel("Weight (g/plant)")
@@ -103,6 +111,33 @@ class Plotter():
         filename = "light_schedule"
         plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
+
+        ######################################################
+        #          DAILY LIGHT INTEGRALS OVER TIME
+
+
+        '''
+        fig, axes = plt.subplots(n_runs+1, 1, figsize=config.plot_format, sharex=True)
+
+        for i, run_name in enumerate(controller.optimization_results['runs']):
+            ax = axes[i]
+            u = controller.optimization_results['runs'][run_name]['timeseries']['u']
+            ax.step(t, u, label=f"{run_name}") 
+            ax.set_ylabel(self.controller.model.u_unit, rotation=0)
+            ax.legend(loc="upper right")
+
+        ax = axes[-1]
+        ax.step(t, spot_prices, label=f"Spot price", color='gray') 
+        ax.set_ylabel("NOK/kWh", rotation=0)
+        ax.set_xlabel("Time (days)")
+        ax.legend(loc="upper right")
+        fig.suptitle(f'Light schedules ({market.date}, {market.bidding_zone})')
+
+        filename = "daily_light_integrals"
+        plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+        '''
+        
 
         for run in sorted_runs[max_level_run]:
             if max_level_run == 0:
@@ -142,10 +177,10 @@ class Plotter():
 
             plt.figure(figsize=config.plot_format)
 
-            _, ub_B = self.controller.model.get_bidding_bounds(self.controller, u_nom)
+            _, ub_B_volumes, _, _ = self.controller.model.get_bidding_bounds(controller.N, u_nom.reshape((1,-1)))
             linewidth = 0.8
-            plt.step(t, -ub_B[0,:], color='grey', label='Up-regulation volume limit', linewidth = linewidth)
-            plt.step(t, ub_B[1,:], color='grey', label='Down-regulation volume limit',  linewidth = linewidth)
+            plt.step(t, -np.array(ub_B_volumes[0,:]).flatten(), color='grey', label='Up-regulation volume limit', linewidth = linewidth)
+            plt.step(t, np.array(ub_B_volumes[1,:]).flatten(), color='grey', label='Down-regulation volume limit',  linewidth = linewidth)
             plt.fill_between(t, -filtered_bid_volumes_up, 0, color='blue', alpha=0.4, label='Up-regulation', step='post')
             plt.fill_between(t, 0, filtered_bid_volumes_dn, color='red', alpha=0.4, label='down-regulation', step='post')
             plt.ylabel("Power (MW)")
@@ -164,8 +199,8 @@ class Plotter():
             ax.fill_between(t, 0, filtered_bid_prices_up, label="Bidding Price Up", color="blue", step='post', alpha=0.4)
             ax.fill_between(t, 0, filtered_bid_prices_dn, label="Bidding Price Down", color="red", step='post', alpha=0.4)
             ax.step(t, spot_prices*1000/self.controller.market.C_eur2nok, label="Spot price", color="grey", linestyle="--", where='mid')
-            ax.set_ylabel("Bidding Price (€/MW)", color="blue")
-            ax.tick_params(axis='y', labelcolor="blue")
+            ax.set_ylabel("Bidding Price (€/MW)")
+            ax.tick_params(axis='y')
             ax.legend(loc="upper left")
 
             fig.suptitle(f"{run} Bidding Prices and Spot Prices in €/MW ({controller.market.date}, {controller.market.bidding_zone})")
@@ -373,7 +408,7 @@ class Plotter():
 
                 fig.suptitle(f"Distributions of clearing prices, normalized ({market.bidding_zone}, {market.date})")
                 
-                filename = f"clearing_prices_distributions_{market.bidding_zone}"
+                filename = f"{run_sanitized}_clearing_prices_distributions_{market.bidding_zone}"
                 plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
 
@@ -414,7 +449,7 @@ class Plotter():
 
                 fig.suptitle(f"Distribution of bidding prices relative to clearing prices ({market.bidding_zone}, {market.date}) \nCalculated as bidding price - clearing price")
                 
-                filename = f"relative_clearing_prices_{market.bidding_zone}"
+                filename = f"{run_sanitized}_relative_clearing_prices_{market.bidding_zone}"
                 plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
 
@@ -626,13 +661,13 @@ class Plotter():
 
         ax1.hist(mfrr_prices_up-spot_prices_eur, label="Clearing price up", color='blue', alpha=0.4, bins=2*n_bins, density=True)
         ax1.set_xlabel("Bidding prices (€/MW)")
-        ax1.set_xlim([-100, 100])
+        ax1.set_xlim([-75, 25])
         ax1.legend()
 
 
         ax2.hist(mfrr_prices_dn-spot_prices_eur, label="Clearing price down", color='red', alpha=0.4, bins=n_bins, density=True)
         ax2.set_xlabel("Bidding prices (€/MW)")
-        ax2.set_xlim([-100, 100])
+        ax2.set_xlim([-75, 25])
         ax2.legend()
 
         plt.suptitle(f'Relative clearing prices, normalized ({market.bidding_zone}, {market.date})')
@@ -991,5 +1026,104 @@ class Plotter():
             plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
 
-            
+    def plot_financial_report(self):
+
+        config      = self.config
+        controller  = self.controller
+        market      = controller.market
+        foldername  = self.foldername
+        n_runs      = len(list(self.controller.optimization_results['runs'].keys()))
+        t           = self.controller.t
+        spot_prices = self.controller.spot_prices
+                
+
+        costs       = [controller.optimization_results['runs'][run]['metrics']['Costs']       for run in controller.optimization_results['runs']]
+        earnings    = [controller.optimization_results['runs'][run]['metrics']['Earnings']    for run in controller.optimization_results['runs']]
+        totals      = [controller.optimization_results['runs'][run]['metrics']['Total']       for run in controller.optimization_results['runs']]
+        cost_reduction_percent = [(totals[0] - totals[i])/totals[0] * 100 for i in range(len(totals))]
+
+        header=[run for run in controller.optimization_results['runs']]
+
+        ######################################################
+        #               FINALCIAL REPORT
+        #
+
+        plt.figure(figsize=config.plot_format)
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=config.plot_format)
+
+        x = np.arange(len(header))  # Bar positions
+        bar_width = 0.2
+
+        # Bar chart
+        ax1.bar(x - bar_width, costs, width=bar_width, color='lightcoral', label="Costs")
+        ax1.bar(x, earnings, width=bar_width, color='limegreen', label="Earnings")
+        ax1.bar(x + bar_width, totals, width=bar_width, color='lightskyblue', label="Totals")
+        ax1.axhline(y=min(totals), color='gray', linestyle='-', linewidth=0.1)
+
+
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(header)
+        ax1.set_ylabel("Amount ($)")
+        ax1.legend(loc='lower left')
+        ax1.set_title("Financial Overview of Optimization Methods")
+
+        # Table
+        metrics_table = [[''] + header] + get_metrics_table_raw(controller.optimization_results['runs'])
+
+        ax2.axis("tight")
+        ax2.axis("off")
+        ax2.table(cellText=metrics_table, cellLoc='center', loc='center', colWidths=[0.2] + [0.15]*len(header))
+
+
+        fig.suptitle('')
+        plt.tight_layout()
+
+        filename = f"_financial_report_{market.date.replace('-','_')}_{market.bidding_zone}"
+        plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+        plt.close()
+
+
+
+        ######################################################
+        #               SPECS REPORT
+        #
+
+
+        plt.figure(figsize=config.plot_format)
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=config.plot_format)
+
+        # Table
+
+        table_1 = dict_to_table(controller.specs)
+        ax1.axis("tight")
+        ax1.axis("off")
+        ax1.table(cellText=table_1, cellLoc='center', loc='center', colWidths=[0.5, 0.4])
+        ax1.set_title('Controller specs')
+
+        table_2 = dict_to_table(market.specs)
+        ax3.axis("tight")
+        ax3.axis("off")
+        ax3.table(cellText=table_2, cellLoc='center', loc='center', colWidths=[0.5, 0.4])
+        ax3.set_title('Model specs')
+
+        table_3 = dict_to_table(controller.model.specs)
+        ax2.axis("tight")
+        ax2.axis("off")
+        ax2.table(cellText=table_3, cellLoc='center', loc='center', colWidths=[0.5, 0.4])
+        ax2.set_title('Market specs')
+
+        ax4.axis("tight")
+        ax4.axis("off")
+
+        fig.suptitle(f'Specs for {config.sim_name}')
+        plt.tight_layout()
+
+        filename = f"_specs_{market.date.replace('-','_')}_{market.bidding_zone}"
+        plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+
+        plt.close()
+
+
+        return 0            
 
