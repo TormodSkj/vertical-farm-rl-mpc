@@ -8,7 +8,7 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 
-SIM_NAME        = "optimistic_many_up_activations"
+SIM_NAME        = "mpc_test_3"
 HORIZON_DAYS    = 20
 FINAL_WEIGHT    = 4                 # 1 day
 # FINAL_WEIGHT    = 36.66             # 7 Days
@@ -20,7 +20,7 @@ import_file     = 'scaled_optimal_intensities.json'
 optimistic      = 1
 search_cache    = 1
 
-MPC_TH = 5
+MPC_TH = 3
 MPC_steplength = 1
 
 def main():
@@ -46,11 +46,14 @@ def main():
     # controller.import_baseline('imported')
 
     controller.optimize_spotprice('spot_opt')         #
-    controller.optimize_mfrr('mfrr_opt', 'spot_opt')  #
-    simulator.apply_mfrr_clearing_prices(controller, 'mfrr_applied', 'mfrr_opt')
+    # controller.optimize_mfrr('mfrr_opt', 'spot_opt')  #
+    # simulator.apply_mfrr_clearing_prices(controller, 'mfrr_applied', 'mfrr_opt')
     
     controller.optimize_mfrr_mpc('mfrr_mpc')
     simulator.apply_mfrr_clearing_prices(controller, 'apply_prices_mpc', 'mfrr_mpc')
+
+    controller.optimize_mfrr_mpc('mfrr_mpc_spot', 'spot_opt')
+    simulator.apply_mfrr_clearing_prices(controller, 'apply_prices_mpc_spot', 'mfrr_mpc_spot')
 
     # controller.generate_optimal_bidding_strategy('abs_opt', 'spot_opt')
     # simulator.apply_mfrr_clearing_prices(controller, 'abs_applied', 'abs_opt')
@@ -64,7 +67,7 @@ def main():
     #'''
     # PLOTTING
     ''''''
-    # plotter.save_ocp_plots()
+    plotter.save_ocp_plots()
     plotter.plot_financial_report()
 
     # plotter.plot_spot_mfrr_prices() 

@@ -358,19 +358,29 @@ class PlantModel:
 
         return g_eq, g_ineq
     
-    def get_dynamic_process_constraints(self, g_eq, g_ineq, N, X, Eps, ref_weight):
+    def get_dynamic_process_constraints(self, g_eq, g_ineq, N, X, Eps, ref_weight, past_X = None):
         '''Creates list of constraints for the mpc optimization problem'''
 
         g_ineq.append(self.freshweight(X[:,N]) + Eps - ref_weight)
 
         # DLI constraint
-        for k in range(N+1):
-            if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
-                # k = 96 +24, +48, +72 ...
-                LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
-                
-                g_ineq.append(self.DLI_max - LI)
-                g_ineq.append(LI - self.DLI_min)
+        if past_X is None:
+            for k in range(N+1):
+                if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
+                    # k = 96 +24, +48, +72 ...
+                    LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
+                    
+                    g_ineq.append(self.DLI_max - LI)
+                    g_ineq.append(LI - self.DLI_min)
+        else:
+            for k in range(N+1+past_X.shape[1]):
+                combined_X = ca.horzcat(past_X, X)
+                if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
+                    # k = 96 +24, +48, +72 ...
+                    LI = (combined_X[2,k] - combined_X[2,k-QUARTER_HOURS_PER_DAY])
+                    
+                    g_ineq.append(self.DLI_max - LI)
+                    g_ineq.append(LI - self.DLI_min)
 
         return g_eq, g_ineq
     

@@ -347,6 +347,7 @@ class Controller():
         # Set up state vectors
         X = ca.DM.zeros(nx, N+1)
         X[:,0] = self.x_init
+        past_X = target_X[:,:QUARTER_HOURS_PER_DAY]
         U = ca.DM.zeros(nu, N)
         U_nom = ca.DM.zeros(nu, N)
         B = ca.DM.zeros(4, N)
@@ -367,6 +368,7 @@ class Controller():
                             opti_base.copy(), k = k, N = N, N_TH = N_horizon, opt_vars = opt_vars_base, spot_prices = spot_prices[iter_slice], 
                             x0          = X[:,k], 
                             init_X      = target_X[:,start_iter:end_iter+1],
+                            past_X      = past_X,
                             init_U      = target_U[iter_slice],
                             ref_weight  = target_weight[end_iter]
             )
@@ -379,6 +381,7 @@ class Controller():
             opti_bid_copy = self.update_optimizer_bidding(
                             opti_bid.copy(), k = k, N = N, N_TH = N_horizon, opt_vars = opt_vars_bid, spot_prices = spot_prices[iter_slice],
                             x0          = X[:,start_iter], 
+                            past_X      = past_X,
                             U_nom       = u_opt_base[:,:N_horizon], 
                             ref_weight  = target_weight[end_iter]
             )
@@ -416,6 +419,7 @@ class Controller():
             for i in range(k, k+min(N_iter, N_horizon)):
                 X[:,i+1] = np.array(F(X[:,i], np.array([U[:,i]]))).reshape(1, -1)
 
+            past_X[:,min(QUARTER_HOURS_PER_DAY, min(N_iter, N_horizon))] = X[:,k:k+min(QUARTER_HOURS_PER_DAY, min(N_iter, N_horizon))]
 
             #TODO temp solution
             # Eps = reference_weight[k+N_horizon] - self.model.freshweight(X[:,k+1+min(N_iter, N_horizon)])
@@ -521,19 +525,19 @@ class Controller():
         return opti
 
 
-    def update_optimizer_baseline(self, opti: ca.Opti, k, N, N_TH, opt_vars, spot_prices, x0, init_X, init_U, ref_weight):
+    def update_optimizer_baseline(self, opti: ca.Opti, k, N, N_TH, opt_vars, spot_prices, x0, init_X, past_X, init_U, ref_weight):
 
         X, U, Eps = [opt_vars[key] for key in ['X', 'U', 'Eps']]    # Extract symbolic optimization variables and parameters
 
         g_eq, g_ineq = [], []
-        g_eq, g_ineq = self.model.get_dynamic_process_constraints(g_eq, g_ineq, N_TH, X, Eps, ref_weight)
-        [opti.subject_to(equality_constraint == 0) for equality_constraint in g_eq]
-        [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
+        g_eq, g_ineq = self.model.get_dynamic_process_constraints(g_eq, g_ineq, N_TH, X, Eps, ref_weight, past_X = past_X)
+        [opti.subject_to(equality_constraint    == 0) for equality_constraint   in g_eq]
+        [opti.subject_to(inequality_constraint  >= 0) for inequality_constraint in g_ineq]
 
-        J = self.model.spotopt_obj_function(N_TH, spot_prices, X, U)
+        J = self.model.spotopt_obj_function(N_TH, spot_prices, X, U) + self.model.terminal_cost(self, X, U, Eps)
 
-        if (k + N_TH >= N): J += self.model.terminal_cost(self, X, U, Eps)
-        else:               J += self.model.running_cost(self.market, k, N, Eps)
+        # if (k + N_TH >= N): J += self.model.terminal_cost(self, X, U, Eps)
+        # else:               J += self.model.running_cost(self.market, k, N, Eps)
         
         opti.minimize(J)
 
@@ -546,20 +550,20 @@ class Controller():
 
         return opti
 
-    def update_optimizer_bidding(self, opti: ca.Opti, k, N, N_TH, opt_vars, spot_prices, x0, U_nom, ref_weight):
+    def update_optimizer_bidding(self, opti: ca.Opti, k, N, N_TH, opt_vars, spot_prices, x0, past_X, U_nom, ref_weight):
 
         X, B_volumes, B_prices, Eps = [opt_vars[key] for key in ['X','B_volumes', 'B_prices', 'Eps']]    # Extract symbolic optimization variables and parameters
 
         g_eq, g_ineq = [], []
-        g_eq, g_ineq = self.model.get_dynamic_process_constraints(g_eq, g_ineq, N_TH, X, Eps, ref_weight)
+        g_eq, g_ineq = self.model.get_dynamic_process_constraints(g_eq, g_ineq, N_TH, X, Eps, ref_weight, past_X = past_X)
         [opti.subject_to(equality_constraint == 0)   for equality_constraint in g_eq]
         [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
 
         U = self.model.get_u(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market)
-        J = self.model.bidding_obj_function(N_TH, spot_prices, X, B_volumes, B_prices, U_nom, self.market)
+        J = self.model.bidding_obj_function(N_TH, spot_prices, X, B_volumes, B_prices, U_nom, self.market) + self.model.terminal_cost(self, X, U, Eps)
         
-        if (k + N_TH >= N): J += self.model.terminal_cost(self, X, U, Eps)
-        else:               J += self.model.running_cost(self.market, k, N, Eps)
+        # if (k + N_TH >= N): J += self.model.terminal_cost(self, X, U, Eps)
+        # else:               J += self.model.running_cost(self.market, k, N, Eps)
         
         opti.minimize(J)
 
