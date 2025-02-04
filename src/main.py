@@ -20,7 +20,7 @@ import_file     = 'scaled_optimal_intensities.json'
 optimistic      = 1
 search_cache    = 1
 
-MPC_TH = 3
+MPC_TH = 1
 MPC_steplength = 1
 
 def main():
