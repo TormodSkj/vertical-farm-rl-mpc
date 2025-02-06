@@ -16,8 +16,9 @@ class PlantModel:
     specs: dict
 
 
-    nx = 3
-    nu = 1
+    nx = 3          # Number of state variables
+    nu = 1          # Number of input variables
+    neps = 3        # Number of slack variables
     
     def __init__(self, x_init, Final_fw_sht):
         self.Final_fw_sht = Final_fw_sht
@@ -204,7 +205,7 @@ class PlantModel:
 
         for k in range(0, N_TH):
             L += spot_prices[k] * self.C_conv_PPFD * U_nom[:,k] \
-                  + (1000*spot_prices[k] - market.C_eur2nok * bid_prices_down[k])   * bid_volumes_down[k]   * market.activation_prob_dn(spot_prices[k], bid_prices_down[k])\
+                  + (1000*spot_prices[k] - market.C_eur2nok * bid_prices_down[k])   * bid_volumes_down[k]   * market.activation_prob_down(spot_prices[k], bid_prices_down[k])\
                   - (1000*spot_prices[k] + market.C_eur2nok * bid_prices_up[k])     * bid_volumes_up[k]     * market.activation_prob_up(spot_prices[k], bid_prices_up[k])
 
         L = L/4
@@ -232,10 +233,20 @@ class PlantModel:
 
     def terminal_cost(self, controller, X, U, Eps):
 
-        return Eps * 10**6
+        slack_freshweight   = Eps[0,0]
+        slack_max_DLI       = Eps[1,0]
+        slack_min_DLI       = Eps[2,0]
+
+        return slack_freshweight * 10**6 + (slack_max_DLI + slack_min_DLI) * 10**6
+
 
 
     def running_cost(self, market: Market, k: int, N: int, Eps):
+        '''
+        First draft of running cost for MPC optimizer. 
+        Attempts to make mpc optimizer aware of market states outside its opt-window
+        '''
+
 
         spot_prices = market.get_spotprice()
         spot_prices_integral = np.array([sum(spot_prices[:k]) for k in range(len(spot_prices))])
@@ -302,11 +313,14 @@ class PlantModel:
         N = controller.N
         dt = controller.dt
         F = self.casadi_function_fe(ts=dt)
+        slack_freshweight = Eps[0]
+        slack_max_DLI = Eps[1]
+        slack_min_DLI = Eps[2]
 
         # Initial state constraint
         g_eq.append(X[:, 0] - self.x_init)
         # Final weight constraint
-        g_ineq.append(self.freshweight(X[:,-1]) + Eps - self.Final_fw_sht)   
+        g_ineq.append(self.freshweight(X[:,-1]) + slack_freshweight - self.Final_fw_sht)   
 
         # Define the dynamic and control constraints
         for k in range(0,N):
@@ -325,17 +339,19 @@ class PlantModel:
         for k in range(N+1):
             if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
                 # k = 96 +24, +48, +72 ...
-
                 LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
-                # LI = ca.sum2(U[k-QUARTER_HOURS_PER_DAY:k])*1e-6*SECONDS_PER_QUARTER_HOUR # Convert from umol/m^2/s to mol/m^2/s
                 
-                g_ineq.append(self.DLI_max - LI)
-                g_ineq.append(LI - self.DLI_min)
+                g_ineq.append(slack_max_DLI + self.DLI_max - LI)
+                g_ineq.append(slack_min_DLI + LI - self.DLI_min)
 
         return g_eq, g_ineq
     
     def get_static_process_constraints(self, g_eq, g_ineq, N, dt, X, x0, U, Eps):
         '''Creates list of constraints for the mpc optimization problem'''
+
+        slack_freshweight = Eps[0]
+        slack_max_DLI = Eps[1]
+        slack_min_DLI = Eps[2]
 
         F = self.casadi_function_fe(ts=dt)
 
@@ -349,19 +365,27 @@ class PlantModel:
 
         ''' Inequality constraints: g_ineq[k] > 0 for all k '''
 
-        g_ineq.append(Eps)
+        g_ineq.append(slack_freshweight)
+        g_ineq.append(slack_max_DLI)
+        g_ineq.append(slack_min_DLI)
 
-        # Upper and lower bounds on u
+        # Upper and lower bounds on X and U
         for k in range(N):
             g_ineq.append(U[k])
             g_ineq.append(self.C_PPFD_max - U[k])
+            g_ineq.append(X[:,k])
 
         return g_eq, g_ineq
     
     def get_dynamic_process_constraints(self, g_eq, g_ineq, N, X, Eps, ref_weight, past_X = None):
         '''Creates list of constraints for the mpc optimization problem'''
 
-        g_ineq.append(self.freshweight(X[:,N]) + Eps - ref_weight)
+        slack_freshweight = Eps[0]
+        slack_max_DLI = Eps[1]
+        slack_min_DLI = Eps[2]
+
+
+        g_ineq.append(self.freshweight(X[:,N]) + slack_freshweight - ref_weight)
 
         # DLI constraint
         if past_X is None:
@@ -370,8 +394,8 @@ class PlantModel:
                     # k = 96 +24, +48, +72 ...
                     LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
                     
-                    g_ineq.append(self.DLI_max - LI)
-                    g_ineq.append(LI - self.DLI_min)
+                    g_ineq.append(slack_max_DLI + self.DLI_max - LI)
+                    g_ineq.append(slack_min_DLI + LI - self.DLI_min)
         else:
             for k in range(N+1+past_X.shape[1]):
                 combined_X = ca.horzcat(past_X, X)
@@ -379,8 +403,8 @@ class PlantModel:
                     # k = 96 +24, +48, +72 ...
                     LI = (combined_X[2,k] - combined_X[2,k-QUARTER_HOURS_PER_DAY])
                     
-                    g_ineq.append(self.DLI_max - LI)
-                    g_ineq.append(LI - self.DLI_min)
+                    g_ineq.append(slack_max_DLI + self.DLI_max - LI)
+                    g_ineq.append(slack_min_DLI + LI - self.DLI_min)
 
         return g_eq, g_ineq
     
@@ -392,7 +416,7 @@ class PlantModel:
             # if(k<controller.market.n_given_activations):
             #     u_tilde = 1000*(B[1,k]*controller.A_down[k] - B[0,k]*controller.A_up[k])/self.C_conv_PPFD
             # else:
-            u_tilde = 1000*(B_volumes[1,k]*market.activation_prob_dn(spot_prices[k], B_prices[1,k]) - B_volumes[0,k]*market.activation_prob_up(spot_prices[k], B_prices[0,k]))/self.C_conv_PPFD
+            u_tilde = 1000*(B_volumes[1,k]*market.activation_prob_down(spot_prices[k], B_prices[1,k]) - B_volumes[0,k]*market.activation_prob_up(spot_prices[k], B_prices[0,k]))/self.C_conv_PPFD
 
             U = np.append(U, U_nom[:,k] + u_tilde)
 

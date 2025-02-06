@@ -7,7 +7,7 @@ import hashlib
 import pandas as pd
 import casadi as ca
 import scipy as sp
-
+from globals import *
 
 
 def plotting(t, timeseries, filename, folder = 'plots'):
@@ -251,7 +251,7 @@ def load_mfrr_prices(data_folder, bidding_zone):
     # Merge all data and sort by 'Start Time'
     merged_data = pd.concat(all_data, ignore_index=True)
     merged_data.sort_values(by='Start Time', inplace=True)
-    merged_data.dropna(inplace=True)
+    # merged_data.fillna(0, inplace=True)
 
     return merged_data
 
@@ -908,3 +908,16 @@ def sort_runs(optimization_results: dict):
 
     # def export_timeseries_to_csv()
 
+
+def get_DLI(X):
+
+    N = X.shape[1]-1
+    DLI = np.zeros((1, N-QUARTER_HOURS_PER_DAY))
+
+    for k in range(QUARTER_HOURS_PER_DAY, N):
+        # k = 96 +24, +48, +72 ...
+        LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
+        
+        DLI[:,k-QUARTER_HOURS_PER_DAY] = LI
+            
+    return DLI
