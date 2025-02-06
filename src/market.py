@@ -340,13 +340,16 @@ class Market:
 
         return 0
     
-    def get_clearing_prices(self, date=None):
+    def get_clearing_prices(self, date=None, n_days = None):
 
         if date==None:
             date = self.date
 
+        if n_days==None:
+            n_days = self.T
+
         start_date = pd.to_datetime(date)
-        end_date = start_date + pd.DateOffset(self.T)
+        end_date = start_date + pd.DateOffset(n_days)
 
         clearing_prices_df = self.prices_full_set.copy()
 

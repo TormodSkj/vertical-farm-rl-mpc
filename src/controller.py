@@ -719,9 +719,10 @@ class Controller():
             timeseries_data['C_dn'] = bid_prices_down
 
 
-            bidding_earnings_up = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(bid_activations_up, bid_volumes_up), bid_prices_up)
-            bidding_earnings_dn = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(bid_activations_down, bid_volumes_down), bid_prices_down)
-            bidding_earnings    = np.sum(bidding_earnings_up) + np.sum(bidding_earnings_dn)
+            expected_prices_up, expected_prices_down = self.market.expected_prices_up, self.market.expected_prices_down
+            bidding_earnings_up     = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(bid_activations_up,     bid_volumes_up),    expected_prices_up)
+            bidding_earnings_down   = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(bid_activations_down,   bid_volumes_down),  expected_prices_down)
+            bidding_earnings    = np.sum(bidding_earnings_up) + np.sum(bidding_earnings_down)
 
             bidding_costs = self.model.spotopt_obj_function(self.N, self.spot_prices, x, u)
             bidding_total = bidding_costs - bidding_earnings
@@ -928,12 +929,13 @@ class Controller():
 
         U = ca.vertcat(*U)
 
+        expected_prices_up, expected_prices_down = self.market.expected_prices_up, self.market.expected_prices_down
 
         L = 0
         for k in range(0, N): #from k = 2, to N-1. 
             L += spot_prices[k] * self.model.C_conv_PPFD * U_nom[k] \
-                  + (1000*spot_prices[k] - self.market.C_eur2nok * bid_prices_down[k]) * bid_volumes_down[k] * activations_down[k]\
-                  - (1000*spot_prices[k] + self.market.C_eur2nok * bid_prices_up[k]) * bid_volumes_up[k] * activations_up[k]
+                  + (1000*spot_prices[k] - self.market.C_eur2nok * expected_prices_down[:,k]) * bid_volumes_down[k] * activations_down[k]\
+                  - (1000*spot_prices[k] + self.market.C_eur2nok * expected_prices_up[:,k]) * bid_volumes_up[k] * activations_up[k]
 
         J = L/4 + self.model.terminal_cost(self, X, U, Eps)
 

@@ -155,8 +155,8 @@ class Simulator():
 
 
         f = 0.25*(self.model.C_conv_PPFD * np.sum(np.multiply(spot_prices,U_nom)) \
-            + np.sum(np.where(activation_down == 1, np.multiply((1000*spot_prices - controller.market.C_eur2nok * bidding_price_down),  bidding_vol_down), 0)) \
-            - np.sum(np.where(activation_up == 1,   np.multiply((1000*spot_prices + controller.market.C_eur2nok * bidding_price_up),    bidding_vol_up), 0)))
+            + np.sum(np.where(activation_down == 1, np.multiply((1000*spot_prices - controller.market.C_eur2nok * clearing_prices_down),  bidding_vol_down), 0)) \
+            - np.sum(np.where(activation_up == 1,   np.multiply((1000*spot_prices + controller.market.C_eur2nok * clearing_prices_up),    bidding_vol_up), 0)))
 
 
         Eps = max(0, controller.model.Final_fw_sht - self.model.freshweight(X[:,-1]))

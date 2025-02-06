@@ -9,7 +9,7 @@ from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 
 SIM_NAME        = "mpc_bidding_bugfix_4"
-HORIZON_DAYS    = 4
+HORIZON_DAYS    = 20
 FINAL_WEIGHT    = 4                 # 1 day
 # FINAL_WEIGHT    = 36.66             # 7 Days
 # FINAL_WEIGHT    = 136.7             # 20 Days 
@@ -20,8 +20,8 @@ import_file     = 'scaled_optimal_intensities.json'
 optimistic      = 1
 search_cache    = 1
 
-MPC_TH = 2
-MPC_steplength = 1
+MPC_TH = 1
+MPC_steplength = 0.5
 
 def main():
 
