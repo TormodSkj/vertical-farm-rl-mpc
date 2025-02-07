@@ -166,7 +166,7 @@ class Simulator():
         sol['f'] = f
         sol['elapsed_time'] = time.time() - start_time
     
-        controller.save_run(run_id, sol, X, u, A, B, U_nom)
+        controller.save_run(run_id, sol, X, u, A, B, U_nom, refrun_id=refrun_id)
         
         return 0
 

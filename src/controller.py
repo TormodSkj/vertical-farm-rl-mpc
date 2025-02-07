@@ -216,7 +216,7 @@ class Controller():
         sol['elapsed_time'] = end_time - start_time
         sol['eps'] = eps
         
-        self.save_run(run_id, sol, x, u, B=B, U_nom=refrun['timeseries']['u'])
+        self.save_run(run_id, sol, x, u, B=B, U_nom=refrun['timeseries']['u'], refrun_id = refrun_id)
 
         if not self.surpress_output: print(f'{run_id} | Optimized mFRR bidding strategy')
         
@@ -304,7 +304,7 @@ class Controller():
         sol['elapsed_time'] = elapsed_time
         sol['eps'] = eps
 
-        self.save_run(run_id, sol, x, u)
+        self.save_run(run_id, sol, x, u, refrun_id = refrun_id)
 
         if not self.surpress_output: print(f'{run_id} | Optimized light schedule for spot price')
         
@@ -442,7 +442,7 @@ class Controller():
         sol['f'] = self.model.bidding_obj_function(N, spot_prices, X, B[:2, :], B[2:4, :], U_nom, self.market)
         sol['elapsed_time'] = end_time - start_time
         
-        self.save_run(run_id, sol, np.array(X), np.array(U).flatten(), B=np.array(B), U_nom=np.array(U_nom).flatten())
+        self.save_run(run_id, sol, np.array(X), np.array(U).flatten(), B=np.array(B), U_nom=np.array(U_nom).flatten(), refrun_id = target_run_id)
 
         if not self.surpress_output: print(f'{run_id} | Optimized mFRR bidding strategy using MPC')
         self.save_to_json()
@@ -654,13 +654,13 @@ class Controller():
         sol['x'] = np.hstack((X.flatten(), u, 0))
         sol['eps'] = 0
         
-        self.save_run(run_id, sol, X, u)
+        self.save_run(run_id, sol, X, u, refrun_id = 'None')
         if self.calculate_fw: self.model.Final_fw_sht = float(self.model.freshweight(X[:,-1]))
 
         if not self.surpress_output: print(f'{run_id} | Generated fixed light schedule: {hours_on}h/{hours_off}h at {RIGID_INTY} PPFD')
         return 0
 
-    def save_run(self, run_id, sol, x, u, A = None, B = None, U_nom = None, refrun_id = 'fixed'):
+    def save_run(self, run_id, sol, x, u, A = None, B = None, U_nom = None, refrun_id = 'None'):
 
         timeseries_data = {
             't'     : self.t,
@@ -685,7 +685,7 @@ class Controller():
         metrics_data = self.model.get_metrics(self, run_id, metrics_data, x, u, B)
 
         run_data = {
-            'reference run' : refrun_id,
+            'reference_run' : refrun_id,
             'metrics'       : metrics_data
             }
 
@@ -991,7 +991,7 @@ class Controller():
         sol['elapsed_time'] = end_time - start_time
         sol['eps'] = eps
         
-        self.save_run(run_id, sol, x, u, B=B, U_nom=refrun['timeseries']['u'])
+        self.save_run(run_id, sol, x, u, B=B, U_nom=refrun['timeseries']['u'], refrun_id = refrun_id)
 
         if not self.surpress_output: print(f'{run_id} | Generated theoretically optimal bid plan')
         return 0

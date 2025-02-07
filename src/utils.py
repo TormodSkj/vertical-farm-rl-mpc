@@ -962,7 +962,59 @@ def sort_runs(optimization_results: dict):
     return sorted_runs, group_sizes
 
 
-    # def export_timeseries_to_csv()
+
+def build_dependency_groups(optimization_results: dict):
+    """
+    Builds a tree of runs, where each run has a reference to the previous one it depends on.
+    Groups each extremity (leaf node) and its ancestors from the root ('fixed' or 'imported').
+
+    Inputs:
+    optimization_results    -    Dictionary containing all run data.
+
+    Outputs:
+    dependency_groups       -   A list of lists, where each list contains a group of runs from the leaf node to the root.
+    """
+    # Initialize tree structure
+    tree = {}
+
+    # Step 1: Build the tree structure
+    for run_id, run_data in optimization_results['runs'].items():
+        parent_run = run_data.get('reference_run', None)  # Reference to the parent run (previous iteration)
+        
+        if run_id not in tree: tree[run_id] = []
+        if parent_run != 'None' and parent_run is not None:
+            if parent_run not in tree: tree[parent_run] = []
+            tree[parent_run].append(run_id)
+
+    # Step 2: Identify extremities (leaf nodes)
+    extremities = []
+    for node, children in tree.items():
+        if not children:  # No children means it's an extremity
+            extremities.append(node)
+
+    # Step 3: Trace paths from extremities to the root
+    def trace_path_to_root(node, tree):
+        """Trace the path from a leaf node to the root (fixed or imported)."""
+        path = []
+        current_node = node
+        while current_node is not None:
+            path.append(current_node)
+            parent_node = None
+            for parent, children in tree.items():
+                if current_node in children:
+                    parent_node = parent
+                    break
+            current_node = parent_node
+        return path
+
+    # Step 4: Build the dependency groups from the extremities
+    dependency_groups = []
+    for extremity in extremities:
+        group = trace_path_to_root(extremity, tree)
+        dependency_groups.append(group)
+
+    return dependency_groups
+
 
 
 def get_DLI(X):
