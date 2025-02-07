@@ -12,6 +12,7 @@ from globals import *
 from tabulate import tabulate
 from datetime import datetime
 from tqdm import tqdm
+from typing import List
 
 class Controller():
     """The controller handles open-loop optimization given a model and a set of constraints."""
@@ -38,9 +39,9 @@ class Controller():
     spot_prices:    np.array
     x_init:         np.array
 
-    bids:       list[Bid]
-    A_up:       list[bool]
-    A_down:     list[bool]
+    bids:       List[Bid]
+    A_up:       List[bool]
+    A_down:     List[bool]
 
     optimization_results: dict
     search_cache:   bool

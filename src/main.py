@@ -8,7 +8,7 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 
-SIM_NAME        = "new_balancing_data"
+SIM_NAME        = "test_1"
 HORIZON_DAYS    = 20
 FINAL_WEIGHT    = 4                 # 1 day
 # FINAL_WEIGHT    = 36.66             # 7 Days
