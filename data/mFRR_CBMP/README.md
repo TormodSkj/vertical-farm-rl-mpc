@@ -1,0 +1,2 @@
+This dataset contains cross-border marginal prices for several norwegian bidding zones, meaning the maximum cleared price of cross-border balancing in each bidding zone.
+The data is gathered from the ENTSO-E transparency platform in Jan 2025. 

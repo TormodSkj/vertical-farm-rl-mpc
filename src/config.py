@@ -40,6 +40,7 @@ class Config():
         self.spotprice_data_path = os.path.join(self.data_path, 'spotprices_norway_jan_2020_dec_2024.csv')
         self.mfrr_clearing_price_data_path = os.path.join(self.data_path, 'mFRR_balancing_prices/')
         self.mfrr_activation_data_path = os.path.join(self.data_path, 'mFRR_activations/')
+        self.mfrr_CBMP_data_path = os.path.join(self.data_path, 'mFRR_CBMP/')
 
         # Path for data
         self.data_analysis_path = os.path.join(self.path, "data_analysis/")

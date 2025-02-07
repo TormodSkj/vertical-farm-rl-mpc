@@ -205,9 +205,10 @@ def load_spot_prices(file_path, bidding_zone):
     return data[['Start Time', price_col]].rename(columns={price_col: 'Spot Price'})
 
 
-def load_mfrr_prices(data_folder, bidding_zone):
+
+def load_mfrr_balancing_prices(data_folder, bidding_zone):
     """
-    Load mFRR balancing prices from all relevant files in a folder, parse timestamps,
+    Load activation market balancing prices from all relevant files in a folder, parse timestamps,
     and merge them into a single DataFrame with 'Start Time', 'End Time', 'Up Price',
     and 'Down Price' columns.
 
@@ -218,7 +219,63 @@ def load_mfrr_prices(data_folder, bidding_zone):
     - pandas DataFrame: Merged dataset sorted by 'Start Time'.
     """
 
-    standardize_balancing_price_files(data_folder)
+    # standardize_balancing_price_files(data_folder)
+
+    all_files = [f for f in os.listdir(data_folder) if "mFRR_balancing_prices" in f and f.endswith(".csv")]
+    all_data = []
+
+    for file in all_files:
+        filepath = os.path.join(data_folder, file)
+
+        # Load the mFRR data
+        data = pd.read_csv(filepath, delimiter=";", encoding="utf-8")
+
+        # Parse 'Start Time' and 'End Time' from the 'Time Interval' column
+        time_interval_col = "Date/Time CET/CEST"  # Adjust if your column name is different
+        
+        data = data[data['MBA'] == bidding_zone]
+
+        data[['Start Time']] = data[time_interval_col].str.extract(
+            r'(\d{2}.\d{2}.\d{4}/\d{2}:\d{2})'
+        )
+        data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d.%m.%Y/%H:%M', errors='coerce')
+
+        up_price_col = "Up Regulation Price [EUR/MWh]"     
+        down_price_col = "Down Regulation Price [EUR/MWh]" 
+
+        data = data[['Start Time', up_price_col, down_price_col]].rename(
+            columns={up_price_col: 'Clearing Price Up', down_price_col: 'Clearing Price Down'}
+        )
+
+        data['Clearing Price Up'] = pd.to_numeric(data['Clearing Price Up'].str.replace(',', '.'), errors='coerce')
+        data['Clearing Price Down'] = pd.to_numeric(data['Clearing Price Down'].str.replace(',', '.'), errors='coerce')
+        
+        # Append processed data to the list
+        all_data.append(data)
+
+    # Merge all data and sort by 'Start Time'
+    merged_data = pd.concat(all_data, ignore_index=True)
+    merged_data.sort_values(by='Start Time', inplace=True)
+    # merged_data.fillna(0, inplace=True)
+
+    return merged_data
+
+
+
+def load_mfrr_CBMP_prices(data_folder, bidding_zone):
+    """
+    Load Cross-border marginal prices from all relevant files in a folder, parse timestamps,
+    and merge them into a single DataFrame with 'Start Time', 'End Time', 'Up Price',
+    and 'Down Price' columns.
+
+    Parameters:
+    - data_folder: str, path to the folder containing CSV files.
+
+    Returns:
+    - pandas DataFrame: Merged dataset sorted by 'Start Time'.
+    """
+
+    # standardize_balancing_price_files(data_folder)
 
     all_files = [f for f in os.listdir(data_folder) if "mFRR_balancing_prices" in f and bidding_zone in f and f.endswith(".csv")]
     all_data = []
@@ -237,9 +294,8 @@ def load_mfrr_prices(data_folder, bidding_zone):
         data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
         data['End Time'] = pd.to_datetime(data['End Time'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
 
-        # Select and rename relevant columns
-        up_price_col = "Price Up (EUR/MWh)"  # Adjust if your column name is different
-        down_price_col = "Price Down (EUR/MWh)"  # Adjust if your column name is different
+        up_price_col = "Price Up (EUR/MWh)"     
+        down_price_col = "Price Down (EUR/MWh)" 
 
         data = data[['Start Time', up_price_col, down_price_col]].rename(
             columns={up_price_col: 'Clearing Price Up', down_price_col: 'Clearing Price Down'}

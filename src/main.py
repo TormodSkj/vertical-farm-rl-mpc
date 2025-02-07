@@ -8,7 +8,7 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 
-SIM_NAME        = "mpc_bidding_bugfix_4"
+SIM_NAME        = "new_balancing_data"
 HORIZON_DAYS    = 20
 FINAL_WEIGHT    = 4                 # 1 day
 # FINAL_WEIGHT    = 36.66             # 7 Days
@@ -48,14 +48,14 @@ def main():
     controller.optimize_mfrr('mfrr_opt', 'spot_opt')  #
     simulator.apply_mfrr_clearing_prices(controller, 'mfrr_applied', 'mfrr_opt')
     
-    controller.optimize_mfrr_mpc('mfrr_mpc')
-    simulator.apply_mfrr_clearing_prices(controller, 'apply_prices_mpc', 'mfrr_mpc')
+    # controller.optimize_mfrr_mpc('mfrr_mpc')
+    # simulator.apply_mfrr_clearing_prices(controller, 'apply_prices_mpc', 'mfrr_mpc')
 
     # controller.optimize_mfrr_mpc('mfrr_mpc_spot', 'spot_opt')
     # simulator.apply_mfrr_clearing_prices(controller, 'apply_prices_mpc_spot', 'mfrr_mpc_spot')
 
-    controller.generate_optimal_bidding_strategy('abs_opt', 'spot_opt')
-    simulator.apply_mfrr_clearing_prices(controller, 'abs_applied', 'abs_opt')
+    # controller.generate_optimal_bidding_strategy('abs_opt', 'spot_opt')
+    # simulator.apply_mfrr_clearing_prices(controller, 'abs_applied', 'abs_opt')
 
     # controller.optimize_mfrr('mfrr_fixed', 'fixed')
     # simulator.apply_mfrr_clearing_prices(controller, 'mfrr_fixed_applied', 'mfrr_fixed')
