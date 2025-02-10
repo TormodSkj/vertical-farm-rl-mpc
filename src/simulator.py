@@ -104,7 +104,7 @@ class Simulator():
         return freshweights
 
 
-    def apply_mfrr_clearing_prices(self, controller: Controller, run_id, refrun_id):
+    def apply_mfrr_clearing_prices(self, run_id, refrun_id):
         '''
         '''
         # Generate activation demands
@@ -115,6 +115,7 @@ class Simulator():
 
         start_time = time.time()
 
+        controller = self.controller
         market = controller.market
         N = controller.N
         dt = controller.dt

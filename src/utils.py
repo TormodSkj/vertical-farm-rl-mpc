@@ -500,7 +500,7 @@ def calculate_covariance_matrix(data, columns):
     return np.cov(data[columns].T)
 
 
-def conditional_expectation(spot_price, price_means, price_covs):
+def conditional_expectation(spot_price, means, covs):
     """
     Calculate the expected Up and Down prices given a known Spot Price.
 
@@ -515,16 +515,16 @@ def conditional_expectation(spot_price, price_means, price_covs):
 
     
     # cov_spot_others = np.array(price_covs[0][1,1], price_covs[1][1,1])
-    var_spot_up = price_covs[0][0,0]
-    cov_spot_up = price_covs[0][0,1]
-    var_spot_down = price_covs[1][0,0]
-    cov_spot_down = price_covs[1][0,1]
+    var_spot_up = covs[0][0,0]
+    cov_spot_up = covs[0][0,1]
+    var_spot_down = covs[1][0,0]
+    cov_spot_down = covs[1][0,1]
 
     # Means of Up and Down prices
-    mean_spot_up    = price_means[0]
-    mean_spot_down  = price_means[1]
-    mean_up_price   = price_means[2]
-    mean_down_price = price_means[3]
+    mean_spot_up    = means[0]
+    mean_spot_down  = means[1]
+    mean_up_price   = means[2]
+    mean_down_price = means[3]
 
     # Conditional expectation formula
     spot_price = np.array(spot_price)

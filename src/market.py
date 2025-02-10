@@ -65,6 +65,9 @@ class Market:
         conditional_variance_up, conditional_variance_dn    = utils.conditional_covariance(self.price_covs)
         self.expected_prices_up, self.expected_prices_down  = utils.conditional_expectation(self.spot_prices, self.price_means, self.price_covs)
         
+        self.analyze_activation_covariances()
+
+
         epsilon = 1e-6  # For numerical stability. Avoids 0-variance
         self.sigma_up = np.sqrt(conditional_variance_up) + epsilon
         self.sigma_dn = np.sqrt(conditional_variance_dn) + epsilon
@@ -112,7 +115,7 @@ class Market:
         bid_price_up_normalized = (bid_price_up - ca.vertcat(*mu_up))/sigma_up
 
         # return norm.cdf(-Bc_up_norm)
-        return self.demand_prob_up() * (1.0 + self.error_function(-bid_price_up_normalized / ca.sqrt(2.0))) / 2.0
+        return np.multiply(self.demand_prob_up(spot_price).flatten(), (1.0 + self.error_function(-bid_price_up_normalized / ca.sqrt(2.0))) / 2.0)
 
     def activation_prob_down(self, spot_price, bid_price_dn):
 
@@ -123,7 +126,7 @@ class Market:
 
         # return norm.cdf(-Bc_dn_norm)
         # return self.demand_prob_dn() * (1.0 + ca.erf(-Bc_dn_norm / ca.sqrt(2.0))) / 2.0
-        return self.demand_prob_down() * (1.0 + self.error_function(-bid_price_down_normalized / ca.sqrt(2.0))) / 2.0
+        return np.multiply(self.demand_prob_down(spot_price).flatten(), (1.0 + self.error_function(-bid_price_down_normalized / ca.sqrt(2.0))) / 2.0)
 
 
     def error_function(self, x):
@@ -140,19 +143,30 @@ class Market:
 
 
 
-    def demand_prob_up(self):
+    def demand_prob_up(self, spot_price = None):
         # Probability of the grid needing up regulation.
         # TODO implement actual model from Erlend when that's ready
 
+        if spot_price is None: return np.mean(self.mfrr_demands_up)    # Use mean spot_price if none other is specified
+
         # return self.up_activation_occurance_rate      # Use predicted demand rate from data
-        return np.mean(self.mfrr_demands_up)            # Use actual demand rate
+        # return np.mean(self.mfrr_demands_up)            # Use actual demand rate
+        
+        expected_activation_up = utils.conditional_expectation(spot_price, self.activation_means, self.activation_covs)[0]
+        expected_activation_up = np.maximum(np.minimum(expected_activation_up, 1), 0)
+        return expected_activation_up
     
-    def demand_prob_down(self):  
+    def demand_prob_down(self, spot_price = None):  
         # Probability of the grid needing down regulation.
         # TODO implement actual model from Erlend when that's ready
 
+        if spot_price is None: return np.mean(self.mfrr_demands_down)     # Use mean spot_price if none other is specified
+
         # return self.down_activation_occurance_rate    # Use predicted demand rate from data
-        return np.mean(self.mfrr_demands_down)            # Use actual demand rate
+        # return np.mean(self.mfrr_demands_down)            # Use actual demand rate
+        expected_activation_down = utils.conditional_expectation(spot_price, self.activation_means, self.activation_covs)[1]
+        expected_activation_down = np.maximum(np.minimum(expected_activation_down, 1), 0)
+        return expected_activation_down
 
 
     def import_spot_mfrr_data(self):
@@ -168,12 +182,13 @@ class Market:
         # CBMP_prices = utils.load_mfrr_CBMP_prices(mfrr_CBMP_datapath, self.bidding_zone)
         spot_prices = utils.load_spot_prices(spot_price_file, self.bidding_zone)
         mfrr_prices = utils.load_mfrr_balancing_prices(mfrr_balancing_price_datapath, self.bidding_zone)
+        activations = utils.load_mfrr_activation_data(mfrr_activation_datapath, self.bidding_zone)
 
 
         # Merge datasets
         price_data = pd.merge(spot_prices, mfrr_prices, on='Start Time', how='inner')
         self.prices_full_set = price_data
-        activation_data = utils.load_mfrr_activation_data(mfrr_activation_datapath, self.bidding_zone)
+        activation_data = pd.merge(spot_prices, activations, on='Start Time', how='inner')
         self.activations_full_set = activation_data
 
         up_prices_merged_data = pd.merge(price_data[['Start Time', 'Spot Price', 'Clearing Price Up']], activation_data[['Start Time', 'Offered Up', 'Activated Up']], on='Start Time', how='inner')
@@ -253,6 +268,37 @@ class Market:
         self.price_covs = np.array([spot_up_cov, spot_down_cov])
 
         return 0
+    
+
+    def analyze_activation_covariances(self):
+        """
+        Analyze activation covariances
+        """
+        
+        print("Performing activation analysis.")
+    
+        activation_data   = self.activations_working_set
+
+        assert not activation_data.empty, 'Activation data is empty, date is likely not supported in the dataset. Or there are no activations of this type during the simulation time'
+    
+        # covariance_matrix = utils.calculate_covariance_matrix(price_data, ['Spot Price', 'Clearing Price Up', 'Clearing Price Down'])
+        
+        activated_binary_up     = np.where(activation_data['Activated Up']      > 0, 1, 0)
+        activated_binary_down   = np.where(activation_data['Activated Down']    > 0, 1, 0)
+        spot_prices             = np.array(activation_data['Spot Price'])
+
+        activation_cov_up     = np.cov(np.array([spot_prices, activated_binary_up]))
+        activation_cov_down   = np.cov(np.array([spot_prices, activated_binary_down]))
+        
+        mean_activations_up   = np.mean(activated_binary_up)
+        mean_activations_down = np.mean(activated_binary_down)
+        mean_spot_price       = np.mean(spot_prices)
+
+        # Save results
+        self.activation_means = np.array([mean_spot_price, mean_spot_price, mean_activations_up, mean_activations_down])
+        self.activation_covs = np.array([activation_cov_up, activation_cov_down])
+
+        return 0
 
 
 
@@ -308,13 +354,13 @@ class Market:
 
 
 
-    def generate_activation_demands(self, N, seed):
+    def generate_activation_demands(self, N, seed, spot_price):
         '''
         Generates a list of ints where 0 means no demand for activation, -1 means down activation and 1 means up
         '''
 
-        D_up = self.demand_prob_up()
-        D_dn = self.demand_prob_down()
+        D_up = self.demand_prob_up(spot_price)
+        D_dn = self.demand_prob_down(spot_price)
         no_D = 1 - D_up - D_dn
 
         activation_demands = utils.generate_weighted_samples([-1, 0, 1], [D_dn, no_D, D_up], N, seed)

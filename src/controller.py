@@ -696,10 +696,10 @@ class Controller():
             metrics_data['Total'] = costs - 0
         else:
 
-            bid_volumes_up = B[0,:]
-            bid_volumes_down = B[1,:]
-            bid_prices_up = B[2,:]
-            bid_prices_down = B[3,:]
+            bid_volumes_up      = B[0,:]
+            bid_volumes_down    = B[1,:]
+            bid_prices_up       = B[2,:]
+            bid_prices_down     = B[3,:]
 
             if A is None:
                 prob_activations_up = np.array(self.market.activation_prob_up(self.spot_prices, bid_prices_up)).flatten()

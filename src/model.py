@@ -201,14 +201,14 @@ class PlantModel:
         bid_prices_up = B_prices[0,:]
         bid_prices_down = B_prices[1,:]
 
-        expected_prices_up, expected_prices_down = market.expected_prices_up, market.expected_prices_down
+        expected_prices_up, expected_prices_down = market.expected_prices_up.flatten(), market.expected_prices_down.flatten()
 
         L = 0
 
         for k in range(0, N_TH):
             L += spot_prices[k] * self.C_conv_PPFD * U_nom[:,k] \
-                  + (1000*spot_prices[k] - market.C_eur2nok * expected_prices_down[:,k])   * bid_volumes_down[k]   * market.activation_prob_down(spot_prices[k], bid_prices_down[k])\
-                  - (1000*spot_prices[k] + market.C_eur2nok * expected_prices_up[:,k])     * bid_volumes_up[k]     * market.activation_prob_up(spot_prices[k], bid_prices_up[k])
+                  + (1000*spot_prices[k] - market.C_eur2nok * expected_prices_down[k])   * bid_volumes_down[k]   * market.activation_prob_down(spot_prices[k], bid_prices_down[k])\
+                  - (1000*spot_prices[k] + market.C_eur2nok * expected_prices_up[k])     * bid_volumes_up[k]     * market.activation_prob_up(spot_prices[k], bid_prices_up[k])
 
         L = L/4
 
