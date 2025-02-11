@@ -196,10 +196,10 @@ class PlantModel:
 
     def bidding_obj_function(self, N_TH, spot_prices, X, B_volumes, B_prices, U_nom, market:Market):
         
-        bid_volumes_up = B_volumes[0,:]
-        bid_volumes_down = B_volumes[1,:]
-        bid_prices_up = B_prices[0,:]
-        bid_prices_down = B_prices[1,:]
+        bid_volumes_up      = B_volumes[0,:]
+        bid_volumes_down    = B_volumes[1,:]
+        bid_prices_up       = B_prices[0,:]
+        bid_prices_down     = B_prices[1,:]
 
         expected_prices_up, expected_prices_down = market.expected_prices_up.flatten(), market.expected_prices_down.flatten()
 
@@ -207,8 +207,8 @@ class PlantModel:
 
         for k in range(0, N_TH):
             L += spot_prices[k] * self.C_conv_PPFD * U_nom[:,k] \
-                  + (1000*spot_prices[k] - market.C_eur2nok * expected_prices_down[k])   * bid_volumes_down[k]   * market.activation_prob_down(spot_prices[k], bid_prices_down[k])\
-                  - (1000*spot_prices[k] + market.C_eur2nok * expected_prices_up[k])     * bid_volumes_up[k]     * market.activation_prob_up(spot_prices[k], bid_prices_up[k])
+                  + (1000*spot_prices[k] - market.C_eur2nok * expected_prices_down[k])   * bid_volumes_down[k]   * market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
+                  - (1000*spot_prices[k] + market.C_eur2nok * expected_prices_up[k])     * bid_volumes_up[k]     * market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
 
         L = L/4
 
@@ -218,7 +218,7 @@ class PlantModel:
 
         L = 0
         for k in range(N):
-            L += spot_prices[k] * U[k] * self.C_conv_PPFD
+            L += spot_prices[k] * U[:,k] * self.C_conv_PPFD
                   
         L = L/4
                   
@@ -318,6 +318,7 @@ class PlantModel:
         slack_freshweight = Eps[0]
         slack_max_DLI = Eps[1]
         slack_min_DLI = Eps[2]
+        U = U.reshape((1,-1))
 
         # Initial state constraint
         g_eq.append(X[:, 0] - self.x_init)
@@ -327,15 +328,15 @@ class PlantModel:
         # Define the dynamic and control constraints
         for k in range(0,N):
             # Model equalities
-            x_next = F(X[:, k], U[k])
+            x_next = F(X[:, k], U[:,k])
             g_eq.append(X[:, k+1] - x_next)
 
         ''' Inequality constraints: g_ineq[k] > 0 for all k '''
 
         # Upper and lower bounds on u
         for k in range(N):
-            g_ineq.append(U[k])
-            g_ineq.append(self.C_PPFD_max - U[k])
+            g_ineq.append(U[:,k])
+            g_ineq.append(self.C_PPFD_max - U[:,k])
 
         # DLI constraint
         for k in range(N+1):
@@ -354,12 +355,13 @@ class PlantModel:
         slack_freshweight = Eps[0]
         slack_max_DLI = Eps[1]
         slack_min_DLI = Eps[2]
+        U = U.reshape((1,-1))
 
         F = self.casadi_function_fe(ts=dt)
 
         # Define the dynamic and control constraints
         for k in range(0,N):
-            x_next = F(X[:, k], U[k])    
+            x_next = F(X[:, k], U[:,k])    
             g_eq.append(X[:, k+1] - x_next)
 
         # Initial state constraint
@@ -374,7 +376,7 @@ class PlantModel:
         # Upper and lower bounds on X and U
         for k in range(N):
             g_ineq.append(U[k])
-            g_ineq.append(self.C_PPFD_max - U[k])
+            g_ineq.append(self.C_PPFD_max - U[:,k])
             g_ineq.append(X[:,k])
 
         return g_eq, g_ineq
@@ -385,7 +387,6 @@ class PlantModel:
         slack_freshweight = Eps[0]
         slack_max_DLI = Eps[1]
         slack_min_DLI = Eps[2]
-
 
         g_ineq.append(self.freshweight(X[:,N]) + slack_freshweight - ref_weight)
 
@@ -422,9 +423,11 @@ class PlantModel:
 
             U = np.append(U, U_nom[:,k] + u_tilde)
 
-        return ca.vertcat(*U)
+        return ca.vertcat(*U).reshape((1,-1))
 
     def get_bidding_bounds(self, N, U_nom):
+
+        U_nom = U_nom.reshape((1,-1))                                                   # Ensure correct dimension
 
         lb_B_prices = ca.DM.zeros(2, N)
         ub_B_prices = ca.vertcat(10000 * ca.DM.ones((1, N)),                             # Bid price up. Arbitrary limit of 1000€ / MW 

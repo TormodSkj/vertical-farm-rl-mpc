@@ -128,15 +128,15 @@ class Plotter():
             else:
                 is_realized = False
 
-            u_nom            = bid_ts['u_nom']
-            bid_volumes_up   = bid_ts['P_up']    # Volume up
-            bid_volumes_down = bid_ts['P_dn']    # Volume down
-            bid_prices_up    = bid_ts['C_up']    # Price up
-            bid_prices_down  = bid_ts['C_dn']    # Price down
+            u_nom            = bid_ts['u_nom'].flatten()
+            bid_volumes_up   = bid_ts['P_up'].flatten()    # Volume up
+            bid_volumes_down = bid_ts['P_dn'].flatten()    # Volume down
+            bid_prices_up    = bid_ts['C_up'].flatten()    # Price up
+            bid_prices_down  = bid_ts['C_dn'].flatten()    # Price down
 
             if is_realized:
-                bid_activation_up   = bid_ts['A_up']
-                bid_activation_down = bid_ts['A_dn']
+                bid_activation_up   = bid_ts['A_up'].flatten()
+                bid_activation_down = bid_ts['A_dn'].flatten()
 
             prob_activation_up      = np.array(self.controller.market.activation_prob_up(spot_prices, bid_prices_up)).flatten()
             prob_activation_down    = np.array(self.controller.market.activation_prob_down(spot_prices, bid_prices_down)).flatten()
@@ -216,8 +216,8 @@ class Plotter():
                 ax2.fill_between(t, 0, np.multiply(bid_activation_down, prob_activation_down), color='maroon', alpha=1, label="Activated", step='post', linewidth=0)
 
 
-            ax1.step(t, controller.market.demand_prob_up(controller.spot_prices).flatten(),   color='gray', linestyle=':', label="Max activation rate", where='post')
-            ax2.step(t, controller.market.demand_prob_down(controller.spot_prices).flatten(), color='gray', linestyle=':', label="Max activation rate", where='post')
+            ax1.step(t, controller.market.demand_prob_up(controller.spot_prices).reshape((-1,1)),   color='gray', linestyle=':', label="Max activation rate", where='post')
+            ax2.step(t, controller.market.demand_prob_down(controller.spot_prices).reshape((-1,1)), color='gray', linestyle=':', label="Max activation rate", where='post')
             ax1.set_ylabel('Expected activation probability')
             ax2.set_ylabel("Expected activation probability")
             ax2.set_xlabel("Time (days)")
@@ -493,11 +493,14 @@ class Plotter():
                 # plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
                 self.save_plot(f"relative_clearing_prices{market.bidding_zone}", run_id, fig, pdf)
 
+
+
+
             ######################################################
             #                   SPOT PRICES
 
             fig = plt.figure(figsize=config.plot_format)
-            plt.step(t, market.get_spotprice(), label="Spot price")
+            plt.step(t, self.controller.market.get_spotprice(), label="Spot price")
             plt.ylabel("Spot price (kr/kWh)")
             plt.xlabel("Time (days)")
             plt.legend()
@@ -505,8 +508,13 @@ class Plotter():
             # filename = "spot_price"
             # plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
 
-            self.save_plot(f"spot_price_{market.bidding_zone}", run_id, fig, pdf)
+            self.save_plot(f"spot_price_{self.controller.market.bidding_zone}", run_id, fig, pdf)
             plt.close('all')
+
+
+
+
+
 
 
 
@@ -571,8 +579,8 @@ class Plotter():
 
         for i, run in enumerate(runs):
             ax = axes[i]
-            u = runs[run]['timeseries']['u']
-            t = runs[run]['timeseries']['t']
+            u = runs[run]['timeseries']['u'].flatten()
+            t = runs[run]['timeseries']['t'].flatten()
             ax.step(t, u, label=f"{run}") 
             ax.set_ylabel(self.controller.model.u_unit, rotation=0)
             ax.legend(loc="upper right")
@@ -609,7 +617,7 @@ class Plotter():
             X = runs[run]['timeseries']['x']
             t = runs[run]['timeseries']['t']
             DLI = get_DLI(X).flatten()
-            ax.step(t[-len(DLI):], DLI, label=f"{run}") 
+            ax.plot(t[-len(DLI):], DLI, label=f"{run}") 
             ax.set_ylabel('Daily light integral', rotation=0)
             ax.axhline(y=controller.model.DLI_max, color='gray', linestyle=':')
             ax.axhline(y=controller.model.DLI_min, color='gray', linestyle=':')

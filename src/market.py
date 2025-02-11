@@ -8,6 +8,7 @@ import utils
 import json
 import os
 import time
+from settings import Settings
 
 class Market:
 
@@ -19,6 +20,7 @@ class Market:
     optimistic: bool            # Optimistic market model restricts analysis dataset to be only that of the growth cycle. Makes price distribution analysis more accurate
     
     config: Config
+    settings: Settings
 
     C_eur2nok = 11.76                           # € -> NOK conversion rate as of nov 14 2024
     price_means:                np.ndarray
@@ -47,15 +49,19 @@ class Market:
     specs: dict
 
 
-    def __init__(self, config, time_horizon, bidding_zone, date, outlier_max_dist, optimistic = False):
+    def __init__(self, settings: Settings, config: Config):
         self.config = config
-        self.N = time_horizon * QUARTER_HOURS_PER_DAY
-        self.T = time_horizon
-        self.seed = config.seed
-        self.bidding_zone = bidding_zone
-        self.date = date
-        self.optimistic = optimistic 
-        self.outlier_max_dist = outlier_max_dist
+        self.settings = settings
+
+        self.market_settings = settings.get_settings('general', 'market')
+
+        self.T                  = self.market_settings['SIMULATION_LENGTH']
+        self.bidding_zone       = self.market_settings['BIDDING_ZONE']
+        self.date               = self.market_settings['SIMULATION_DATE']
+        self.optimistic         = self.market_settings['OPTIMISTIC']
+        self.outlier_max_dist   = self.market_settings['C_eur2nok']
+        self.seed               = self.market_settings['SEED']
+        self.N = self.T * QUARTER_HOURS_PER_DAY
 
         self.import_spot_mfrr_data()
 
@@ -108,25 +114,28 @@ class Market:
     
 
     def activation_prob_up(self, spot_price, bid_price_up):
-        
+        bid_price_up = bid_price_up.reshape((1,-1))
+
         mu_up = utils.conditional_expectation(spot_price, self.price_means, self.price_covs)[0]
         sigma_up = self.sigma_up
 
-        bid_price_up_normalized = (bid_price_up - ca.vertcat(*mu_up))/sigma_up
+        bid_price_up_normalized = ((bid_price_up - ca.vertcat(*mu_up).reshape((1,-1)))/sigma_up).reshape((1,-1))
 
         # return norm.cdf(-Bc_up_norm)
-        return np.multiply(self.demand_prob_up(spot_price).flatten(), (1.0 + self.error_function(-bid_price_up_normalized / ca.sqrt(2.0))) / 2.0)
+        return np.multiply(self.demand_prob_up(spot_price), (1.0 + self.error_function(-bid_price_up_normalized / ca.sqrt(2.0))) / 2.0)
 
-    def activation_prob_down(self, spot_price, bid_price_dn):
+    def activation_prob_down(self, spot_price, bid_price_down):
+        bid_price_down = bid_price_down.reshape((1,-1))
 
         mu_down = utils.conditional_expectation(spot_price, self.price_means, self.price_covs)[1]
         sigma_down = self.sigma_dn
         
-        bid_price_down_normalized = (bid_price_dn - ca.vertcat(*mu_down))/sigma_down
+        # bid_price_down_normalized = (bid_price_down - ca.vertcat(*mu_down))/sigma_down
+        bid_price_down_normalized = ((bid_price_down - ca.vertcat(*mu_down).reshape((1,-1)))/sigma_down).reshape((1,-1))
 
         # return norm.cdf(-Bc_dn_norm)
         # return self.demand_prob_dn() * (1.0 + ca.erf(-Bc_dn_norm / ca.sqrt(2.0))) / 2.0
-        return np.multiply(self.demand_prob_down(spot_price).flatten(), (1.0 + self.error_function(-bid_price_down_normalized / ca.sqrt(2.0))) / 2.0)
+        return np.multiply(self.demand_prob_down(spot_price), (1.0 + self.error_function(-bid_price_down_normalized / ca.sqrt(2.0))) / 2.0)
 
 
     def error_function(self, x):
@@ -152,8 +161,11 @@ class Market:
         # return self.up_activation_occurance_rate      # Use predicted demand rate from data
         # return np.mean(self.mfrr_demands_up)            # Use actual demand rate
         
-        expected_activation_up = utils.conditional_expectation(spot_price, self.activation_means, self.activation_covs)[0]
-        expected_activation_up = np.maximum(np.minimum(expected_activation_up, 1), 0)
+        expected_activation_up = ca.horzcat(*utils.conditional_expectation(spot_price, self.activation_means, self.activation_covs)[0]).reshape((1,-1))
+        
+        # Custom function which bounds activation chance between 0 and 1. (1 + abs(x) - abs(x-1))/2 with abs(x) = sqrt(x^2)
+        expected_activation_up = 0.5 + 0.5*(ca.sqrt(ca.power(expected_activation_up, 2)) - ca.sqrt(ca.power(expected_activation_up - 1, 2)))
+        
         return expected_activation_up
     
     def demand_prob_down(self, spot_price = None):  
@@ -164,8 +176,10 @@ class Market:
 
         # return self.down_activation_occurance_rate    # Use predicted demand rate from data
         # return np.mean(self.mfrr_demands_down)            # Use actual demand rate
-        expected_activation_down = utils.conditional_expectation(spot_price, self.activation_means, self.activation_covs)[1]
-        expected_activation_down = np.maximum(np.minimum(expected_activation_down, 1), 0)
+        expected_activation_down = ca.horzcat(*utils.conditional_expectation(spot_price, self.activation_means, self.activation_covs)[1]).reshape((1,-1))
+
+        # Custom function which bounds activation chance between 0 and 1. (1 + abs(x) - abs(x-1))/2 with abs(x) = sqrt(x^2)
+        expected_activation_down = 0.5 + 0.5*(ca.sqrt(ca.power(expected_activation_down, 2)) - ca.sqrt(ca.power(expected_activation_down - 1, 2)))
         return expected_activation_down
 
 

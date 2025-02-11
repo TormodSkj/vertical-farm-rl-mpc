@@ -3,6 +3,7 @@ from market import Market
 from bid import Bid
 from model import *
 from config import Config
+from settings import Settings
 from controller import Controller
 from globals import *
 import time
@@ -11,38 +12,36 @@ from utils import *
 
 class Simulator():
     
-    model: PlantModel
-    market: Market
-    config: Config
+    settings:   Settings
+    model:      PlantModel
+    market:     Market
+    config:     Config
     controller: Controller
 
     N: float
     T: float
     dt: float
-    T_TH: float
-    N_TH: int
-    T_iter: float
-    N_iter: int
 
     x_mpc: np.array
     u_mpc: np.array
     bids_mpc: np.array
 
 
-    def __init__(self, timehorizon, plantmodel, market: Market, config: Config, controller: Controller, time_horizon = 3, time_iteration = 1):
-        self.T = timehorizon
-        self.N = timehorizon * QUARTER_HOURS_PER_DAY
-        self.model = plantmodel  
-        self.market = market
-        self.config = config
+    def __init__(self, settings: Settings, plantmodel: PlantModel, market: Market, config: Config, controller: Controller):
+        
+        self.settings = settings
+        self.sim_settings = settings.get_settings('general', 'simulator')
+        
+        self.T          = self.sim_settings['SIMULATION_LENGTH']
+        
+        self.model      = plantmodel  
+        self.market     = market
+        self.config     = config
         self.controller = controller
-        self.dt = self.controller.dt
-        self.t = np.linspace(0, self.T, self.N)
-        self.T_TH = time_horizon
-        self.N_TH = int(np.ceil(self.T_TH * SECONDS_PER_QUARTER_HOUR * QUARTER_HOURS_PER_DAY/self.dt))
-        self.T_iter = time_iteration
-        self.N_iter = int(np.ceil(self.T_iter * SECONDS_PER_QUARTER_HOUR * QUARTER_HOURS_PER_DAY/self.dt))
 
+        self.dt         = self.controller.dt
+        self.t          = np.linspace(0, self.T, self.N)
+        self.N          = self.T * QUARTER_HOURS_PER_DAY
         self.bids_mpc = np.zeros((4, self.N))
         
 
@@ -133,11 +132,11 @@ class Simulator():
         refrun = controller.optimization_results['runs'][refrun_id]
 
         # Get bidding data
-        U_nom               = refrun['timeseries']['u_nom']
-        bidding_vol_up      = refrun['timeseries']['P_up']
-        bidding_vol_down    = refrun['timeseries']['P_dn']
-        bidding_price_up    = refrun['timeseries']['C_up']
-        bidding_price_down  = refrun['timeseries']['C_dn']
+        U_nom               = refrun['timeseries']['u_nom'].reshape(1,-1)
+        bidding_vol_up      = refrun['timeseries']['P_up'].reshape(1,-1)
+        bidding_vol_down    = refrun['timeseries']['P_dn'].reshape(1,-1)
+        bidding_price_up    = refrun['timeseries']['C_up'].reshape(1,-1)
+        bidding_price_down  = refrun['timeseries']['C_dn'].reshape(1,-1)
         B = np.vstack((bidding_vol_up, bidding_vol_down, bidding_price_up, bidding_price_down))
         
         # Evaluate activations
@@ -152,7 +151,7 @@ class Simulator():
         X[:,0] = controller.model.x_init.flatten()
         
         for k in range(N):
-            X[:,k+1] = np.array(F(X[:,k], np.array([u[k]]))).reshape(1, -1)
+            X[:,k+1] = np.array(F(X[:,k], np.array([u[:,k]]))).flatten()
 
 
         f = 0.25*(self.model.C_conv_PPFD * np.sum(np.multiply(spot_prices,U_nom)) \
@@ -167,7 +166,7 @@ class Simulator():
         sol['f'] = f
         sol['elapsed_time'] = time.time() - start_time
     
-        controller.save_run(run_id, sol, X, u, A, B, U_nom, refrun_id=refrun_id)
+        controller.save_run(run_id, sol, X, u.reshape(1,-1), A, B, U_nom.reshape(1,-1), refrun_id=refrun_id)
         
         return 0
 

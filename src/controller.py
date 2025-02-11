@@ -3,6 +3,7 @@ import numpy as np
 from market import Market
 from model import *
 from config import Config
+from settings import Settings
 from bid import Bid
 from utils import *
 import time
@@ -23,6 +24,7 @@ class Controller():
     model: PlantModel
     market: Market
     config: Config
+    settings: Settings
 
     N:  float
     T:  float
@@ -50,26 +52,34 @@ class Controller():
     # u_base:         np.array
     # x_base:         np.array
 
-    def __init__(self, timehorizon, plantmodel, market, config,
-                 mpc_timehorizon, mpc_steplength,
-                 surpress_output = False, search_cache = True, 
-                 import_file = '', warm_start = False, calculate_fw = False):
-        
-        self.surpress_output = surpress_output
-        self.warm_start = warm_start
-        self.calculate_fw = calculate_fw
-        self.T = timehorizon 
-        self.N = int(np.ceil(timehorizon * QUARTER_HOURS_PER_DAY))
+    def __init__(self, settings: Settings, plantmodel, market, config):
+        '''
+        timehorizon, 
+        mpc_timehorizon, mpc_steplength,
+        warm_start = False, calculate_fw = False):
+        '''
+        self.settings = settings
+        self.controller_settings = settings.get_settings('general', 'controller')
+
+        self.surpress_output    = self.controller_settings['SURPRESS_OUTPUT']
+        self.warm_start         = self.controller_settings['WARM_START']
+        self.calculate_fw       = self.controller_settings['CALCULATE_FW']
+        self.T                  = self.controller_settings['SIMULATION_LENGTH'] 
+        self.mpc_T_horizon      = self.controller_settings['MPC_TIMEHORIZON']
+        self.search_cache       = self.controller_settings['SEARCH_CACHE']
+        self.import_file        = self.controller_settings['IMPORT_FILE']
+
+        mpc_steplength          = self.controller_settings['MPC_STEPLENGTH']
+
+
         self.dt = SECONDS_PER_QUARTER_HOUR   
-        self.mpc_T_horizon = mpc_timehorizon
-        self.mpc_N_horizon = int(np.ceil(mpc_timehorizon * QUARTER_HOURS_PER_DAY))
+        self.N = int(np.ceil(self.T * QUARTER_HOURS_PER_DAY))
+        self.mpc_N_horizon = int(np.ceil(self.mpc_T_horizon * QUARTER_HOURS_PER_DAY))
         self.mpc_T_step = max(mpc_steplength, self.dt/(SECONDS_PER_QUARTER_HOUR * QUARTER_HOURS_PER_DAY))
         self.mpc_N_step = int(np.ceil(self.mpc_T_step * QUARTER_HOURS_PER_DAY))
         self.model = plantmodel
         self.market = market
         self.config = config
-        self.search_cache = search_cache
-        self.import_file = import_file
         
 
         self.specs = { 
@@ -208,7 +218,7 @@ class Controller():
 
         x = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
         B = np.array(sol['x'][(nx*(N+1)):(nx*(N+1) + 4*N)].reshape((4, N)))
-        u = np.array(self.model.get_u(N, U_nom, B[:2,:], B[2:4,:], spot_prices, market)).flatten()
+        u = np.array(self.model.get_u(N, U_nom, B[:2,:], B[2:4,:], spot_prices, market)).reshape(1,-1)
         eps   = float(sol['x'][-neps][0])
 
         
@@ -295,7 +305,7 @@ class Controller():
         # Extract solution
         f     = float(sol['f'])
         x     = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
-        u     = np.array(sol['x'][(nx*(N+1)):(nx*(N+1)+N*nu)].reshape((nu, N)))[0,:]
+        u     = np.array(sol['x'][(nx*(N+1)):(nx*(N+1)+N*nu)].reshape((nu, N)))[0,:].reshape(1,-1)
         eps   = float(sol['x'][-neps:][0])
 
         end_time     = time.time()
@@ -377,7 +387,7 @@ class Controller():
                                 x0          = X[:,k], 
                                 init_X      = target_X[:,start_iter:end_iter+1],
                                 past_X      = past_X,
-                                init_U      = target_U[iter_slice],
+                                init_U      = target_U[:,iter_slice],
                                 ref_weight  = target_weight[end_iter]
                 )
 
@@ -414,7 +424,7 @@ class Controller():
                 
                 u_tilde = 1000/self.model.C_conv_PPFD * (np.where(activation_down == 1, B_volumes_opt[1,:], 0)\
                                 - np.where(activation_up == 1, B_volumes_opt[0,:], 0))
-                u = (np.array(U_nom[iter_slice]).flatten() + u_tilde)[extract_solution_slice]
+                u = (np.array(U_nom[:,iter_slice]).flatten() + u_tilde)[extract_solution_slice]
                 U[:,store_data_slice] = u
                 
                 # Store bid data
@@ -442,7 +452,7 @@ class Controller():
         sol['f'] = self.model.bidding_obj_function(N, spot_prices, X, B[:2, :], B[2:4, :], U_nom, self.market)
         sol['elapsed_time'] = end_time - start_time
         
-        self.save_run(run_id, sol, np.array(X), np.array(U).flatten(), B=np.array(B), U_nom=np.array(U_nom).flatten(), refrun_id = target_run_id)
+        self.save_run(run_id, sol, np.array(X), np.array(U).reshape((1,-1)), B=np.array(B), U_nom=np.array(U_nom).reshape((1,-1)), refrun_id = target_run_id)
 
         if not self.surpress_output: print(f'{run_id} | Optimized mFRR bidding strategy using MPC')
         self.save_to_json()
@@ -508,7 +518,8 @@ class Controller():
 
         if 'B_prices' in opt_vars and 'U_nom' in opt_vars and 'U' not in opt_vars:
             B_prices, B_volumes, U_nom = [opt_vars[key] for key in ['B_prices', 'B_volumes', 'U_nom']]
-            U = ca.transpose(self.model.get_u(N_TH, U_nom=U_nom, B_volumes=B_volumes, B_prices=B_prices, spot_prices=spot_prices, market=self.market))
+
+            U = self.model.get_u(N_TH, U_nom=U_nom, B_volumes=B_volumes, B_prices=B_prices, spot_prices=spot_prices, market=self.market).reshape((1,-1))
             g_eq, g_ineq = self.model.get_bidding_constraints(g_eq, g_ineq, N_TH, U_nom, B_prices = B_prices, B_volumes = B_volumes)
 
         elif 'B' not in opt_vars and 'U_nom' not in opt_vars and 'U' in opt_vars:
@@ -636,14 +647,14 @@ class Controller():
         full_schedule = np.tile(day_schedule, int(np.ceil(N / len(day_schedule))))[:N]
 
 
-        u = full_schedule
+        u = full_schedule.reshape(1,-1)
 
         x0 = self.x_init
         X = np.zeros((self.model.nx, N+1))
         X[:,0] = x0.reshape(1,-1)
         for k in range(N):
             #Forward euler
-            X[:,k+1] = np.array(F(X[:,k], np.array([u[k]]))).reshape(1, -1)
+            X[:,k+1] = np.array(F(X[:,k], np.array([u[:,k]]))).reshape(1, -1)
 
         end_time = time.time()
         elapsed_time = end_time - start_time
@@ -651,7 +662,6 @@ class Controller():
         sol ={}
         sol['elapsed_time'] = elapsed_time
         sol['f'] = self.model.spotopt_obj_function(N, self.spot_prices, X, u)
-        sol['x'] = np.hstack((X.flatten(), u, 0))
         sol['eps'] = 0
         
         self.save_run(run_id, sol, X, u, refrun_id = 'None')
@@ -659,6 +669,10 @@ class Controller():
 
         if not self.surpress_output: print(f'{run_id} | Generated fixed light schedule: {hours_on}h/{hours_off}h at {RIGID_INTY} PPFD')
         return 0
+
+
+
+
 
     def save_run(self, run_id, sol, x, u, A = None, B = None, U_nom = None, refrun_id = 'None'):
 
@@ -690,29 +704,29 @@ class Controller():
             }
 
         if B is None:
-            costs = self.model.spotopt_obj_function(self.N, self.spot_prices, x, u)
+            costs = float(self.model.spotopt_obj_function(self.N, self.spot_prices, x, u))
             metrics_data['Costs'] = costs
             metrics_data['Earnings'] = 0
             metrics_data['Total'] = costs - 0
         else:
 
-            bid_volumes_up      = B[0,:]
-            bid_volumes_down    = B[1,:]
-            bid_prices_up       = B[2,:]
-            bid_prices_down     = B[3,:]
+            bid_volumes_up      = B[0,:].reshape(1,-1)
+            bid_volumes_down    = B[1,:].reshape(1,-1)
+            bid_prices_up       = B[2,:].reshape(1,-1)
+            bid_prices_down     = B[3,:].reshape(1,-1)
 
             if A is None:
-                prob_activations_up = np.array(self.market.activation_prob_up(self.spot_prices, bid_prices_up)).flatten()
-                prob_activations_down = np.array(self.market.activation_prob_down(self.spot_prices, bid_prices_down)).flatten()
-                bid_activations_up = prob_activations_up
-                bid_activations_down = prob_activations_down
+                prob_activations_up     = np.array(self.market.activation_prob_up(self.spot_prices, bid_prices_up)).reshape(1,-1)
+                prob_activations_down   = np.array(self.market.activation_prob_down(self.spot_prices, bid_prices_down)).reshape(1,-1)
+                bid_activations_up      = prob_activations_up
+                bid_activations_down    = prob_activations_down
             else:
-                bid_activations_up = A[0,:]
-                bid_activations_down = A[1,:]
+                bid_activations_up      = A[0,:].reshape(1,-1)
+                bid_activations_down    = A[1,:].reshape(1,-1)
                 timeseries_data['A_up'] = bid_activations_up
                 timeseries_data['A_dn'] = bid_activations_down
-                prob_activations_up     = np.array(self.market.activation_prob_up(self.spot_prices, bid_prices_up)).flatten()
-                prob_activations_down   = np.array(self.market.activation_prob_down(self.spot_prices, bid_prices_down)).flatten()
+                prob_activations_up     = np.array(self.market.activation_prob_up(self.spot_prices, bid_prices_up)).reshape(1,-1)
+                prob_activations_down   = np.array(self.market.activation_prob_down(self.spot_prices, bid_prices_down)).reshape(1,-1)
 
             timeseries_data['P_up'] = bid_volumes_up
             timeseries_data['P_dn'] = bid_volumes_down
@@ -728,9 +742,9 @@ class Controller():
             bidding_costs = self.model.spotopt_obj_function(self.N, self.spot_prices, x, u)
             bidding_total = bidding_costs - bidding_earnings
 
-            metrics_data['Costs']       = bidding_costs
-            metrics_data['Earnings']    = bidding_earnings
-            metrics_data['Total']       = bidding_total
+            metrics_data['Costs']       = float(bidding_costs)
+            metrics_data['Earnings']    = float(bidding_earnings)
+            metrics_data['Total']       = float(bidding_total)
 
             # b_a_up  = np.array(self.market.activation_prob_up(self.spot_prices, b_c_up))
             # b_a_dn  = np.array(self.market.activation_prob_dn(self.spot_prices,b_c_dn))
@@ -926,7 +940,7 @@ class Controller():
         for k in range(N):
             u_tilde = 1000*(bid_volumes_down[k]*activations_down[k]\
                              - bid_volumes_up[k]*activations_up[k])/self.model.C_conv_PPFD
-            U = np.append(U, U_nom[k] + u_tilde)
+            U = np.append(U, U_nom[:,k] + u_tilde)
 
         U = ca.vertcat(*U)
 
@@ -934,7 +948,7 @@ class Controller():
 
         L = 0
         for k in range(0, N): #from k = 2, to N-1. 
-            L += spot_prices[k] * self.model.C_conv_PPFD * U_nom[k] \
+            L += spot_prices[k] * self.model.C_conv_PPFD * U_nom[:,k] \
                   + (1000*spot_prices[k] - self.market.C_eur2nok * expected_prices_down[:,k]) * bid_volumes_down[k] * activations_down[k]\
                   - (1000*spot_prices[k] + self.market.C_eur2nok * expected_prices_up[:,k]) * bid_volumes_up[k] * activations_up[k]
 
@@ -983,7 +997,7 @@ class Controller():
         x = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
         B_volumes = np.array(sol['x'][(nx*(N+1)):(nx*(N+1) + 2*N)].reshape((2, N)))
         B = np.vstack((B_volumes, clearing_prices_up, clearing_prices_down))
-        u = np.array(self.model.get_u(N, U_nom.reshape(1,-1), B[:2,:], B[2:4,:], spot_prices, self.market)).flatten()
+        u = np.array(self.model.get_u(N, U_nom.reshape(1,-1), B[:2,:], B[2:4,:], spot_prices, self.market)).reshape((1,-1))
         eps   = float(sol['x'][-neps][0])
         A = np.vstack((activations_up, activations_down))
         
@@ -991,7 +1005,7 @@ class Controller():
         sol['elapsed_time'] = end_time - start_time
         sol['eps'] = eps
         
-        self.save_run(run_id, sol, x, u, B=B, U_nom=refrun['timeseries']['u'], refrun_id = refrun_id)
+        self.save_run(run_id, sol, x, u, B=B, U_nom=refrun['timeseries']['u'].reshape((1,-1)), refrun_id = refrun_id)
 
         if not self.surpress_output: print(f'{run_id} | Generated theoretically optimal bid plan')
         return 0
