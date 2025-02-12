@@ -9,9 +9,9 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 
-SIM_NAME            = "variable_demand_test_2"
+SIM_NAME            = "new_cache_1"
 SIMULATION_LENGTH   = 3
-FINAL_WEIGHT        = 4                   # 1 day
+FINAL_FRESHWEIGHT   = 4                   # 1 day
 # FINAL_WEIGHT      = 36.66             # 7 Days
 # FINAL_WEIGHT      = 136.7             # 20 Days 
 # FINAL_WEIGHT      = 2.05              # 20 Days [Directly from germination]
@@ -20,27 +20,27 @@ BIDDING_ZONE    = 'NO2'
 OPTIMISTIC      = 1
 SEARCH_CACHE    = 1
 
-MPC_TIMEHORIZON = 1
-MPC_STEPLENGTH = 0.5
+MPC_TIMEHORIZON = 0.25
+MPC_STEPLENGTH = 0.25
 
 def main():
 
-    # x_init = 0.031415 * np.array([5, 1])   # From germination [calibrated from 18d experiment]
-    x_init = np.array([5, 1])   # Specify init vector [structural and non structural dry weight in grams]
+    # x_init = 0.031415 * np.array([5, 1, 0])   # From germination [calibrated from 18d experiment]
+    X_INIT = np.array([5, 1, 0])   # Specify init vector [structural and non structural dry weight in grams]
 
     ''' CREATING OBJECTS '''
     settings = Settings('general', SIM_NAME = SIM_NAME, SIMULATION_LENGTH = SIMULATION_LENGTH)
-    settings.add_setting('controller', search_cache = SEARCH_CACHE)
-    settings.add_setting('controller', 'mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH)
+    settings.add_setting('controller', SEARCH_SIM_CACHE = SEARCH_CACHE)
+    settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH)
     settings.add_setting('market', OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE)
-
+    settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT)
 
     config          = Config(SIM_NAME, filetype="pdf", seed=1133)
-    plant           = PlantModel(x_init, FINAL_WEIGHT)
+    plant           = PlantModel(settings)
     market          = Market(settings, config)
     controller      = Controller(settings, plant, market, config)
     simulator       = Simulator(settings, plant, market, config, controller)
-    plotter         = Plotter(config, controller, simulator)
+    plotter         = Plotter(settings, config, controller, simulator)
 
     ''' OPTIMIZAION '''
     # market.optimal_bidding_price_prediction(controller.spot_prices)

@@ -53,7 +53,7 @@ class Market:
         self.config = config
         self.settings = settings
 
-        self.market_settings = settings.get_settings('general', 'market')
+        self.market_settings = settings.get_settings_group('general', 'market')
 
         self.T                  = self.market_settings['SIMULATION_LENGTH']
         self.bidding_zone       = self.market_settings['BIDDING_ZONE']

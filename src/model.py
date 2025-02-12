@@ -3,15 +3,16 @@ import casadi as ca
 from market import Market
 from bid import Bid
 from globals import *
+from settings import Settings
 
 class PlantModel:
 
     name = 'Lettuce shoot'
 
+    settings: Settings
+
     Final_fw_sht:   float       # Final plant shoot fresh weight requirement    [g]
     x_init:         np.array    # Initial dry weights per m^2                   [g/m^2]
-    x_sdw_init:     float       # Initial structural dry weight per m^2         [g/m^2]
-    x_nsdw_init:    float       # Initial non-structural dry weight per m^2     [g/m^2]
 
     specs: dict
 
@@ -20,17 +21,42 @@ class PlantModel:
     nu = 1          # Number of input variables
     neps = 3        # Number of slack variables
     
-    def __init__(self, x_init, Final_fw_sht):
-        self.Final_fw_sht = Final_fw_sht
-        self.x_init = np.zeros(self.nx)
-        self.x_init[:len(x_init)] = x_init
-        self.x_sdw_init = x_init[0]
-        self.x_nsdw_init = x_init[1]
+    def __init__(self, settings: Settings):
+
+        self.settings = settings
+        self.model_settings = settings.get_settings_group('plantmodel')
+
+        # Sim specs
+        self.Final_fw_sht   = self.model_settings['TARGET_FRESHWEIGHT'] # Target weight per plant
+        self.x_init         = self.model_settings['INIT_STATE']         # Initial dry weights per m^2
+        
+        # Growth constraints
+        self.PHOTOPERIOD    = self.model_settings['PHOTOPERIOD']        # Hours of light in a day
+        self.LIGHT_INTY     = self.model_settings['LIGHT_INTENSITY']    # Light intensity for the photoactive hours
+        self.IDEAL_DLI      = self.model_settings['TARGET_DLI']         # Target daily light integral. PHOTOPERIOD * LIGHT_INTY * SECONDS_PER_HOUR * 1e-6      
+        self.DLI_ERROR      = self.model_settings['DLI_DEVIATION']      # Max deviation from daily light integral
+        self.DLI_res        = self.model_settings['DLI_RESOLUTION']                                                # DLI enforcement rate. 4 = enforce over last 24h every 6h
+        
+        self.DLI_max = (1 + self.DLI_ERROR) * self.IDEAL_DLI            # Calculated from ideal PPFD and ideal photoperiod
+        self.DLI_min = (1 - self.DLI_ERROR) * self.IDEAL_DLI            # Only used for variable DLI schemes
+        
+        # Model specs
+        self.T_crop         = self.model_settings['AMBIENT_TEMP']       # Indoor ambient temperature [C]
+        self.co2_in         = self.model_settings['AMBIENT_CO2']        # CO2 consentration of indoor air [PPM]
+        self.A_crop         = self.model_settings['GROWTH_AREA']        # Total growth area [m^2]
+        self.PPFD_max       = self.model_settings['PPFD_MAX']           # Max lighting capacity (or max tolerated light level for the plants) [mol / m^2/s]
+        self.eta_light      = self.model_settings['LED_EFFICIENCY']     # LED efficiency coefficient
+
+        self.C_conv      = 0.217                                            # W / PPFD
+        self.C_conv_PPFD = self.C_conv*self.A_crop/(self.eta_light*1000)    # Conversion factor between PPFD and power. Expressed in kW
+        self.P_cap_max   = self.PPFD_max*self.C_conv_PPFD                   # Vertical farm power capacity [MW]
+
+
 
         self.specs = {
             'type'                  : self.name,
-            'x0'                    : x_init,
-            'Fresh weight goal'     : Final_fw_sht,
+            'x0'                    : self.x_init,
+            'Fresh weight goal'     : self.Final_fw_sht,
             'Ideal DLI'             : self.IDEAL_DLI,
             'Max DLI'               : self.DLI_max,
             'Min DLI'               : self.DLI_min,
@@ -38,30 +64,9 @@ class PlantModel:
             'Total growht area'     : self.A_crop,
             'Ambient temp'          : self.T_crop,
             'CO2 concentration'     : self.co2_in,
-            'Max PPFD'              : self.C_PPFD_max
+            'Max PPFD'              : self.PPFD_max
         } 
 
-
-    #Vertical farm specs
-    T_crop = 24     #Indoor ambient temperature [C]
-    co2_in = 1200   #CO2 consentration of indoor air [PPM]
-
-
-    A_crop = 15000                                  # Total growth area [m^2]
-    C_PPFD_max = 230                                # Max lighting capacity (or max tolerated light level for the plants) [mol / m^2/s]
-    C_conv = 0.217                                  # W / PPFD
-    eta_light = 0.8                                 # LED efficiency coefficient
-    C_conv_PPFD = C_conv*A_crop/(eta_light*1000)    # Conversion factor between PPFD and power. Expressed in kW
-    P_cap_max = C_PPFD_max*C_conv_PPFD              # Vertical farm power capacity [MW]
-
-
-    PHOTOPERIOD = 16    # Hours of light in a day
-    LIGHT_INTY  = 200   # Light intensity for the photoactive hours
-    IDEAL_DLI   = PHOTOPERIOD * LIGHT_INTY * SECONDS_PER_HOUR * 1e-6       # Equates to 11.52
-
-    DLI_max = 1.1 * IDEAL_DLI       # Calculated from ideal PPFD and ideal photoperiod
-    DLI_min = 0.9 * IDEAL_DLI       # Only used for variable DLI schemes
-    DLI_res = 2                     # DLI enforcement rate. 4 = enforce over last 24h every 6h (24/4)
 
     
     # state labels and units (for plotting)
@@ -85,7 +90,7 @@ class PlantModel:
     c_resp_sht = 3.47e-7    #Maintenance respiration coeff for the shoot
     c_resp_rt = 1.16e-7     #Maintenance respiration coeff for the  root
     c_e = 17e-6             #Light use effiiency at high CO2 concentrations
-    rho_c = 1.893e-3           #Density of co2
+    rho_c = 1.893e-3        #Density of co2
     c_car_1 = -1.32e-5      #\
     c_car_2 = 5.94e-4       # } Carboxylation resistance 2nd order approximation coefficients
     c_car_3 = -2.64e-3      #/
@@ -336,7 +341,7 @@ class PlantModel:
         # Upper and lower bounds on u
         for k in range(N):
             g_ineq.append(U[:,k])
-            g_ineq.append(self.C_PPFD_max - U[:,k])
+            g_ineq.append(self.PPFD_max - U[:,k])
 
         # DLI constraint
         for k in range(N+1):
@@ -376,7 +381,7 @@ class PlantModel:
         # Upper and lower bounds on X and U
         for k in range(N):
             g_ineq.append(U[k])
-            g_ineq.append(self.C_PPFD_max - U[:,k])
+            g_ineq.append(self.PPFD_max - U[:,k])
             g_ineq.append(X[:,k])
 
         return g_eq, g_ineq
@@ -435,7 +440,7 @@ class PlantModel:
         
         lb_B_volumes = ca.DM.zeros(2, N)
         ub_B_volumes = ca.vertcat(self.C_conv_PPFD * U_nom/1000,                           # Bid vol up
-                                  self.C_conv_PPFD * (self.C_PPFD_max - U_nom)/1000)       # Bid vol down                       # Bid price down. Arbitrary limit of 1000€ / MW 
+                                  self.C_conv_PPFD * (self.PPFD_max - U_nom)/1000)       # Bid vol down                       # Bid price down. Arbitrary limit of 1000€ / MW 
 
         return lb_B_volumes, ub_B_volumes, lb_B_prices, ub_B_prices
     
@@ -456,7 +461,7 @@ class PlantModel:
         N = controller.N
 
         lbu = np.zeros((self.nu, N))    # Lower bound for u (u >= 0)
-        ubu = self.C_PPFD_max * np.ones((self.nu, N))                     # Upper bound for u (u <= Max PPFD 250)
+        ubu = self.PPFD_max * np.ones((self.nu, N))                     # Upper bound for u (u <= Max PPFD 250)
 
         return lbu, ubu
     
@@ -674,8 +679,6 @@ class Photosynthesis:
 
     Final_fw_sht:   float       # Final plant shoot fresh weight requirement    [g]
     x_init:         np.array    # Initial dry weights per m^2                   [g/m^2]
-    x_sdw_init:     float       # Initial structural dry weight per m^2         [g/m^2]
-    x_nsdw_init:    float       # Initial non-structural dry weight per m^2     [g/m^2]
 
     specs: dict
 
@@ -728,8 +731,6 @@ class Photosynthesis:
         self.Final_fw_sht = Final_fw_sht
         self.x_init = np.zeros(self.nx)
         self.x_init[:len(x_init)] = x_init
-        self.x_sdw_init = x_init[0]
-        self.x_nsdw_init = x_init[1]
 
         self.specs = {
             'type'                  : self.name,
@@ -742,7 +743,7 @@ class Photosynthesis:
             'Total growht area'     : self.A_crop,
             'Ambient temp'          : self.temp,
             'CO2 concentration'     : self.co2,
-            'Max PPFD'              : self.C_PPFD_max
+            'Max PPFD'              : self.PPFD_max
         } 
 
 
@@ -820,11 +821,11 @@ class Photosynthesis:
     '''
 
     A_crop = 15000                                  # Total growth area [m^2]
-    C_PPFD_max = 250                                # Max lighting capacity (or max tolerated light level for the plants) [mol / m^2/s]
+    PPFD_max = 250                                # Max lighting capacity (or max tolerated light level for the plants) [mol / m^2/s]
     C_conv = 0.217                                  # W / PPFD
     eta_light = 0.8                                 # LED efficiency coefficient
     C_conv_PPFD = C_conv*A_crop/(eta_light*1000)    # Conversion factor between PPFD and power. Expressed in kW
-    P_cap_max = C_PPFD_max*C_conv_PPFD              # Vertical farm power capacity [MW]
+    P_cap_max = PPFD_max*C_conv_PPFD              # Vertical farm power capacity [MW]
 
 
     PHOTOPERIOD = 16    # Hours of light in a day
@@ -953,7 +954,7 @@ class Photosynthesis:
         # Upper and lower bounds on u
         for k in range(N):
             g_ineq.append(U[k])
-            g_ineq.append(self.C_PPFD_max - U[k])
+            g_ineq.append(self.PPFD_max - U[k])
 
 
         # DLI constraint
@@ -996,7 +997,7 @@ class Photosynthesis:
 
         lb_B = 0 * np.ones((4, N))
         ub_B = np.vstack((self.C_conv_PPFD * U_nom/1000,                        # Bid vol up
-                          self.C_conv_PPFD * (self.C_PPFD_max - U_nom)/1000,    # Bid vol down
+                          self.C_conv_PPFD * (self.PPFD_max - U_nom)/1000,    # Bid vol down
                           1000 * np.ones((1, N)),                               # Bid price up. Arbitrary limit of 1000€ / MW 
                           1000 * np.ones((1, N))))                              # Bid price down. Arbitrary limit of 1000€ / MW 
         
@@ -1020,7 +1021,7 @@ class Photosynthesis:
         N = controller.N
 
         lbu = np.zeros((self.nu, N))    # Lower bound for u (u >= 0)
-        ubu = self.C_PPFD_max * np.ones((self.nu, N))                     # Upper bound for u (u <= Max PPFD 250)
+        ubu = self.PPFD_max * np.ones((self.nu, N))                     # Upper bound for u (u <= Max PPFD 250)
 
         return lbu, ubu
     

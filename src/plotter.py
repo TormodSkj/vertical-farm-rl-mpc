@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 from config import Config
+from settings import Settings
 from controller import Controller
 from model import *
 from market import Market
@@ -14,6 +15,7 @@ from tqdm import tqdm
 
 class Plotter():
 
+    settings: Settings
     config: Config
     controller: Controller
     simulator: Simulator
@@ -26,12 +28,18 @@ class Plotter():
     plot_queue = []
     progressbar: tqdm
 
-    def __init__(self, config, controller, simulator=None):
+    def __init__(self, settings: Settings, config, controller=None, simulator=None):
+        self.settings = settings
         self.config = config
         self.controller = controller
         self.simulator = simulator
 
-        self.foldername = self.config.sim_name
+        self.plotter_settings = settings.get_settings_group('general', 'plotter')
+
+        self.foldername     = self.plotter_settings['SIM_NAME']
+        self.plot_file_type = self.plotter_settings['PLOT_EXPORT_TYPE']
+
+
 
 
 
@@ -42,12 +50,14 @@ class Plotter():
         directory = config.plot_path + foldername + "/"
         if run_id is not None: directory += run_id + '/'
 
-        plt.savefig(directory + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        plt.savefig(directory + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
         if fig is not None: 
             if pdf is not None: pdf.savefig(fig)
             plt.close(fig)
             self.progressbar.update(1)
+            # self.progressbar.set_description(f"Plotting {run_id} {filename}")  # Updates dynamically
+            self.progressbar.set_postfix(status=f"Plotting {run_id} {filename}")  # Adds a small status message
 
 
         
@@ -170,8 +180,8 @@ class Plotter():
 
             _, ub_B_volumes, _, _ = self.controller.model.get_bidding_bounds(controller.N, u_nom.reshape((1,-1)))
             linewidth = 0.8
-            plt.step(t, -np.array(ub_B_volumes[0,:]).flatten(), color='grey', label='Up-regulation volume limit', linewidth = linewidth)
-            plt.step(t, np.array(ub_B_volumes[1,:]).flatten(), color='grey', label='Down-regulation volume limit',  linewidth = linewidth)
+            plt.step(t, -np.array(ub_B_volumes[0,:]).flatten(), color='grey', label='Up-regulation volume limit', linewidth = linewidth, where = 'post')
+            plt.step(t, np.array(ub_B_volumes[1,:]).flatten(), color='grey', label='Down-regulation volume limit',  linewidth = linewidth, where = 'post')
             plt.fill_between(t, -filtered_bid_volumes_up, 0, color='blue', alpha=0.4, label='Up-regulation', step='post')
             plt.fill_between(t, 0, filtered_bid_volumes_down, color='red', alpha=0.4, label='down-regulation', step='post')
             plt.ylabel("Power (MW)")
@@ -180,7 +190,7 @@ class Plotter():
             plt.title(f"{run_id} volumes in MW ({controller.market.date}, {controller.market.bidding_zone})")
 
             # filename = f"{run_sanitized}_volume"
-            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
             self.save_plot(f"bid_volumes", run_id, fig, pdf)
 
             ######################################################
@@ -190,7 +200,7 @@ class Plotter():
 
             ax.fill_between(t, 0, filtered_bid_prices_up, label="Bidding Price Up", color="blue", step='post', alpha=0.4)
             ax.fill_between(t, 0, filtered_bid_prices_down, label="Bidding Price Down", color="red", step='post', alpha=0.4)
-            ax.step(t, spot_prices*1000/self.controller.market.C_eur2nok, label="Spot price", color="grey", linestyle="--", where='mid')
+            ax.step(t, spot_prices*1000/self.controller.market.C_eur2nok, label="Spot price", color="grey", linestyle="--", where='post')
             ax.set_ylabel("Bidding Price (€/MW)")
             ax.tick_params(axis='y')
             ax.legend(loc="upper left")
@@ -199,7 +209,7 @@ class Plotter():
             fig.tight_layout(rect=[0, 0.03, 1, 0.95]) 
 
             # filename = f"{run_sanitized}_prices"
-            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
             self.save_plot(f"bid_prices", run_id, fig, pdf)
 
             ######################################################
@@ -226,7 +236,7 @@ class Plotter():
             fig.suptitle(f"{run_id} Activation Chances ({controller.market.date}, {controller.market.bidding_zone}) \nBar heights indicate expected activation probabilities per bid. Activated bids are highlighted in dark.")
 
             # filename = f"{run_sanitized}_activations"
-            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
             self.save_plot(f"bid_activations", run_id, fig, pdf)
 
             ######################################################
@@ -260,7 +270,7 @@ class Plotter():
             fig.tight_layout(rect=[0, 0.03, 1, 0.95]) 
 
             # filename = f"{run_sanitized}_scatter_plots"
-            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
             self.save_plot(f"scatter_volumes_activations", run_id, fig, pdf)
 
             if is_realized:
@@ -301,7 +311,7 @@ class Plotter():
                 fig.suptitle(f"{run_id} activated prices and volumes. ({controller.market.date}, {controller.market.bidding_zone})")
 
                 # filename = f"{run_sanitized}_results_activated_volumes_prices"
-                # plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+                # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
                 self.save_plot("results_activated_volumes_prices", run_id, fig, pdf)
 
 
@@ -343,7 +353,7 @@ class Plotter():
                 fig.suptitle(f"{run_id} Expected vs recorded clearing prices. ({controller.market.date}, {controller.market.bidding_zone})\nExpectations made based on price covariances")
 
                 # filename = f"{run_sanitized}_expected_vs_recorded_clearing_prices"
-                # plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+                # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
                 self.save_plot("expected_vs_recorded_clearing_prices", run_id, fig, pdf)
 
                 ######################################################
@@ -391,7 +401,7 @@ class Plotter():
                 fig.tight_layout(rect=[0, 0.03, 1, 0.95]) 
 
                 # filename = f"{run_sanitized}_expected_vs_true_probabilities"
-                # plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+                # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
                 self.save_plot("expected_vs_true_probabilities", run_id, fig, pdf)
 
                 plt.close('all')
@@ -449,7 +459,7 @@ class Plotter():
                 fig.suptitle(f"Distributions of clearing prices, normalized ({market.bidding_zone}, {market.date})")
                 
                 # filename = f"{run_sanitized}_clearing_prices_distributions_{market.bidding_zone}"
-                # plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+                # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
                 self.save_plot(f"clearing_prices_distributions_{market.bidding_zone}", run_id, fig, pdf)
 
 
@@ -490,7 +500,7 @@ class Plotter():
                 fig.suptitle(f"Distribution of bidding prices relative to clearing prices ({market.bidding_zone}, {market.date}) \nCalculated as bidding price - clearing price")
                 
                 # filename = f"{run_sanitized}_relative_clearing_prices_{market.bidding_zone}"
-                # plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+                # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
                 self.save_plot(f"relative_clearing_prices{market.bidding_zone}", run_id, fig, pdf)
 
 
@@ -500,13 +510,13 @@ class Plotter():
             #                   SPOT PRICES
 
             fig = plt.figure(figsize=config.plot_format)
-            plt.step(t, self.controller.market.get_spotprice(), label="Spot price")
+            plt.step(t, self.controller.market.get_spotprice(), label="Spot price", where='post')
             plt.ylabel("Spot price (kr/kWh)")
             plt.xlabel("Time (days)")
             plt.legend()
 
             # filename = "spot_price"
-            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
             self.save_plot(f"spot_price_{self.controller.market.bidding_zone}", run_id, fig, pdf)
             plt.close('all')
@@ -581,12 +591,12 @@ class Plotter():
             ax = axes[i]
             u = runs[run]['timeseries']['u'].flatten()
             t = runs[run]['timeseries']['t'].flatten()
-            ax.step(t, u, label=f"{run}") 
+            ax.step(t, u, label=f"{run}", where='post') 
             ax.set_ylabel(self.controller.model.u_unit, rotation=0)
             ax.legend(loc="upper right")
 
         ax = axes[-1]
-        ax.step(t, spot_prices, label=f"Spot price", color='gray') 
+        ax.step(t, spot_prices, label=f"Spot price", color='gray', where='post') 
         ax.set_ylabel("NOK/kWh", rotation=0)
         ax.set_xlabel("Time (days)")
         ax.legend(loc="upper right")
@@ -680,7 +690,7 @@ class Plotter():
         plt.title(f'Simulated {m} different cases of plausible activations')
 
         filename = "random_activations"
-        plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
 
@@ -749,7 +759,7 @@ class Plotter():
 
 
         filename = f"smoothed_prices_{market.bidding_zone}"
-        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
 
@@ -768,7 +778,7 @@ class Plotter():
         plt.legend()
 
         filename = f"relative_prices_{market.bidding_zone}"
-        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
         ###############################################################
@@ -795,7 +805,7 @@ class Plotter():
         plt.legend()
 
         filename = f"histogram_mfrr_clearing_prices_{market.bidding_zone}"
-        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
 
@@ -824,7 +834,7 @@ class Plotter():
         fig.suptitle(f"Spot prices with mFRR clearing prices €/MW ({market.bidding_zone}, {market.date})")
 
         filename = f"scatter_spot_clearing_prices_{market.bidding_zone}"
-        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
         plt.close('all')
 
@@ -850,7 +860,7 @@ class Plotter():
         plt.suptitle(f'Relative clearing prices, normalized ({market.bidding_zone}, {market.date})')
 
         filename = f"histogram_relative_clearing_prices_{market.bidding_zone}"
-        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
    
@@ -890,7 +900,7 @@ class Plotter():
         plt.tight_layout()
 
         filename = f"{market.bidding_zone}_mFRR_monthly_activation_frequencies"
-        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
         ######################################################
@@ -938,7 +948,7 @@ class Plotter():
         plt.tight_layout()
 
         filename = f"{market.bidding_zone}_mFRR_daily_activation_frequencies"
-        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
 
@@ -989,7 +999,7 @@ class Plotter():
         plt.tight_layout()
 
         filename = f"mFRR_activation_volumes_{market.bidding_zone}"
-        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
         ######################################################
@@ -1025,7 +1035,7 @@ class Plotter():
         plt.tight_layout()
 
         filename = f"mFRR_market_potency_{market.bidding_zone}"
-        plt.savefig(config.data_analysis_path + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
 
@@ -1075,7 +1085,7 @@ class Plotter():
 
         
         filename = "Combined_ocp_x"
-        plt.savefig(config.plot_path + foldername + "/MPC_" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        plt.savefig(config.plot_path + foldername + "/MPC_" + filename + "." + self.plot_file_type, format=self.plot_file_type)
         ##################################################
 
 
@@ -1090,7 +1100,7 @@ class Plotter():
 
 
         filename = "Combined_ocp_u"
-        plt.savefig(config.plot_path + foldername + "/MPC_" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        plt.savefig(config.plot_path + foldername + "/MPC_" + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
 
@@ -1170,7 +1180,7 @@ class Plotter():
 
             # Save the plot
             filename = "predicted_vs_actual_bidding_prices"
-            plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+            plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
 
@@ -1201,7 +1211,7 @@ class Plotter():
 
             # Save the plot
             filename = "predicted_vs_actual_activation_chances"
-            plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+            plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
     def plot_financial_report(self):
@@ -1257,7 +1267,7 @@ class Plotter():
         plt.tight_layout()
 
         filename = f"_financial_report_{market.date.replace('-','_')}_{market.bidding_zone}"
-        plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
         plt.close('all')
 
@@ -1299,7 +1309,7 @@ class Plotter():
         plt.tight_layout()
 
         filename = f"_specs_{market.date.replace('-','_')}_{market.bidding_zone}"
-        plt.savefig(config.plot_path + foldername + "/" + filename + "." + config.plot_file_type, format=config.plot_file_type)
+        plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
         plt.close('all')
 

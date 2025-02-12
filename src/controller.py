@@ -59,24 +59,27 @@ class Controller():
         warm_start = False, calculate_fw = False):
         '''
         self.settings = settings
-        self.controller_settings = settings.get_settings('general', 'controller')
+        self.controller_settings = settings.get_settings_group('general', 'controller', 'market', 'plantmodel')
 
         self.surpress_output    = self.controller_settings['SURPRESS_OUTPUT']
         self.warm_start         = self.controller_settings['WARM_START']
         self.calculate_fw       = self.controller_settings['CALCULATE_FW']
         self.T                  = self.controller_settings['SIMULATION_LENGTH'] 
-        self.mpc_T_horizon      = self.controller_settings['MPC_TIMEHORIZON']
-        self.search_cache       = self.controller_settings['SEARCH_CACHE']
+        self.N                  = self.controller_settings['SIM_N_TIMESTEPS'] 
+        self.dt                 = self.controller_settings['SIM_TIMEDELTA'] 
+
+        self.search_cache       = self.controller_settings['SEARCH_SIM_CACHE']
         self.import_file        = self.controller_settings['IMPORT_FILE']
 
-        mpc_steplength          = self.controller_settings['MPC_STEPLENGTH']
+        self.mpc_settings       = self.settings.get_settings_group('mpc')
+        self.mpc_T_horizon      = self.mpc_settings['MPC_TIMEHORIZON']
+        mpc_steplength          = self.mpc_settings['MPC_STEPLENGTH']
 
-
-        self.dt = SECONDS_PER_QUARTER_HOUR   
-        self.N = int(np.ceil(self.T * QUARTER_HOURS_PER_DAY))
         self.mpc_N_horizon = int(np.ceil(self.mpc_T_horizon * QUARTER_HOURS_PER_DAY))
         self.mpc_T_step = max(mpc_steplength, self.dt/(SECONDS_PER_QUARTER_HOUR * QUARTER_HOURS_PER_DAY))
         self.mpc_N_step = int(np.ceil(self.mpc_T_step * QUARTER_HOURS_PER_DAY))
+        assert self.mpc_N_horizon >= self.mpc_N_step, f'MPC horizon ({self.mpc_N_horizon}) must be equal to or longer than the steplength ({self.mpc_N_step}).'
+
         self.model = plantmodel
         self.market = market
         self.config = config
@@ -132,11 +135,12 @@ class Controller():
 
 
     def optimize_mfrr(self, run_id, refrun_id = 'fixed'):
-        
-        # 
+
         start_time = time.time()
 
-        if not self.load_from_json(run_id): 
+        dependencies = ('general', 'controller', 'plantmodel', 'market')
+
+        if not self.load_from_json(run_id, dependencies): 
             # Identical run located. Using its solution instead
             return 0
         
@@ -226,7 +230,7 @@ class Controller():
         sol['elapsed_time'] = end_time - start_time
         sol['eps'] = eps
         
-        self.save_run(run_id, sol, x, u, B=B, U_nom=refrun['timeseries']['u'], refrun_id = refrun_id)
+        self.store_run(run_id, dependencies, sol, x, u, B=B, U_nom=refrun['timeseries']['u'], refrun_id = refrun_id)
 
         if not self.surpress_output: print(f'{run_id} | Optimized mFRR bidding strategy')
         
@@ -240,7 +244,9 @@ class Controller():
         '''
         start_time = time.time()
 
-        if not self.load_from_json(run_id): 
+        dependencies = ('general', 'controller', 'plantmodel', 'market')
+
+        if not self.load_from_json(run_id, dependencies): 
             # Identical run located. Using its solution instead
             return 0
         
@@ -314,7 +320,7 @@ class Controller():
         sol['elapsed_time'] = elapsed_time
         sol['eps'] = eps
 
-        self.save_run(run_id, sol, x, u, refrun_id = refrun_id)
+        self.store_run(run_id, dependencies, sol, x, u, refrun_id = refrun_id)
 
         if not self.surpress_output: print(f'{run_id} | Optimized light schedule for spot price')
         
@@ -324,10 +330,12 @@ class Controller():
 
 
     def optimize_mfrr_mpc(self, run_id, target_run_id = 'fixed'):
-        
-        start_time = time.time()
 
-        if not self.load_from_json(run_id): 
+        start_time = time.time()
+        
+        dependencies = ('general', 'controller', 'mpc', 'plantmodel', 'market')
+
+        if not self.load_from_json(run_id, dependencies): 
             # Identical run located. Using its solution instead
             return 0
 
@@ -452,7 +460,7 @@ class Controller():
         sol['f'] = self.model.bidding_obj_function(N, spot_prices, X, B[:2, :], B[2:4, :], U_nom, self.market)
         sol['elapsed_time'] = end_time - start_time
         
-        self.save_run(run_id, sol, np.array(X), np.array(U).reshape((1,-1)), B=np.array(B), U_nom=np.array(U_nom).reshape((1,-1)), refrun_id = target_run_id)
+        self.store_run(run_id, dependencies, sol, np.array(X), np.array(U).reshape((1,-1)), B=np.array(B), U_nom=np.array(U_nom).reshape((1,-1)), refrun_id = target_run_id)
 
         if not self.surpress_output: print(f'{run_id} | Optimized mFRR bidding strategy using MPC')
         self.save_to_json()
@@ -628,7 +636,6 @@ class Controller():
         '''
         Genertating a basic on-off schedule. Default is 16h at 200 PPFD, and 8h at 0 PPFD
         '''
-
         start_time = time.time()
 
         N = self.N
@@ -649,9 +656,9 @@ class Controller():
 
         u = full_schedule.reshape(1,-1)
 
-        x0 = self.x_init
-        X = np.zeros((self.model.nx, N+1))
-        X[:,0] = x0.reshape(1,-1)
+        X       = np.zeros((self.model.nx, N+1))
+        X[:,0]  = self.x_init.flatten()
+
         for k in range(N):
             #Forward euler
             X[:,k+1] = np.array(F(X[:,k], np.array([u[:,k]]))).reshape(1, -1)
@@ -664,7 +671,9 @@ class Controller():
         sol['f'] = self.model.spotopt_obj_function(N, self.spot_prices, X, u)
         sol['eps'] = 0
         
-        self.save_run(run_id, sol, X, u, refrun_id = 'None')
+        
+        dependencies = ('general', 'controller', 'plantmodel', 'market')
+        self.store_run(run_id, dependencies, sol, X, u, refrun_id = 'None')
         if self.calculate_fw: self.model.Final_fw_sht = float(self.model.freshweight(X[:,-1]))
 
         if not self.surpress_output: print(f'{run_id} | Generated fixed light schedule: {hours_on}h/{hours_off}h at {RIGID_INTY} PPFD')
@@ -674,7 +683,7 @@ class Controller():
 
 
 
-    def save_run(self, run_id, sol, x, u, A = None, B = None, U_nom = None, refrun_id = 'None'):
+    def store_run(self, run_id, dependencies, sol, x, u, A = None, B = None, U_nom = None, refrun_id = 'None'):
 
         timeseries_data = {
             't'     : self.t,
@@ -782,7 +791,9 @@ class Controller():
 
             run_data['bidding result'] = bidding_data       
 
-        run_data['timeseries'] = timeseries_data
+        run_data['timeseries']      = timeseries_data
+        run_data['dependencies']    = list(dependencies)
+        run_data['hash']            = generate_hash(self.settings.get_settings_group(*dependencies))
 
         # Storing runs in dictionaries
         self.optimization_results['runs'][run_id] = run_data 
@@ -805,22 +816,23 @@ class Controller():
 
         # Convert the entire runs dictionary
         runs_dict = convert_np_arrays_to_lists(self.optimization_results)
-        runs_dict['hash'] = self.hash
 
         # Save the data for all runs
         with open(sim_save_path, "w") as json_file:
             json.dump(runs_dict, json_file, indent=4)
 
 
-    def load_from_json(self, run_id):
+    def load_from_json(self, run_id, dependencies):
         """
         Load completed runs from saved JSON files and populate `completed_runs`.
+        Compares the settings_profile used previously in order to determine if old result is still valid
+
         Returns 0 if match is made.
         Returns 1 if match is not made
         """
         if not self.search_cache: return 1
 
-        hash = generate_hash(self.optimization_results['specs'])
+        hash = generate_hash(self.settings.get_settings_group(*dependencies))
 
         for file_name in os.listdir(self.config.sim_path):
             if not file_name.endswith(".json"): continue
@@ -829,8 +841,15 @@ class Controller():
             with open(file_path, "r") as json_file:
                 loaded_data = json.load(json_file)
             
+            if run_id not in loaded_data.get('runs'):
+                continue
+            elif 'dependencies' not in loaded_data.get('runs')[run_id]:
+                continue
+            elif 'hash' not in loaded_data.get('runs')[run_id]:
+                continue
+
             # Extract the hash from the JSON content
-            specs_hash = loaded_data.get('hash')
+            specs_hash = loaded_data.get('runs')[run_id]['hash']
             
             if specs_hash is None or not specs_hash == hash:
                 continue
@@ -838,9 +857,6 @@ class Controller():
             # Store the run data keyed by the extracted hash
             conv_loaded_data = convert_lists_to_np_arrays(loaded_data)
 
-            if run_id not in conv_loaded_data['runs']:
-                continue
-            
             self.optimization_results['runs'][run_id] = conv_loaded_data['runs'][run_id]
             # if run_name == 'Bidding': self.runs['bidding result'] = conv_loaded_data['bidding result']
 
@@ -866,7 +882,7 @@ class Controller():
 
         # Transform from hourly to quarter hourly basis
         # Scale from percentage based schedule to light intensity
-        u_base = self.model.C_PPFD_max/100*np.repeat(light_schedule, 4)     
+        u_base = self.model.PPFD_max/100*np.repeat(light_schedule, 4)     
 
         assert len(u_base) >= self.N, f"{sim_id} | Imported light schedule too short. Len: {len(u_base)}, N: {N}"
 
@@ -889,7 +905,8 @@ class Controller():
         sol['x'] = np.hstack((x.flatten(), u, 0))
         sol['eps'] = 0
         
-        self.save_run('Imported', sol, x, u)
+        dependencies = ('general', 'controller', 'plantmodel', 'market')
+        self.store_run('Imported', dependencies, sol, x, u)
 
         if not self.surpress_output: print(f'{sim_id} | Successfully imported light schedule')
         return 0
@@ -899,7 +916,8 @@ class Controller():
 
         start_time = time.time()
 
-        if not self.load_from_json(run_id): 
+        dependencies = ('general', 'controller', 'plantmodel', 'market')
+        if not self.load_from_json(run_id, dependencies): 
             # Identical run located. Using its solution instead
             return 0
         
@@ -970,7 +988,7 @@ class Controller():
         lbx, ubx = self.model.get_state_bounds(self)
         lb_B = np.zeros((2, N))
         ub_B = np.vstack((self.model.C_conv_PPFD * U_nom/1000,                        # Bid vol up
-                          self.model.C_conv_PPFD * (self.model.C_PPFD_max - U_nom)/1000))    # Bid vol down
+                          self.model.C_conv_PPFD * (self.model.PPFD_max - U_nom)/1000))    # Bid vol down
         lb_eps, ub_eps = np.zeros((neps,1)), np.inf * np.ones((neps,1))
 
         # Flatten decision variables and bounds
@@ -1005,7 +1023,7 @@ class Controller():
         sol['elapsed_time'] = end_time - start_time
         sol['eps'] = eps
         
-        self.save_run(run_id, sol, x, u, B=B, U_nom=refrun['timeseries']['u'].reshape((1,-1)), refrun_id = refrun_id)
+        self.store_run(run_id, dependencies, sol, x, u, B=B, U_nom=refrun['timeseries']['u'].reshape((1,-1)), refrun_id = refrun_id)
 
         if not self.surpress_output: print(f'{run_id} | Generated theoretically optimal bid plan')
         return 0
@@ -1017,7 +1035,7 @@ class Controller():
 
         u = self.optimization_results['runs'][run_id]['timeseries']['u']
 
-        u_scaled = 100 * u / self.model.C_PPFD_max
+        u_scaled = 100 * u / self.model.PPFD_max
 
         intensity_schedule_dict = {'Light intensity': u_scaled}
         # Filepath

@@ -30,18 +30,18 @@ class Simulator():
     def __init__(self, settings: Settings, plantmodel: PlantModel, market: Market, config: Config, controller: Controller):
         
         self.settings = settings
-        self.sim_settings = settings.get_settings('general', 'simulator')
+        self.sim_settings = settings.get_settings_group('general')
         
         self.T          = self.sim_settings['SIMULATION_LENGTH']
+        self.N          = self.sim_settings['SIM_N_TIMESTEPS']
+        self.dt         = self.sim_settings['SIM_TIMEDELTA']
         
         self.model      = plantmodel  
         self.market     = market
         self.config     = config
         self.controller = controller
 
-        self.dt         = self.controller.dt
         self.t          = np.linspace(0, self.T, self.N)
-        self.N          = self.T * QUARTER_HOURS_PER_DAY
         self.bids_mpc = np.zeros((4, self.N))
         
 
@@ -145,7 +145,7 @@ class Simulator():
         A = np.vstack((activation_up, activation_down))
 
         u = U_nom + 1000*(np.where(activation_down == 1, bidding_vol_down, 0)\
-                        - np.where(activation_up == 1, bidding_vol_up, 0))/controller.model.C_conv_PPFD
+                        - np.where(activation_up   == 1, bidding_vol_up,   0))/controller.model.C_conv_PPFD
 
         X = np.zeros((controller.model.nx, N+1))
         X[:,0] = controller.model.x_init.flatten()
@@ -156,7 +156,7 @@ class Simulator():
 
         f = 0.25*(self.model.C_conv_PPFD * np.sum(np.multiply(spot_prices,U_nom)) \
             + np.sum(np.where(activation_down == 1, np.multiply((1000*spot_prices - controller.market.C_eur2nok * clearing_prices_down),  bidding_vol_down), 0)) \
-            - np.sum(np.where(activation_up == 1,   np.multiply((1000*spot_prices + controller.market.C_eur2nok * clearing_prices_up),    bidding_vol_up), 0)))
+            - np.sum(np.where(activation_up   == 1, np.multiply((1000*spot_prices + controller.market.C_eur2nok * clearing_prices_up),    bidding_vol_up), 0)))
 
 
         Eps = max(0, controller.model.Final_fw_sht - self.model.freshweight(X[:,-1]))
@@ -166,7 +166,9 @@ class Simulator():
         sol['f'] = f
         sol['elapsed_time'] = time.time() - start_time
     
-        controller.save_run(run_id, sol, X, u.reshape(1,-1), A, B, U_nom.reshape(1,-1), refrun_id=refrun_id)
+        dependencies = ()
+        refrun_dependencies = tuple(controller.optimization_results['runs'][refrun_id]['dependencies'])
+        controller.store_run(run_id, refrun_dependencies + dependencies, sol, X, u.reshape(1,-1), A, B, U_nom.reshape(1,-1), refrun_id=refrun_id)
         
         return 0
 

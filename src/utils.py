@@ -712,8 +712,8 @@ def calculate_freshweight_interval_old(controller, u_bid, b_p_up, b_p_dn, b_c_up
     u_sd = np.sqrt(u_var)       # Get standard deviation from variance
 
     # upper and lower bounds on u defining the interval
-    u_ub = np.maximum(np.minimum(u_bid + u_sd, model.C_PPFD_max), 0)
-    u_lb = np.maximum(np.minimum(u_bid - u_sd, model.C_PPFD_max), 0)
+    u_ub = np.maximum(np.minimum(u_bid + u_sd, model.PPFD_max), 0)
+    u_lb = np.maximum(np.minimum(u_bid - u_sd, model.PPFD_max), 0)
 
     X_ub = np.zeros((model.nx, N+1))
     X_lb = np.zeros((model.nx, N+1))
@@ -743,8 +743,8 @@ def calculate_freshweight_interval(controller, u_bid, b_p_up, b_p_dn, b_c_up, b_
     u_sd = np.sqrt(u_var)       # Get standard deviation from variance
 
     # upper and lower bounds on u defining the interval
-    u_ub = np.maximum(np.minimum(u_bid + u_sd, model.C_PPFD_max), 0)
-    u_lb = np.maximum(np.minimum(u_bid - u_sd, model.C_PPFD_max), 0)
+    u_ub = np.maximum(np.minimum(u_bid + u_sd, model.PPFD_max), 0)
+    u_lb = np.maximum(np.minimum(u_bid - u_sd, model.PPFD_max), 0)
 
     X_ub = np.zeros((model.nx, N+1))
     X_lb = np.zeros((model.nx, N+1))
@@ -860,7 +860,7 @@ def vertigrow_calculate_energy_consumption(controller):
         total_cost = 0
         for k in range(controller.N):
             
-            current_energy = inty_to_power[np.round((u[k]/controller.model.C_PPFD_max * 100)/10)*10]/4
+            current_energy = inty_to_power[np.round((u[k]/controller.model.PPFD_max * 100)/10)*10]/4
 
             total_energy += current_energy
             total_cost += controller.spot_prices[k] * current_energy
