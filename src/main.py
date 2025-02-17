@@ -9,8 +9,8 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 
-SIM_NAME            = "plot_log_source"
-SIMULATION_LENGTH   = 3
+SIM_NAME            = "mpc_test_1"
+SIMULATION_LENGTH   = 20
 FINAL_FRESHWEIGHT   = 4                   # 1 day
 # FINAL_WEIGHT      = 36.66             # 7 Days
 # FINAL_WEIGHT      = 136.7             # 20 Days 
@@ -20,7 +20,7 @@ BIDDING_ZONE    = 'NO2'
 OPTIMISTIC      = 1
 SEARCH_CACHE    = 1
 
-MPC_TIMEHORIZON = 0.25
+MPC_TIMEHORIZON = 1
 MPC_STEPLENGTH = 0.25
 
 def main():

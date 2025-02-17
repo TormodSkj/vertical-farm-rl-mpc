@@ -21,10 +21,6 @@ class Settings():
                          SIM_TIMEDELTA      = SECONDS_PER_QUARTER_HOUR,
                          SEED               = 1133                 # Seed used for random generation
                          )
-        
-        self.add_setting('general',
-                         SIM_N_TIMESTEPS        = int(np.ceil(self.get_setting('SIMULATION_LENGTH') * self.get_setting('SIM_RESOLUTION')))
-                         )
 
 
         # Market settings
@@ -97,7 +93,16 @@ class Settings():
                          )
 
 
-        return  self.add_setting(*groups, **kwargs)
+        # Add settings from init args
+        self.add_setting(*groups, **kwargs)
+    
+        # Update settings based on updates to settings
+        self.add_setting('general',
+                         SIM_N_TIMESTEPS        = int(np.ceil(self.get_setting('SIMULATION_LENGTH') * self.get_setting('SIM_RESOLUTION')))
+                         )
+        
+        return
+
 
 
 
