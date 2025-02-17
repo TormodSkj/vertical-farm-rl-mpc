@@ -70,8 +70,10 @@ class Settings():
 
         # Plotter settings
         self.add_setting('plotter', 
-                         PLOT_EXPORT_TYPE   = 'pdf',
-                         SEARCH_PLOT_CACHE  = True
+                         PLOT_EXPORT_TYPE       = 'pdf',
+                         SEARCH_PLOT_CACHE      = True,
+                         ACTIVATION_THRESHOLD   = 0.01,
+                         VOLUME_THRESHOLD       = 0.001
                          )
 
 

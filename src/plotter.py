@@ -38,6 +38,8 @@ class Plotter():
 
         self.foldername     = self.plotter_settings['SIM_NAME']
         self.plot_file_type = self.plotter_settings['PLOT_EXPORT_TYPE']
+        self.activation_th  = self.plotter_settings['ACTIVATION_THRESHOLD']
+        self.volume_th      = self.plotter_settings['VOLUME_THRESHOLD']
 
 
 
@@ -94,6 +96,8 @@ class Plotter():
             self.add_plot(self.plot_report, run_group = run_group)
         
         self.plot()
+
+        # Save plot cache in file system
 
         print(f'Optimization plots saved to {self.config.plot_folder}')
 
@@ -152,12 +156,10 @@ class Plotter():
             prob_activation_down    = np.array(self.controller.market.activation_prob_down(spot_prices, bid_prices_down)).flatten()
             
             # Filter out the unreasonably low bid activations
-            activation_threshold   = 0.01
-            volume_threshold       = 0.001
-            filtered_bid_prices_up      = np.where(np.logical_and(prob_activation_up   > activation_threshold, bid_volumes_up   > volume_threshold), bid_prices_up,     0).flatten()
-            filtered_bid_prices_down    = np.where(np.logical_and(prob_activation_down > activation_threshold, bid_volumes_down > volume_threshold), bid_prices_down,   0).flatten()
-            filtered_bid_volumes_up     = np.where(np.logical_and(prob_activation_up   > activation_threshold, bid_volumes_up   > volume_threshold), bid_volumes_up,    0).flatten()
-            filtered_bid_volumes_down   = np.where(np.logical_and(prob_activation_down > activation_threshold, bid_volumes_down > volume_threshold), bid_volumes_down,  0).flatten()
+            filtered_bid_prices_up      = np.where(np.logical_and(prob_activation_up   > self.activation_th, bid_volumes_up   > self.volume_th), bid_prices_up,     0).flatten()
+            filtered_bid_prices_down    = np.where(np.logical_and(prob_activation_down > self.activation_th, bid_volumes_down > self.volume_th), bid_prices_down,   0).flatten()
+            filtered_bid_volumes_up     = np.where(np.logical_and(prob_activation_up   > self.activation_th, bid_volumes_up   > self.volume_th), bid_volumes_up,    0).flatten()
+            filtered_bid_volumes_down   = np.where(np.logical_and(prob_activation_down > self.activation_th, bid_volumes_down > self.volume_th), bid_volumes_down,  0).flatten()
 
 
 
@@ -276,10 +278,10 @@ class Plotter():
             if is_realized:
                 
                 # Filter out non-activated bids
-                bid_prices_up_activated = np.where(np.logical_and(bid_activation_up > activation_threshold, bid_volumes_up > volume_threshold,), bid_prices_up, 0)
-                bid_prices_dn_activated = np.where(np.logical_and(bid_activation_down > activation_threshold, bid_volumes_down > volume_threshold,), bid_prices_down, 0)
-                bid_volumes_up_activated = np.where(np.logical_and(bid_activation_up > activation_threshold, bid_volumes_up > volume_threshold,), bid_volumes_up, 0)
-                bid_volumes_dn_activated = np.where(np.logical_and(bid_activation_down > activation_threshold, bid_volumes_down > volume_threshold,), bid_volumes_down, 0)
+                bid_prices_up_activated     = np.where(np.logical_and(bid_activation_up     > self.activation_th, bid_volumes_up    > self.volume_th,), bid_prices_up,    0)
+                bid_prices_dn_activated     = np.where(np.logical_and(bid_activation_down   > self.activation_th, bid_volumes_down  > self.volume_th,), bid_prices_down,  0)
+                bid_volumes_up_activated    = np.where(np.logical_and(bid_activation_up     > self.activation_th, bid_volumes_up    > self.volume_th,), bid_volumes_up,   0)
+                bid_volumes_dn_activated    = np.where(np.logical_and(bid_activation_down   > self.activation_th, bid_volumes_down  > self.volume_th,), bid_volumes_down, 0)
                 
                 
                 ######################################################
@@ -477,11 +479,11 @@ class Plotter():
                 demands_up, demands_dn = market.get_activation_demands()
                 relative_prices_up = bid_prices_up - clearing_prices_up
                 relative_prices_dn = bid_prices_down - clearing_prices_down
-                demand_relative_prices_up = relative_prices_up[np.where(np.logical_and(np.logical_and(demands_up == 1, prob_activation_up > activation_threshold), bid_volumes_up > volume_threshold))]
-                demand_relative_prices_dn = relative_prices_dn[np.where(np.logical_and(np.logical_and(demands_dn == 1, prob_activation_down > activation_threshold), bid_volumes_down > volume_threshold))]
+                demand_relative_prices_up = relative_prices_up[np.where(np.logical_and(np.logical_and(demands_up == 1, prob_activation_up > self.activation_th), bid_volumes_up > self.volume_th))]
+                demand_relative_prices_dn = relative_prices_dn[np.where(np.logical_and(np.logical_and(demands_dn == 1, prob_activation_down > self.activation_th), bid_volumes_down > self.volume_th))]
 
-                relative_prices_up = relative_prices_up[np.where(np.logical_and(prob_activation_up > activation_threshold, bid_volumes_up > volume_threshold))]
-                relative_prices_dn = relative_prices_dn[np.where(np.logical_and(prob_activation_down > activation_threshold, bid_volumes_down > volume_threshold))]
+                relative_prices_up = relative_prices_up[np.where(np.logical_and(prob_activation_up > self.activation_th, bid_volumes_up > self.volume_th))]
+                relative_prices_dn = relative_prices_dn[np.where(np.logical_and(prob_activation_down > self.activation_th, bid_volumes_down > self.volume_th))]
 
                 ax1.hist(relative_prices_up, color=self.color_up,  alpha=0.8, bins=n_bins, density=True)
                 ax2.hist(relative_prices_dn, color=self.color_dn,  alpha=0.8, bins=n_bins, density=True)
