@@ -9,7 +9,7 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 
-SIM_NAME            = "new_cache_1"
+SIM_NAME            = "plot_log_source"
 SIMULATION_LENGTH   = 3
 FINAL_FRESHWEIGHT   = 4                   # 1 day
 # FINAL_WEIGHT      = 36.66             # 7 Days
@@ -29,13 +29,14 @@ def main():
     X_INIT = np.array([5, 1, 0])   # Specify init vector [structural and non structural dry weight in grams]
 
     ''' CREATING OBJECTS '''
-    settings = Settings('general', SIM_NAME = SIM_NAME, SIMULATION_LENGTH = SIMULATION_LENGTH)
+    settings = Settings('general', SIMULATION_LENGTH = SIMULATION_LENGTH)
+    settings.update_setting(SIM_NAME = SIM_NAME)
     settings.add_setting('controller', SEARCH_SIM_CACHE = SEARCH_CACHE)
     settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH)
     settings.add_setting('market', OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE)
     settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT)
 
-    config          = Config(SIM_NAME, filetype="pdf", seed=1133)
+    config          = Config(settings)
     plant           = PlantModel(settings)
     market          = Market(settings, config)
     controller      = Controller(settings, plant, market, config)

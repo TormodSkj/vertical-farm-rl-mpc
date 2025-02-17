@@ -1,52 +1,55 @@
 import os
+from settings import Settings
 
 class Config():
     path:       str 
-    plot_path:  str
-    sim_path:   str
+    plots_path: str
+    current_sim_plot_path:   str
     sim_name:   str
     data_path:  str
     data_analysis_path: str
     output_path: str
 
-    plot_file_type: str
-    plot_format = (10, 6)
-
     spotprice_data_path: str
-    mfrr_clearing_price_data_path: str
+    mfrr_clearing_prices_path: str
 
-    seed: int
-
-    def __init__(self, simulation_name="custom", filetype="pdf", seed = 1133):
-
-        self.sim_name = simulation_name
-        self.plot_file_type = filetype
-        self.seed = seed
+    def __init__(self, settings: Settings):
 
         # Get project root path
         self.path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..')) + "/"
 
-        # Paths for plots
-        self.plot_path = os.path.join(self.path, "plots/")
-        self.plot_folder = os.path.join(self.plot_path, simulation_name)
-        os.makedirs(self.plot_folder, exist_ok=True)  # Ensure plot folders exist
+    
+        self.config_settings    = settings.get_settings_group('sim_name', 'general', 'config')
 
-        # Path for simulations
-        self.sim_path = os.path.join(self.path, "simulations/")
-        os.makedirs(self.sim_path, exist_ok=True)  # Ensure simulations folder exists
+        self.sim_name           = self.config_settings['SIM_NAME']
 
-        # Path for data
-        self.data_path = os.path.join(self.path, "data/")
-        self.spotprice_data_path = os.path.join(self.data_path, 'spotprices_norway_jan_2020_dec_2024.csv')
-        self.mfrr_clearing_price_data_path = os.path.join(self.data_path, 'mFRR_balancing_prices/')
-        self.mfrr_activation_data_path = os.path.join(self.data_path, 'mFRR_activations/')
-        self.mfrr_CBMP_data_path = os.path.join(self.data_path, 'mFRR_CBMP/')
+        self.plots_path         = os.path.join(self.path, self.config_settings['PLOTS_SUBDIR'])
+        self.simulations_path   = os.path.join(self.path, self.config_settings['SIMULATIONS_SUBDIR'])
+        self.data_path          = os.path.join(self.path, self.config_settings['DATA_SUBDIR'])
+        self.data_analysis_path = os.path.join(self.path, self.config_settings['DATA_ANALYSIS_SUBDIR'])
+        self.output_path        = os.path.join(self.path, self.config_settings['OUTPUT_SUBDIR'])
 
-        # Path for data
-        self.data_analysis_path = os.path.join(self.path, "data_analysis/")
-        os.makedirs(self.data_analysis_path, exist_ok=True)  # Ensure simulations folder exists
+        self.current_sim_plot_path  = os.path.join(self.plots_path, self.sim_name)
 
-        # Path for data
-        self.output_path = os.path.join(self.path, "output/")
-        os.makedirs(self.output_path, exist_ok=True)  # Ensure simulations folder exists
+        self.mfrr_clearing_prices_path  = os.path.join(self.data_path, self.config_settings['MFRR_CLEARING_PRICES_PATH'])
+        self.mfrr_activation_data_path  = os.path.join(self.data_path, self.config_settings['MFRR_ACTIVATION_DATA_PATH'])
+        self.mfrr_CBMP_data_path        = os.path.join(self.data_path, self.config_settings['MFRR_CBMP_DATA_PATH'])
 
+        # Paths for different datasets
+        self.spotprice_data_path        = os.path.join(self.data_path, self.config_settings['SPOTPRICES_PATH'])
+
+        self.ensure_dirs(self.current_sim_plot_path,
+                         self.plots_path,
+                         self.simulations_path,
+                         self.data_path,
+                         self.data_analysis_path,
+                         self.output_path,
+                         self.mfrr_clearing_prices_path, 
+                         self.mfrr_activation_data_path, 
+                         self.mfrr_CBMP_data_path                                 
+                         )
+     
+
+    def ensure_dirs(self, *paths):
+        for path in paths:
+            os.makedirs(path, exist_ok=True)

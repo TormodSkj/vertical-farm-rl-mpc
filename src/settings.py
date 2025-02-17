@@ -9,9 +9,13 @@ class Settings():
 
     def __init__(self, *groups, **kwargs):
 
+        self.add_setting('sim_name',
+                         SIM_NAME           = "placeholder_name",  # Name of simulation used for plotting and archiving
+                         )
+
+
         # General settings
         self.add_setting('general', 
-                         SIM_NAME           = "placeholder_name",  # Name of simulation used for plotting and archiving
                          SIMULATION_LENGTH  = 3,                   # Timehorizon of entire simulation  [days]
                          SIM_RESOLUTION     = QUARTER_HOURS_PER_DAY,
                          SIM_TIMEDELTA      = SECONDS_PER_QUARTER_HOUR,
@@ -67,13 +71,29 @@ class Settings():
                          MPC_STEPLENGTH = 0.5
                          )
 
-
         # Plotter settings
         self.add_setting('plotter', 
                          PLOT_EXPORT_TYPE       = 'pdf',
+                         PLOT_ASPECT_RATIO      = (10, 6),
                          SEARCH_PLOT_CACHE      = True,
                          ACTIVATION_THRESHOLD   = 0.01,
                          VOLUME_THRESHOLD       = 0.001
+                         )
+
+
+        self.add_setting('config',
+                         PLOTS_SUBDIR             = 'plots/',
+                         SIMULATIONS_SUBDIR       = 'simulations/',
+                         DATA_SUBDIR              = 'data/',
+                         DATA_ANALYSIS_SUBDIR     = 'data_analysis/',
+                         OUTPUT_SUBDIR            = 'output/'
+                         )
+        
+        self.add_setting('data', 'config',
+                         SPOTPRICES_PATH            = 'spotprices_norway_jan_2020_dec_2024.csv',          
+                         MFRR_CLEARING_PRICES_PATH  = 'mFRR_balancing_prices/',
+                         MFRR_ACTIVATION_DATA_PATH  = 'mFRR_activations/',
+                         MFRR_CBMP_DATA_PATH        = 'mFRR_CBMP/'
                          )
 
 
@@ -91,7 +111,7 @@ class Settings():
 
 
     
-    def change_setting(self, **kwargs):
+    def update_setting(self, **kwargs):
 
         for key in kwargs:
             assert key in self.all_settings, f'{key} not a registered setting'
@@ -121,8 +141,8 @@ class Settings():
         return self.all_settings[setting]
    
 
-settings = Settings('general', SIM_NAME = 'testname')
-settings.add_setting()
+# settings = Settings('general', SIM_NAME = 'testname')
+# settings.add_setting()
 
 
 

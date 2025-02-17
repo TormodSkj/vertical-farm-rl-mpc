@@ -189,7 +189,7 @@ class Market:
         end_date = start_date + pd.DateOffset(self.T)
         
         spot_price_file = self.config.spotprice_data_path
-        mfrr_balancing_price_datapath = self.config.mfrr_clearing_price_data_path
+        mfrr_balancing_price_datapath = self.config.mfrr_clearing_prices_path
         mfrr_activation_datapath = self.config.mfrr_activation_data_path
         mfrr_CBMP_datapath = self.config.mfrr_CBMP_data_path
         # Load data

@@ -11,6 +11,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 import os
 from typing import List
 from tqdm import tqdm
+import shutil
+import time
+
 
 
 class Plotter():
@@ -24,6 +27,8 @@ class Plotter():
     color_up = 'skyblue'
     color_dn = 'lightcoral'
 
+
+    common_dependencies = ('general', 'controller', 'market', 'plantmodel', 'plotter')
     n_plots = 0
     plot_queue = []
     progressbar: tqdm
@@ -34,12 +39,13 @@ class Plotter():
         self.controller = controller
         self.simulator = simulator
 
-        self.plotter_settings = settings.get_settings_group('general', 'plotter')
+        self.plotter_settings = settings.get_settings_group('sim_name', 'general', 'plotter')
 
         self.foldername     = self.plotter_settings['SIM_NAME']
         self.plot_file_type = self.plotter_settings['PLOT_EXPORT_TYPE']
         self.activation_th  = self.plotter_settings['ACTIVATION_THRESHOLD']
         self.volume_th      = self.plotter_settings['VOLUME_THRESHOLD']
+        self.aspect_ratio   = self.plotter_settings['PLOT_ASPECT_RATIO']
 
 
 
@@ -49,7 +55,7 @@ class Plotter():
         config = self.config
         foldername  = self.foldername
 
-        directory = config.plot_path + foldername + "/"
+        directory = config.plots_path + foldername + "/"
         if run_id is not None: directory += run_id + '/'
 
         plt.savefig(directory + filename + "." + self.plot_file_type, format=self.plot_file_type)
@@ -74,13 +80,15 @@ class Plotter():
         for run_group in run_groups:
             top_level_run_id = run_group[0]
             
-            plot_folder = os.path.join(config.plot_path, config.sim_name+'/'+ top_level_run_id+'/')
+            plot_folder = os.path.join(config.plots_path, config.sim_name+'/'+ top_level_run_id+'/')
             
             os.makedirs(plot_folder, exist_ok=True)
 
 
 
     def save_ocp_plots(self):
+
+        start_time = time.time()
 
         self.create_folder_environment()
 
@@ -99,7 +107,9 @@ class Plotter():
 
         # Save plot cache in file system
 
-        print(f'Optimization plots saved to {self.config.plot_folder}')
+        elapsed_time = time.time() - start_time
+        minutes, seconds = divmod(elapsed_time, 60)
+        print(f'Optimization plots saved to {self.config.current_sim_plot_path}. \nPlot time: {minutes} minutes and {seconds:.2f} seconds.')
 
 
     def add_plot(self, function, *args, **kwargs):
@@ -116,7 +126,96 @@ class Plotter():
                 func(*args, **kwargs)
                 # pbar.update(1)
 
+
+    def update_plot_log(self, run_id, dependencies):
+        current_dir     = self.config.current_sim_plot_path  # Folder for plots from the current run
+        dependencies    = dependencies + ('plotter',)
+        current_hash    = generate_hash(self.settings.get_settings_group(*dependencies))
+
+        # Make sure there is a plot_log.json file in the current dir.
+        # Add an entry to it containing the run_id and the current_hash. Alternatively update the already existing entry
+
+        log_file_path = os.path.join(current_dir, "plot_log.json")
+
+        # Load existing log if present
+        if os.path.exists(log_file_path):
+            with open(log_file_path, "r", encoding="utf-8") as f:
+                try:
+                    plot_log = json.load(f)
+                except json.JSONDecodeError:
+                    plot_log = {}  # Reset file in case it's corrupted
+        else:
+            plot_log = {}
+
+        plot_log[run_id] = current_hash
+
+        # Save
+        with open(log_file_path, "w", encoding="utf-8") as f:
+            json.dump(plot_log, f, indent=4)
+
+
         
+    def find_existing_plot(self, run_id, dependencies):
+        """
+        Checks if a plot matching the current run's hash exists in any of the cached plot folders.
+
+        Returns:
+            1 if a matching plot is found 
+            0 if no matching plot is found.
+        """
+
+        plots_folder    = self.config.plots_path                # Parent folder of all plot folders
+        current_dir     = self.config.current_sim_plot_path     # Folder for plots from the current run
+        dependencies    = dependencies + ('plotter',)
+        current_hash    = generate_hash(self.settings.get_settings_group(*dependencies))
+
+        for folder in os.listdir(plots_folder):
+            folder_path = os.path.join(plots_folder, folder)
+
+            if not os.path.isdir(folder_path):
+                continue
+
+            log_file_path = os.path.join(folder_path, "plot_log.json")
+
+            # Skip if no log file
+            if not os.path.exists(log_file_path):
+                continue  
+
+            with open(log_file_path, "r") as log_file:
+                try:
+                    plot_log = json.load(log_file)
+                except json.JSONDecodeError:
+                    print(f'WARNING: \tCorrupt file found when searching for {run_id} in {log_file_path}')
+                    continue
+
+            # Check log_files
+            for logged_run_id, logged_hash in plot_log.items():
+                if run_id == logged_run_id and current_hash == logged_hash:
+                    if folder_path == current_dir:
+                        return 1  # Matching plot exists in the current directory, no need to update plot log
+                    
+                    # Copy matching PDF report
+                    pdf_name = f"report_{run_id}.pdf"
+                    pdf_src = os.path.join(folder_path, pdf_name)
+                    pdf_dst = os.path.join(current_dir, pdf_name)
+
+                    if os.path.exists(pdf_src):
+                        shutil.copy2(pdf_src, pdf_dst)
+
+                    # Copy entire run folder
+                    run_folder_src = os.path.join(folder_path, str(run_id))
+                    run_folder_dst = os.path.join(current_dir, str(run_id))
+
+                    if os.path.exists(run_folder_src) and os.path.isdir(run_folder_src):
+                        if os.path.exists(run_folder_dst):
+                            shutil.rmtree(run_folder_dst)  # Remove existing run folder to avoid conflicts
+                        shutil.copytree(run_folder_src, run_folder_dst)  # Copy the entire folder
+
+                    self.update_plot_log(run_id, dependencies)
+
+                    return 1  # Matching plot found and copied overto current directory
+
+        return 0  # No matching plot found
 
     def plot_report(self, run_group):
         config      = self.config
@@ -125,14 +224,13 @@ class Plotter():
         t           = self.controller.t
         spot_prices = self.controller.spot_prices
 
-        #%-%-%-%-%-%-%-%-%-%-%-%-%-%-%-%-%-%-%-%
-        #           BIDDING PLOTS
-
-        # Defining run is the first of the run group
         run_id = run_group[0]
+        dependencies = tuple(controller.optimization_results['runs'][run_id]['dependencies'])
 
+        if self.find_existing_plot(run_id, dependencies): return
 
-        final_report_save_path = f'{config.plot_path}{self.foldername}/report_{run_id}.pdf'
+        
+        final_report_save_path = f'{config.plots_path}{self.foldername}/report_{run_id}.pdf'
 
         with PdfPages(final_report_save_path) as pdf:
 
@@ -178,7 +276,7 @@ class Plotter():
             ######################################################
             #                   BIDDING VOLUMES
 
-            fig = plt.figure(figsize=config.plot_format)
+            fig = plt.figure(figsize=self.aspect_ratio)
 
             _, ub_B_volumes, _, _ = self.controller.model.get_bidding_bounds(controller.N, u_nom.reshape((1,-1)))
             linewidth = 0.8
@@ -198,7 +296,7 @@ class Plotter():
             ######################################################
             #                   BIDDING PRICES
 
-            fig, ax = plt.subplots(1, 1, figsize=config.plot_format, sharex=True)
+            fig, ax = plt.subplots(1, 1, figsize=self.aspect_ratio, sharex=True)
 
             ax.fill_between(t, 0, filtered_bid_prices_up, label="Bidding Price Up", color="blue", step='post', alpha=0.4)
             ax.fill_between(t, 0, filtered_bid_prices_down, label="Bidding Price Down", color="red", step='post', alpha=0.4)
@@ -217,8 +315,8 @@ class Plotter():
             ######################################################
             #                ACTIVATION PROBABILITIES
 
-            # plt.figure(figsize=config.plot_format)
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=config.plot_format, sharex=True)
+            # plt.figure(figsize=self.aspect_ratio)
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=self.aspect_ratio, sharex=True)
 
             ax1.fill_between(t, 0, prob_activation_up, color=self.color_up, alpha=0.8, label="Expected", step='post', linewidth=0)
             ax2.fill_between(t, 0, prob_activation_down, color=self.color_dn, alpha=0.8, label="Expected", step='post', linewidth=0)
@@ -244,8 +342,8 @@ class Plotter():
             ######################################################
             #             VOLUME-ACTIVATION SCATTER
 
-            # plt.figure(figsize=config.plot_format)
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=config.plot_format)
+            # plt.figure(figsize=self.aspect_ratio)
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=self.aspect_ratio)
 
             if is_realized:
                 ax1.scatter(bid_volumes_up[np.where(bid_activation_up == 1)], prob_activation_up[np.where(bid_activation_up == 1)], color='navy', s=10)
@@ -288,8 +386,8 @@ class Plotter():
                 #    ACTIVATED BIDDING VOLUMES AND PRICES
                 #               [FILTERED]
 
-                # plt.figure(figsize=config.plot_format)
-                fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=config.plot_format, sharex=True)
+                # plt.figure(figsize=self.aspect_ratio)
+                fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=self.aspect_ratio, sharex=True)
 
                 ax1.fill_between(t, -filtered_bid_volumes_up, filtered_bid_volumes_down, color='grey', label="Submitted", alpha=0.4, step='post')
                 ax1.fill_between(t, -bid_volumes_up_activated, 0, color='blue', alpha=0.4, label='Up-regulation', step='post')
@@ -321,8 +419,8 @@ class Plotter():
                 #    EXPECTED VS RECORDED CLEARING PRICES 
                 #
 
-                # plt.figure(figsize=config.plot_format)
-                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=config.plot_format, sharex=True)
+                # plt.figure(figsize=self.aspect_ratio)
+                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=self.aspect_ratio, sharex=True)
 
 
                 clearing_prices_up, clearing_prices_down = market.get_clearing_prices()
@@ -362,8 +460,8 @@ class Plotter():
                 #    PROJECTED VS RECORDED ACTIVATION CHANCES 
                 #
 
-                # plt.figure(figsize=config.plot_format)
-                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=config.plot_format)
+                # plt.figure(figsize=self.aspect_ratio)
+                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=self.aspect_ratio)
 
                 step_size = 5
                 n_bins_up = int(np.ceil(max(prob_activation_up)*100))+step_size
@@ -412,8 +510,8 @@ class Plotter():
                 #      RECORDED VS HISTORICAL CLEARING PRICES
                 #
 
-                # plt.figure(figsize=config.plot_format)
-                fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=config.plot_format, sharex=True)
+                # plt.figure(figsize=self.aspect_ratio)
+                fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=self.aspect_ratio, sharex=True)
 
                 price_data_raw = market.prices_working_set
                 price_data = price_data_raw.where(price_data_raw['Clearing Price Up']<500).where(price_data_raw['Clearing Price Down']>-500).dropna()
@@ -469,8 +567,8 @@ class Plotter():
                 #      HISTOGRAM of BIDDING PRICES RELATIVE TO CLEARING PRICES
                 #
 
-                # plt.figure(figsize=config.plot_format)
-                fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=config.plot_format, sharex=True)
+                # plt.figure(figsize=self.aspect_ratio)
+                fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=self.aspect_ratio, sharex=True)
 
                 clearing_prices_up, clearing_prices_down = market.get_clearing_prices(market.date)
                 
@@ -511,7 +609,7 @@ class Plotter():
             ######################################################
             #                   SPOT PRICES
 
-            fig = plt.figure(figsize=config.plot_format)
+            fig = plt.figure(figsize=self.aspect_ratio)
             plt.step(t, self.controller.market.get_spotprice(), label="Spot price", where='post')
             plt.ylabel("Spot price (kr/kWh)")
             plt.xlabel("Time (days)")
@@ -524,7 +622,8 @@ class Plotter():
             plt.close('all')
 
 
-
+        
+        self.update_plot_log(run_id, dependencies)
 
 
 
@@ -532,10 +631,17 @@ class Plotter():
 
 
     def plot_freshweights(self, plot_name = 'fresh_weights', run_id = None, runs = {}, pdf = None):
+        
+        ######################################################
+        #                   FRESHWEIGHTS
+        
         config = self.config
         controller = self.controller
 
-        fig = plt.figure(figsize=config.plot_format)
+        if run_id is None:
+            if self.find_existing_plot(plot_name, self.common_dependencies): return
+
+        fig = plt.figure(figsize=self.aspect_ratio)
         
         for run in runs:
 
@@ -572,6 +678,7 @@ class Plotter():
         plt.title(f"Expected freshweight of plant growth (g/plant). ({controller.market.date}, {controller.market.bidding_zone})")
 
         self.save_plot(plot_name, run_id=run_id, fig=fig, pdf=pdf)
+        self.update_plot_log(plot_name, self.common_dependencies)
 
 
 
@@ -579,6 +686,9 @@ class Plotter():
 
         ######################################################
         #                   LIGHT SCHEDULE
+        
+        if run_id is None:
+            if self.find_existing_plot(plot_name, self.common_dependencies): return
 
         controller  = self.controller
         config      = self.config
@@ -587,7 +697,7 @@ class Plotter():
 
         n_runs = len(runs)
 
-        fig, axes = plt.subplots(n_runs+1, 1, figsize=config.plot_format, sharex=True)
+        fig, axes = plt.subplots(n_runs+1, 1, figsize=self.aspect_ratio, sharex=True)
 
         for i, run in enumerate(runs):
             ax = axes[i]
@@ -605,6 +715,7 @@ class Plotter():
         fig.suptitle(f'Light schedules ({market.date}, {market.bidding_zone})')
 
         self.save_plot(plot_name, run_id = run_id, fig=fig, pdf=pdf)
+        self.update_plot_log(plot_name, self.common_dependencies)
 
 
 
@@ -614,6 +725,8 @@ class Plotter():
         ######################################################
         #          DAILY LIGHT INTEGRALS OVER TIME
 
+        if run_id is None:
+            if self.find_existing_plot(plot_name, self.common_dependencies): return
 
         controller  = self.controller
         config      = self.config
@@ -622,7 +735,7 @@ class Plotter():
 
         n_runs = len(runs)
 
-        fig, axes = plt.subplots(n_runs+1, 1, figsize=config.plot_format, sharex=True)
+        fig, axes = plt.subplots(n_runs+1, 1, figsize=self.aspect_ratio, sharex=True)
 
         for i, run in enumerate(runs):
             ax = axes[i]
@@ -643,6 +756,7 @@ class Plotter():
         fig.suptitle(f'Daily light integrals ({market.date}, {market.bidding_zone})')
 
         self.save_plot(plot_name, fig = fig, run_id=run_id, pdf=pdf)
+        self.update_plot_log(plot_name, self.common_dependencies)
 
 
 
@@ -660,7 +774,7 @@ class Plotter():
 
 
         ##################################################
-        plt.figure(figsize=config.plot_format)
+        plt.figure(figsize=self.aspect_ratio)
 
         bidding_runs = [run for run in controller.optimization_results['runs'] if 'bidding result' in controller.optimization_results['runs'][run]]
 
@@ -692,7 +806,7 @@ class Plotter():
         plt.title(f'Simulated {m} different cases of plausible activations')
 
         filename = "random_activations"
-        plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
+        plt.savefig(config.plots_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
 
@@ -744,7 +858,7 @@ class Plotter():
         #            SPOT VS MFRR PRICES 
         #       [SMOOTHED] [OUTLIERS REMOVED]
 
-        plt.figure(figsize=config.plot_format)
+        plt.figure(figsize=self.aspect_ratio)
 
         plt.step(timestamps, mfrr_prices_up, label="Clearing price up", color='blue', alpha=opacity)
         plt.step(timestamps, mfrr_prices_up_smoothed, label="Clearing price up smoothed", color='blue', alpha=1, linewidth = linewidth)
@@ -769,7 +883,7 @@ class Plotter():
         #        CLEARING PRICES RELATIVE TO SPOT 
         #               [OUTLIERS REMOVED]
         
-        plt.figure(figsize=config.plot_format)
+        plt.figure(figsize=self.aspect_ratio)
 
         plt.step(timestamps, mfrr_prices_up - spot_prices_eur, label="Clearing price up", color='blue')
         plt.step(timestamps, mfrr_prices_dn - spot_prices_eur, label="Clearing price down", color='red')
@@ -787,7 +901,7 @@ class Plotter():
         #             CLEARING PRICES HISTOGRAM 
         #               [OUTLIERS REMOVED]
         
-        plt.figure(figsize=config.plot_format)
+        plt.figure(figsize=self.aspect_ratio)
 
         n_bins = 100
 
@@ -814,8 +928,8 @@ class Plotter():
         ################################################################
         #         SCATTER PLOT SPOT PRICE - CLEARING PRICES 
 
-        plt.figure(figsize=config.plot_format)
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=config.plot_format, sharex=True)
+        plt.figure(figsize=self.aspect_ratio)
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=self.aspect_ratio, sharex=True)
 
         n = int(np.ceil(len(spot_prices)/10))
         idx = np.int64(np.ceil(np.linspace(1,len(spot_prices)-1,n)))
@@ -844,8 +958,8 @@ class Plotter():
         #        CLEARING-SPOT RELATIVE PRICES HISTOGRAM
         #                   [OUTLIERS REMOVED]
 
-        plt.figure(figsize=config.plot_format)
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=config.plot_format, sharex=True)
+        plt.figure(figsize=self.aspect_ratio)
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=self.aspect_ratio, sharex=True)
 
 
         ax1.hist(mfrr_prices_up-spot_prices_eur, label="Clearing price up", color='blue', alpha=0.4, bins=2*n_bins, density=True)
@@ -891,7 +1005,7 @@ class Plotter():
             'Down Activation Rate': activation_rate_down
         }).fillna(0)  # Fill missing months with 0
 
-        plt.figure(figsize=config.plot_format)
+        plt.figure(figsize=self.aspect_ratio)
 
         combined_monthly_activation_rates.plot(kind='bar', stacked=True, figsize=(12, 6), color=['skyblue', 'lightcoral'], edgecolor='gray')
         plt.title(f'Monthly activation rates in {market.bidding_zone} bidding zone')
@@ -908,7 +1022,7 @@ class Plotter():
         ######################################################
         #           DAILY mFRR ACTIVATION COUNTS
 
-        plt.figure(figsize=config.plot_format)
+        plt.figure(figsize=self.aspect_ratio)
 
         # Process data
         activations_df['Start Time'] = pd.to_datetime(activations_df['Start Time'])
@@ -961,7 +1075,7 @@ class Plotter():
         activation_counts_up = activations_df['Activated Up'].loc[activations_df['Activated Up'] > 0]
         activation_counts_down = activations_df['Activated Down'].loc[activations_df['Activated Down'] > 0]
         
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=config.plot_format, sharex=True)
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=self.aspect_ratio, sharex=True)
 
         n_bins = 48
 
@@ -1007,7 +1121,7 @@ class Plotter():
         ######################################################
         #           MARKET POTENCY BAR CHART
 
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=config.plot_format, sharex=False)
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=self.aspect_ratio, sharex=False)
 
         market_potency_df = market.daily_market_potency_df
         rolling_market_potency_df = market.rolling_market_potency_df
@@ -1072,7 +1186,7 @@ class Plotter():
 
         # BEGIN PLOTTING
         ##################################################
-        plt.figure(figsize=config.plot_format)
+        plt.figure(figsize=self.aspect_ratio)
         # plt.step(t, x1_mpc, "r", label="Structural dry weight (g/m^2)") 
         # plt.step(t, x2_mpc, "b", label="Non-structural dry weight (g/m^2)")
         plt.step(t, self.simulator.model.freshweight(x_mpc), "g", label="MPC Fresh weight (g/plant)")
@@ -1087,11 +1201,11 @@ class Plotter():
 
         
         filename = "Combined_ocp_x"
-        plt.savefig(config.plot_path + foldername + "/MPC_" + filename + "." + self.plot_file_type, format=self.plot_file_type)
+        plt.savefig(config.plots_path + foldername + "/MPC_" + filename + "." + self.plot_file_type, format=self.plot_file_type)
         ##################################################
 
 
-        plt.figure(figsize=config.plot_format)
+        plt.figure(figsize=self.aspect_ratio)
         plt.step(t, u_mpc, label="MPC U") 
         plt.step(t, u_rigid, label="Rigid U") 
         # plt.step(t, u_bid, linestyle=':', label="Bidding U") 
@@ -1102,7 +1216,7 @@ class Plotter():
 
 
         filename = "Combined_ocp_u"
-        plt.savefig(config.plot_path + foldername + "/MPC_" + filename + "." + self.plot_file_type, format=self.plot_file_type)
+        plt.savefig(config.plots_path + foldername + "/MPC_" + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
 
@@ -1154,10 +1268,10 @@ class Plotter():
             filtered_pred_a_dn = np.where(pred_a_dn > activation_th, pred_a_dn, 0).flatten()
 
             ##################################################
-            # plt.figure(figsize=config.plot_format)
+            # plt.figure(figsize=self.aspect_ratio)
 
             # Create a figure with two subplots sharing the same x-axis
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=config.plot_format, sharex=True)
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=self.aspect_ratio, sharex=True)
 
             # Plot for Bidding Price Up
             ax1.fill_between(t, 0, filtered_bid_prices_up, label="Bidding Price Up", color="blue", step='post', alpha=0.4)
@@ -1182,7 +1296,7 @@ class Plotter():
 
             # Save the plot
             filename = "predicted_vs_actual_bidding_prices"
-            plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
+            plt.savefig(config.plots_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
 
@@ -1190,7 +1304,7 @@ class Plotter():
 
             ##################################################
 
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=config.plot_format, sharex=True)
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=self.aspect_ratio, sharex=True)
 
             # Plot for Bidding Price Up
             ax1.fill_between(t, 0, filtered_prob_activations_up, label="Bidding Price Up",   color="blue", step='post', alpha=0.4)
@@ -1213,7 +1327,7 @@ class Plotter():
 
             # Save the plot
             filename = "predicted_vs_actual_activation_chances"
-            plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
+            plt.savefig(config.plots_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
     def plot_financial_report(self):
@@ -1238,8 +1352,8 @@ class Plotter():
         #               FINALCIAL REPORT
         #
 
-        plt.figure(figsize=config.plot_format)
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=config.plot_format)
+        plt.figure(figsize=self.aspect_ratio)
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=self.aspect_ratio)
 
         x = np.arange(len(header))  # Bar positions
         bar_width = 0.2
@@ -1269,7 +1383,7 @@ class Plotter():
         plt.tight_layout()
 
         filename = f"_financial_report_{market.date.replace('-','_')}_{market.bidding_zone}"
-        plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
+        plt.savefig(config.plots_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
         plt.close('all')
 
@@ -1280,8 +1394,8 @@ class Plotter():
         #
 
 
-        plt.figure(figsize=config.plot_format)
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=config.plot_format)
+        plt.figure(figsize=self.aspect_ratio)
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=self.aspect_ratio)
 
         # Table
 
@@ -1311,7 +1425,7 @@ class Plotter():
         plt.tight_layout()
 
         filename = f"_specs_{market.date.replace('-','_')}_{market.bidding_zone}"
-        plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
+        plt.savefig(config.plots_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
         plt.close('all')
 

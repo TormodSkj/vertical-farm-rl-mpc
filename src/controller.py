@@ -59,8 +59,9 @@ class Controller():
         warm_start = False, calculate_fw = False):
         '''
         self.settings = settings
-        self.controller_settings = settings.get_settings_group('general', 'controller', 'market', 'plantmodel')
+        self.controller_settings = settings.get_settings_group('sim_name', 'general', 'controller', 'market', 'plantmodel')
 
+        self.sim_name           = self.controller_settings['SIM_NAME']
         self.surpress_output    = self.controller_settings['SURPRESS_OUTPUT']
         self.warm_start         = self.controller_settings['WARM_START']
         self.calculate_fw       = self.controller_settings['CALCULATE_FW']
@@ -100,7 +101,7 @@ class Controller():
         }
 
         self.optimization_results = {
-            'name'              : self.config.sim_name,
+            'name'              : self.sim_name,
             'timestamp'         : datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'specs'             : specs_data,
             'runs'              : {}
@@ -808,11 +809,11 @@ class Controller():
         self.optimization_results['spotprice'] = self.spot_prices
 
         # Filepath
-        sim_name = self.config.sim_name
-        sim_save_path = os.path.join(self.config.sim_path, f"{sim_name}.json")
+        sim_name = self.sim_name
+        sim_save_path = os.path.join(self.config.simulations_path, f"{sim_name}.json")
 
         # Ensure the target json file exists
-        os.makedirs(self.config.sim_path, exist_ok=True)
+        os.makedirs(self.config.simulations_path, exist_ok=True)
 
         # Convert the entire runs dictionary
         runs_dict = convert_np_arrays_to_lists(self.optimization_results)
@@ -834,10 +835,10 @@ class Controller():
 
         hash = generate_hash(self.settings.get_settings_group(*dependencies))
 
-        for file_name in os.listdir(self.config.sim_path):
+        for file_name in os.listdir(self.config.simulations_path):
             if not file_name.endswith(".json"): continue
 
-            file_path = os.path.join(self.config.sim_path, file_name)
+            file_path = os.path.join(self.config.simulations_path, file_name)
             with open(file_path, "r") as json_file:
                 loaded_data = json.load(json_file)
             
@@ -1039,11 +1040,11 @@ class Controller():
 
         intensity_schedule_dict = {'Light intensity': u_scaled}
         # Filepath
-        sim_name = self.config.sim_name
+        sim_name = self.sim_name
         inty_save_path = os.path.join(self.config.output_path, f"{sim_name}_{run_id}_inty_schedule_{self.market.date}.json")
 
         # Ensure the target json file exists
-        os.makedirs(self.config.sim_path, exist_ok=True)
+        os.makedirs(self.config.simulations_path, exist_ok=True)
 
         # Convert the entire runs dictionary
         intensity_schedule = convert_np_arrays_to_lists(intensity_schedule_dict)
