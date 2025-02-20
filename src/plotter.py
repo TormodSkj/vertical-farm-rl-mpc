@@ -1069,21 +1069,21 @@ class Plotter():
 
 
         ######################################################
-        #           ACTIVATION COUNTS HISTOGRAM
+        #           ACTIVATION VOLUMES HISTOGRAM
 
         activations_df = market.activations_full_set.copy()
-        activation_counts_up = activations_df['Activated Up'].loc[activations_df['Activated Up'] > 0]
-        activation_counts_down = activations_df['Activated Down'].loc[activations_df['Activated Down'] > 0]
+        activated_capacities_up = activations_df['Activated Up'].loc[activations_df['Activated Up'] > 0]
+        activated_capacities_down = activations_df['Activated Down'].loc[activations_df['Activated Down'] > 0]
         
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=self.aspect_ratio, sharex=True)
 
         n_bins = 48
 
-        ax1.hist(activation_counts_up, label="Activated Up", color=self.color_up, alpha=0.8, bins=n_bins, density=True)
-        ax2.hist(activation_counts_down, label="Activated Down", color=self.color_dn, alpha=0.8, bins=n_bins, density=True)
+        ax1.hist(activated_capacities_up, label="Activated Up", color=self.color_up, alpha=0.8, bins=n_bins, density=True)
+        ax2.hist(activated_capacities_down, label="Activated Down", color=self.color_dn, alpha=0.8, bins=n_bins, density=True)
 
         p           = 1/4 * np.array([market.demand_prob_up(), market.demand_prob_down()])       # Probability of activation in each 15-min slot
-        lmbda       = 1/np.array([np.mean(activation_counts_up), np.mean(activation_counts_down)])     # Exponential rate parameter (mean 200 MW per activation)
+        lmbda       = 1/np.array([np.mean(activated_capacities_up), np.mean(activated_capacities_down)])     # Exponential rate parameter (mean 200 MW per activation)
         num_hours   = 100000    # Number of simulated hours
         
         # Simulate activation occurrences
@@ -1097,8 +1097,8 @@ class Plotter():
 
         # Filter values to remove values lower than 10MW as this is the lower limit in the Norway mfrr market
         hourly_totals = hourly_totals[
-            (hourly_totals[:, 0] >= 10) & (hourly_totals[:, 0] < max(activation_counts_up)) & 
-            (hourly_totals[:, 1] >= 10) & (hourly_totals[:, 1] < max(activation_counts_down))
+            (hourly_totals[:, 0] >= 10) & (hourly_totals[:, 0] < max(activated_capacities_up)) & 
+            (hourly_totals[:, 1] >= 10) & (hourly_totals[:, 1] < max(activated_capacities_down))
         ]
 
         ax1.hist(hourly_totals[:,0], label=f"Random samples P={p[0]:.2f} lambda = 1/{(1/lmbda[0]):.2f}", color='navy', histtype='step', bins=n_bins, density=True)
@@ -1115,6 +1115,67 @@ class Plotter():
         plt.tight_layout()
 
         filename = f"mFRR_activation_volumes_{market.bidding_zone}"
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
+
+
+        ######################################################
+        #        ACTIVATED/OFFERED RATIO HISTOGRAM
+
+        activations_df = market.activations_full_set.copy()
+        offered_capacities_up = activations_df['Offered Up']
+        offered_capacities_down = activations_df['Offered Down']
+        activated_capacities_up = activations_df['Activated Up']
+        activated_capacities_down = activations_df['Activated Down']
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=self.aspect_ratio, sharex=True)
+
+        n_bins = 48
+
+        activation_ratio_up     = np.divide(np.array(activated_capacities_up),   np.array(offered_capacities_up))
+        activation_ratio_down   = np.divide(np.array(activated_capacities_down), np.array(offered_capacities_down))
+
+        ax1.hist(activation_ratio_up[np.where(activation_ratio_up>0)], label="Up", color=self.color_up, alpha=0.8, bins=n_bins, density=True)
+        ax2.hist(activation_ratio_down[np.where(activation_ratio_down>0)], label="Down", color=self.color_dn, alpha=0.8, bins=n_bins, density=True)
+
+        
+        plt.suptitle(f'Ratio of activated vs accepted volumes in {market.bidding_zone} bidding zone \nwhen activations are made')
+        ax1.set_ylabel('Probability of occurrence')
+        ax1.set_title('Activation Ratio Up')
+        ax2.set_title('Activation Ratio Down')
+        ax1.legend()
+        ax2.legend()
+        plt.tight_layout()
+
+        filename = f"mFRR_activation_ratios_{market.bidding_zone}"
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
+
+
+        ######################################################
+        #           OFFERED VOLUMES HISTOGRAM
+
+        activations_df = market.activations_full_set.copy()
+        activated_capacities_up = activations_df['Offered Up']
+        activated_capacities_down = activations_df['Offered Down']
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=self.aspect_ratio, sharex=True)
+
+        n_bins = 48
+
+        ax1.hist(activated_capacities_up, label="Accepted Up", color=self.color_up, alpha=0.8, bins=n_bins, density=True)
+        ax2.hist(activated_capacities_down, label="Accepted Down", color=self.color_dn, alpha=0.8, bins=n_bins, density=True)
+
+        
+        plt.suptitle(f'Accepted capacity volumes in {market.bidding_zone} bidding zone')
+        ax1.set_xlabel('Power (MW)')
+        ax2.set_xlabel('Power (MW)')
+        ax1.set_ylabel('Probability of occurrence')
+        ax1.set_title('Accepted Up')
+        ax2.set_title('Accepted Down')
+        ax1.legend()
+        ax2.legend()
+        plt.tight_layout()
+
+        filename = f"mFRR_accepted_volumes_{market.bidding_zone}"
         plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
@@ -1364,10 +1425,9 @@ class Plotter():
         ax1.bar(x + bar_width, totals, width=bar_width, color='lightskyblue', label="Totals")
         ax1.axhline(y=min(totals), color='gray', linestyle='-', linewidth=0.1)
 
-
         ax1.set_xticks(x)
-        ax1.set_xticklabels(header)
-        ax1.set_ylabel("Amount ($)")
+        ax1.set_xticklabels(header, rotation=15)
+        ax1.set_ylabel("Amount (NOK)")
         ax1.legend(loc='lower left')
         ax1.set_title("Financial Overview of Optimization Methods")
 

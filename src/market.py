@@ -4,7 +4,8 @@ import casadi as ca
 import pandas as pd
 from config import Config
 from globals import *
-import utils
+from utils import *
+from market_utils import *
 import json
 import os
 import time
@@ -68,8 +69,8 @@ class Market:
         self.spot_prices = self.get_spotprice() 
 
         self.analyze_price_covariances()
-        conditional_variance_up, conditional_variance_dn    = utils.conditional_covariance(self.price_covs)
-        self.expected_prices_up, self.expected_prices_down  = utils.conditional_expectation(self.spot_prices, self.price_means, self.price_covs)
+        conditional_variance_up, conditional_variance_dn    = conditional_covariance(self.price_covs)
+        self.expected_prices_up, self.expected_prices_down  = conditional_expectation(self.spot_prices, self.price_means, self.price_covs)
         
         self.analyze_activation_covariances()
 
@@ -116,7 +117,7 @@ class Market:
     def activation_prob_up(self, spot_price, bid_price_up):
         bid_price_up = bid_price_up.reshape((1,-1))
 
-        mu_up = utils.conditional_expectation(spot_price, self.price_means, self.price_covs)[0]
+        mu_up = conditional_expectation(spot_price, self.price_means, self.price_covs)[0]
         sigma_up = self.sigma_up
 
         bid_price_up_normalized = ((bid_price_up - ca.vertcat(*mu_up).reshape((1,-1)))/sigma_up).reshape((1,-1))
@@ -127,7 +128,7 @@ class Market:
     def activation_prob_down(self, spot_price, bid_price_down):
         bid_price_down = bid_price_down.reshape((1,-1))
 
-        mu_down = utils.conditional_expectation(spot_price, self.price_means, self.price_covs)[1]
+        mu_down = conditional_expectation(spot_price, self.price_means, self.price_covs)[1]
         sigma_down = self.sigma_dn
         
         # bid_price_down_normalized = (bid_price_down - ca.vertcat(*mu_down))/sigma_down
@@ -161,7 +162,7 @@ class Market:
         # return self.up_activation_occurance_rate      # Use predicted demand rate from data
         # return np.mean(self.mfrr_demands_up)            # Use actual demand rate
         
-        expected_activation_up = ca.horzcat(*utils.conditional_expectation(spot_price, self.activation_means, self.activation_covs)[0]).reshape((1,-1))
+        expected_activation_up = ca.horzcat(*conditional_expectation(spot_price, self.activation_means, self.activation_covs)[0]).reshape((1,-1))
         
         # Custom function which bounds activation chance between 0 and 1. (1 + abs(x) - abs(x-1))/2 with abs(x) = sqrt(x^2)
         expected_activation_up = 0.5 + 0.5*(ca.sqrt(ca.power(expected_activation_up, 2)) - ca.sqrt(ca.power(expected_activation_up - 1, 2)))
@@ -176,7 +177,7 @@ class Market:
 
         # return self.down_activation_occurance_rate    # Use predicted demand rate from data
         # return np.mean(self.mfrr_demands_down)            # Use actual demand rate
-        expected_activation_down = ca.horzcat(*utils.conditional_expectation(spot_price, self.activation_means, self.activation_covs)[1]).reshape((1,-1))
+        expected_activation_down = ca.horzcat(*conditional_expectation(spot_price, self.activation_means, self.activation_covs)[1]).reshape((1,-1))
 
         # Custom function which bounds activation chance between 0 and 1. (1 + abs(x) - abs(x-1))/2 with abs(x) = sqrt(x^2)
         expected_activation_down = 0.5 + 0.5*(ca.sqrt(ca.power(expected_activation_down, 2)) - ca.sqrt(ca.power(expected_activation_down - 1, 2)))
@@ -184,19 +185,28 @@ class Market:
 
 
     def import_spot_mfrr_data(self):
+        '''
+        Imports mfrr data and processes it into several dataframes.
 
-        start_date = pd.to_datetime(self.date)
-        end_date = start_date + pd.DateOffset(self.T)
+        `full sets`     : All imported data available from the importing function
+        `working sets`  : Select data from the full sets
+        '''
+
+
+        start_date  = pd.to_datetime(self.date)
+        end_date    = start_date + pd.DateOffset(self.T)
         
         spot_price_file = self.config.spotprice_data_path
         mfrr_balancing_price_datapath = self.config.mfrr_clearing_prices_path
         mfrr_activation_datapath = self.config.mfrr_activation_data_path
         mfrr_CBMP_datapath = self.config.mfrr_CBMP_data_path
         # Load data
-        # CBMP_prices = utils.load_mfrr_CBMP_prices(mfrr_CBMP_datapath, self.bidding_zone)
-        spot_prices = utils.load_spot_prices(spot_price_file, self.bidding_zone)
-        mfrr_prices = utils.load_mfrr_balancing_prices(mfrr_balancing_price_datapath, self.bidding_zone)
-        activations = utils.load_mfrr_activation_data(mfrr_activation_datapath, self.bidding_zone)
+        # CBMP_prices = load_mfrr_CBMP_prices(mfrr_CBMP_datapath, self.bidding_zone)
+        spot_prices = load_spot_prices(spot_price_file, self.bidding_zone)
+        # mfrr_prices = load_mfrr_balancing_prices(mfrr_balancing_price_datapath, self.bidding_zone)
+        mfrr_prices = load_nordpool_balancing_prices(self.config.data_path, self.bidding_zone)
+        # activations = load_mfrr_activation_data(mfrr_activation_datapath, self.bidding_zone)
+        activations = load_nordpool_activation_data(self.config.data_path, self.bidding_zone)
 
 
         # Merge datasets
@@ -266,7 +276,7 @@ class Market:
             down_price_data = self.down_prices_full_set
             assert False, 'Down price data is empty, date is likely not supported in the dataset Or there are no activations of this type during the simulation time'
 
-        # covariance_matrix = utils.calculate_covariance_matrix(price_data, ['Spot Price', 'Clearing Price Up', 'Clearing Price Down'])
+        # covariance_matrix = calculate_covariance_matrix(price_data, ['Spot Price', 'Clearing Price Up', 'Clearing Price Down'])
         
         spot_up_cov     = np.cov(up_price_data[['Spot Price', 'Clearing Price Up']].T)
         spot_down_cov   = np.cov(down_price_data[['Spot Price', 'Clearing Price Down']].T)
@@ -295,7 +305,7 @@ class Market:
 
         assert not activation_data.empty, 'Activation data is empty, date is likely not supported in the dataset. Or there are no activations of this type during the simulation time'
     
-        # covariance_matrix = utils.calculate_covariance_matrix(price_data, ['Spot Price', 'Clearing Price Up', 'Clearing Price Down'])
+        # covariance_matrix = calculate_covariance_matrix(price_data, ['Spot Price', 'Clearing Price Up', 'Clearing Price Down'])
         
         activated_binary_up     = np.where(activation_data['Activated Up']      > 0, 1, 0)
         activated_binary_down   = np.where(activation_data['Activated Down']    > 0, 1, 0)
@@ -321,7 +331,7 @@ class Market:
         start_time = time.time()
         print("Starting price prediction")
 
-        mu_up, mu_dn = utils.conditional_expectation(spot_prices, self.price_means, self.price_covs)
+        mu_up, mu_dn = conditional_expectation(spot_prices, self.price_means, self.price_covs)
 
         # Create decision variables for the optimization problem
         N = len(spot_prices)
@@ -377,7 +387,7 @@ class Market:
         D_dn = self.demand_prob_down(spot_price)
         no_D = 1 - D_up - D_dn
 
-        activation_demands = utils.generate_weighted_samples([-1, 0, 1], [D_dn, no_D, D_up], N, seed)
+        activation_demands = generate_weighted_samples([-1, 0, 1], [D_dn, no_D, D_up], N, seed)
 
         return activation_demands
 

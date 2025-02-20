@@ -8,8 +8,9 @@ import numpy as np
 from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
+from market_utils import fetch_CM_data_nucs
 
-SIM_NAME            = "mpc_test_1"
+SIM_NAME            = "nordpool_data"
 SIMULATION_LENGTH   = 20
 FINAL_FRESHWEIGHT   = 4                   # 1 day
 # FINAL_WEIGHT      = 36.66             # 7 Days
@@ -49,30 +50,30 @@ def main():
     # '''
     # controller.import_baseline('imported')
 
-    controller.optimize_spotprice('spot_opt')         #
-    controller.optimize_mfrr('mfrr_opt', 'spot_opt')  #
-    simulator.apply_mfrr_clearing_prices('mfrr_applied', 'mfrr_opt')
+    # controller.optimize_spotprice('spot_opt')         #
+    # controller.optimize_mfrr('mfrr_opt', 'spot_opt')  #
+    # simulator.apply_mfrr_clearing_prices('mfrr_applied', 'mfrr_opt')
     
-    controller.optimize_mfrr_mpc('mfrr_mpc')
-    simulator.apply_mfrr_clearing_prices('apply_prices_mpc', 'mfrr_mpc')
+    # controller.optimize_mfrr_mpc('mfrr_mpc')
+    # simulator.apply_mfrr_clearing_prices('apply_prices_mpc', 'mfrr_mpc')
 
     # controller.optimize_mfrr_mpc('mfrr_mpc_spot', 'spot_opt')
     # simulator.apply_mfrr_clearing_prices('apply_prices_mpc_spot', 'mfrr_mpc_spot')
 
-    controller.generate_optimal_bidding_strategy('abs_opt', 'spot_opt')
-    simulator.apply_mfrr_clearing_prices('abs_applied', 'abs_opt')
+    # controller.generate_optimal_bidding_strategy('abs_opt', 'spot_opt')
+    # simulator.apply_mfrr_clearing_prices('abs_applied', 'abs_opt')
 
     # controller.optimize_mfrr('mfrr_fixed', 'fixed')
     # simulator.apply_mfrr_clearing_prices('mfrr_fixed_applied', 'mfrr_fixed')
 
-    controller.status_report()
-    controller.save_to_json()
+    # controller.status_report()
+    # controller.save_to_json()
 
     #'''
     # 
     ''' PLOTTING '''
-    plotter.save_ocp_plots()
-    plotter.plot_financial_report()
+    # plotter.save_ocp_plots()
+    # plotter.plot_financial_report()
 
     # plotter.plot_spot_mfrr_prices() 
     ''''''
@@ -91,6 +92,8 @@ def main():
     # plotter.plot_random_activations(30)
 
 
+    target_file = config.data_path + 'nucs_data.csv'
+    fetch_CM_data_nucs(target_file, "19-02-2024", "01-04-2024")
 
 if __name__ == "__main__":
     main()
