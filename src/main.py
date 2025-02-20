@@ -93,7 +93,7 @@ def main():
 
 
     target_file = config.data_path + 'nucs_data.csv'
-    fetch_CM_data_nucs(target_file, "19-02-2024", "01-04-2024")
+    fetch_CM_data_nucs(target_file, "01-04-2024", "01-07-2024")
 
 if __name__ == "__main__":
     main()
