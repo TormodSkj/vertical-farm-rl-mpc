@@ -144,21 +144,6 @@ class Estimator:
 
 
 
-
-test_estimator = Estimator(n_lags=4)
-
-# y = np.random.randn(1, 100) + np.sin(np.linspace(0,10*np.pi, 100))
-# x = np.vstack((0.2*np.random.randn(1, 100) + 2*y,
-#                 0.2*np.random.randn(1, 100) -4*y))
-
-x = np.repeat([0,1], 100)
-
-test_estimator.add_sample(X_sample=x)
-
-# print(test_estimator.conditional_estimate(past_vals= np.array([[1,1,1,1,1]]), N=20))
-print(test_estimator.conditional_estimate(X_prev=np.array([1,1,1,10]), N=10))
-
-
 def load_spot_prices(file_path, bidding_zone):
     """
     Load spot prices, parse timestamps, and extract the price column.
