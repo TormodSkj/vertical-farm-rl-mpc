@@ -1221,6 +1221,271 @@ class Plotter():
 
 
 
+    def plot_CM_data(self):
+
+        config = self.config
+        controller = self.controller
+        market = controller.market
+
+        # Remove drastic outliers
+        price_data_raw = market.CM_data_working_set
+        price_data = price_data_raw.where(price_data_raw['Clearing Price Up']<500).where(price_data_raw['Clearing Price Down']>-500).dropna()
+
+        timestamps      = price_data['Start Time']
+        spot_prices     = np.array(price_data['Spot Price'])
+        mfrr_prices_up  = np.array(price_data['Clearing Price Up'])
+        mfrr_prices_dn  = np.array(price_data['Clearing Price Down'])
+        spot_prices_eur = np.array(spot_prices)*1000/market.C_eur2nok
+
+
+        def moving_average(data, window_size):
+            return np.convolve(data, np.ones(window_size) / window_size, mode='same')
+
+        # Smoothed data
+        window_length = 24*3
+        mfrr_prices_up_smoothed     = moving_average(mfrr_prices_up, window_length)
+        mfrr_prices_dn_smoothed     = moving_average(mfrr_prices_dn, window_length)
+        spot_prices_eur_smoothed    = moving_average(spot_prices_eur, window_length)
+
+        opacity = 0.2
+        linewidth=1.5
+
+        ###########################################
+        #            SPOT VS MFRR PRICES 
+        #       [SMOOTHED] [OUTLIERS REMOVED]
+
+        plt.figure(figsize=self.aspect_ratio)
+
+        plt.step(timestamps, mfrr_prices_up, label="Clearing price up", color='blue', alpha=opacity)
+        plt.step(timestamps, mfrr_prices_up_smoothed, label="Clearing price up smoothed", color='blue', alpha=1, linewidth = linewidth)
+
+        plt.step(timestamps, mfrr_prices_dn, label="Clearing price down", color='red', alpha=opacity)
+        plt.step(timestamps, mfrr_prices_dn_smoothed, label="Clearing price down smoothed", color='red', alpha=1, linewidth = linewidth)
+
+        plt.step(timestamps, spot_prices_eur, label="Spot price", color='grey', alpha=opacity)
+        plt.step(timestamps, spot_prices_eur_smoothed, label="Spot price smoothed", color='grey', alpha=1, linewidth = linewidth)
+        plt.ylabel("Price (€/MW)")
+        plt.xlabel("Time (days)")
+        plt.title(f"Spot price vs activation prices smoothed using {window_length}h moving average")
+        plt.legend()
+
+
+        filename = f"CM_smoothed_prices_{market.bidding_zone}"
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
+
+
+
+        ####################################################
+        #        CLEARING PRICES RELATIVE TO SPOT 
+        #               [OUTLIERS REMOVED]
+        
+        plt.figure(figsize=self.aspect_ratio)
+
+        plt.step(timestamps, mfrr_prices_up - spot_prices_eur, label="Clearing price up", color='blue')
+        plt.step(timestamps, mfrr_prices_dn - spot_prices_eur, label="Clearing price down", color='red')
+        plt.plot(timestamps, 0 * mfrr_prices_dn, label="Zero-line", color='grey', alpha=0.5)
+        plt.ylabel("Price (€/MW)")
+        plt.xlabel("Time (days)")
+        plt.title("Clearing prices relative to spot price (€/MW)")
+        plt.legend()
+
+        filename = f"CM_relative_prices_{market.bidding_zone}"
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
+
+
+        ###############################################################
+        #             CLEARING PRICES HISTOGRAM 
+        #               [OUTLIERS REMOVED]
+        
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=self.aspect_ratio, sharex=False)
+        # plt.figure(figsize=self.aspect_ratio)
+
+        n_bins = 100
+
+        # mu_up, mu_dn = market.price_means[2:4]
+        # sigma_up, sigma_dn = np.sqrt(market.price_covs[0][1, 1]), np.sqrt(market.price_covs[1][1, 1])
+
+        # x_up = np.linspace(mu_up-3*sigma_up,mu_up+3*sigma_up, 1000)
+        # x_dn = np.linspace(mu_dn-3*sigma_dn,mu_dn+3*sigma_dn, 1000)
+
+        ax1.hist(mfrr_prices_up[np.where(mfrr_prices_up < 100)], label="Clearing price up",   color='blue',  alpha=0.4, bins=n_bins, density=True)
+        ax1.hist(mfrr_prices_dn[np.where(mfrr_prices_dn < 100)], label="Clearing price down", color='red',   alpha=0.4, bins=n_bins, density=True)
+        ax2.hist(spot_prices_eur,   label="Spot prices",         color='grey',  alpha=0.4, bins=n_bins, density=True)
+        # plt.plot(x_up, stats.norm.pdf(x_up, mu_up, sigma_up), label="Estimated Up-price distribution", color='blue')
+        # plt.plot(x_dn, stats.norm.pdf(x_dn, mu_dn, sigma_dn), label="Estimated Down-price distribution", color='red')
+        fig.suptitle(f"Clearing prices histogram normalized ({market.bidding_zone}, {market.date})")
+        ax1.legend()
+        # ax1.set_xlim([0,100])
+        ax2.legend()
+        ax2.set_xlabel("Electricity prices (€/MW)")
+
+        filename = f"CM_histogram_mfrr_clearing_prices_{market.bidding_zone}"
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
+
+
+
+        ################################################################
+        #         SCATTER PLOT SPOT PRICE - CLEARING PRICES 
+
+        plt.figure(figsize=self.aspect_ratio)
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=self.aspect_ratio, sharex=True)
+
+        n = int(np.ceil(len(spot_prices)/10))
+        idx = np.int64(np.ceil(np.linspace(1,len(spot_prices)-1,n)))
+        ax1.scatter(spot_prices[idx], mfrr_prices_up[idx], color='blue', label='Clearing price up', s=0.1)
+        # ax1.plot(line_x, line_x * 0.78*1000/market.C_eur2nok, label='Lower limit: 0.78 x spot', color='grey', alpha=0.4)
+        ax1.set_ylabel("Bidding price (€/MWh)")
+        ax1.set_xlabel("Spot price (NOK/kWh)")
+        ax1.set_xlim([-0.5, 4.5])
+        ax1.legend()
+
+        ax2.scatter(spot_prices[idx], mfrr_prices_dn[idx], color='red', label='Clearing price down', s=0.1)
+        # ax2.plot(line_x, line_x * 0.9*1000/market.C_eur2nok, label='Upper limit: 0.9 x spot', color='grey', alpha=0.4)
+        ax2.set_ylabel("Bidding price (€/MWh)")
+        ax2.set_xlabel("Spot price (NOK/kWh)")
+        ax2.set_xlim([-0.5, 4.5])
+        ax2.legend()
+
+        fig.suptitle(f"Spot prices with mFRR CM clearing prices €/MW ({market.bidding_zone}, {market.date})")
+
+        filename = f"CM_scatter_spot_clearing_prices_{market.bidding_zone}"
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
+
+        plt.close('all')
+
+        ######################################################
+        #        CLEARING-SPOT RELATIVE PRICES HISTOGRAM
+        #                   [OUTLIERS REMOVED]
+
+        plt.figure(figsize=self.aspect_ratio)
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=self.aspect_ratio, sharex=True)
+
+
+        ax1.hist(mfrr_prices_up-spot_prices_eur, label="Clearing price up", color='blue', alpha=0.4, bins=2*n_bins, density=True)
+        ax1.set_xlabel("Bidding prices (€/MW)")
+        ax1.set_xlim([-75, 25])
+        ax1.legend()
+
+
+        ax2.hist(mfrr_prices_dn-spot_prices_eur, label="Clearing price down", color='red', alpha=0.4, bins=n_bins, density=True)
+        ax2.set_xlabel("Bidding prices (€/MW)")
+        ax2.set_xlim([-75, 25])
+        ax2.legend()
+
+        plt.suptitle(f'Relative clearing prices, normalized ({market.bidding_zone}, {market.date})')
+
+        filename = f"CM_histogram_relative_clearing_prices_{market.bidding_zone}"
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
+
+
+   
+        ######################################################
+        #           MONTHLY RESERVED CM CAPACITY
+
+
+        activations_df = market.CM_data_full_set.copy()
+
+        # Process data up
+        activations_df['Start Time'] = pd.to_datetime(activations_df['Start Time'])
+        activations_df.loc[:, 'Year-Month'] = activations_df['Start Time'].dt.to_period('M')
+
+        # Calculate total activated volume per month
+        monthly_volume_up = activations_df.groupby('Year-Month')[activations_df.filter(like='Volume Up').columns].sum().sum(axis=1)
+        monthly_volume_down = activations_df.groupby('Year-Month')[activations_df.filter(like='Volume Down').columns].sum().sum(axis=1)
+
+        # Combine into a single DataFrame
+        monthly_total_volumes = pd.DataFrame({
+            'Total Volume Up': monthly_volume_up,
+            'Total Volume Down': monthly_volume_down
+        }).fillna(0)  # Fill missing months with 0
+
+        plt.figure(figsize=self.aspect_ratio)
+
+        monthly_total_volumes.plot(kind='bar', stacked=True, figsize=(12, 6), color=['skyblue', 'lightcoral'], edgecolor='gray')
+        plt.title(f'Monthly activation rates in {market.bidding_zone} bidding zone')
+        plt.xlabel('Year-Month')
+        plt.ylabel('Total Activated Volume (MWh)')
+        plt.xticks(rotation=45)
+        plt.legend(title='Activation Direction')
+        plt.tight_layout()
+
+        filename = f"CM_{market.bidding_zone}_mFRR_monthly_reserved_capacity"
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
+
+
+        ######################################################
+        #           DAILY mFRR ACTIVATION COUNTS
+
+        plt.figure(figsize=self.aspect_ratio)
+
+        # Process data
+        activations_df['Start Time'] = pd.to_datetime(activations_df['Start Time'])
+        activations_df.loc[:, 'Date'] = activations_df['Start Time'].dt.date
+
+        # Ensure all dates from the full range are present for counting
+        date_range = pd.date_range(start=activations_df['Date'].min(), end=activations_df['Date'].max())
+
+        # Calculate total activated volume per day
+        daily_volume_up     = activations_df.groupby('Date')[activations_df.filter(like='Volume Up').columns].sum().sum(axis=1).reindex(date_range, fill_value=0)
+        daily_volume_down   = activations_df.groupby('Date')[activations_df.filter(like='Volume Down').columns].sum().sum(axis=1).reindex(date_range, fill_value=0)
+
+        # Combine into a single DataFrame
+        daily_total_volumes = pd.DataFrame({
+            'Date': date_range,
+            'Total Volume Up': daily_volume_up.values,
+            'Total Volume Down': daily_volume_down.values
+        })
+
+        first_of_month = daily_total_volumes['Date'][daily_total_volumes['Date'].dt.day == 1]
+
+        ax = daily_total_volumes.set_index('Date')[['Total Volume Up', 'Total Volume Down']].plot(
+            kind='bar', stacked=True, figsize=(15, 6), color=['skyblue', 'lightcoral']
+        )
+
+        first_of_month_indexes = daily_total_volumes[daily_total_volumes['Date'].dt.day == 1].index
+        ax.set_xticks(first_of_month_indexes)
+        ax.set_xticklabels([date.strftime('%Y-%m-%d') for date in first_of_month], rotation=45)
+
+        plt.title(f'Daily activation rates in {market.bidding_zone} bidding zone')
+        plt.xlabel('Date')
+        plt.ylabel('Total Reserved Capacity (MWh)')
+        plt.legend(title='Activation Direction')
+        plt.tight_layout()
+
+        filename = f"CM_{market.bidding_zone}_mFRR_daily_reserved_capacity"
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
+
+        ######################################################
+        #           ACTIVATION VOLUMES HISTOGRAM
+
+        activations_df = market.CM_data_full_set.copy()
+        activated_capacities_up = activations_df['Volume Up'].loc[activations_df['Volume Up'] > 0]
+        activated_capacities_down = activations_df['Volume Down'].loc[activations_df['Volume Down'] > 0]
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=self.aspect_ratio, sharex=True)
+
+        n_bins = 48
+
+        ax1.hist(activated_capacities_up, label="Volume Up", color=self.color_up, alpha=0.8, bins=n_bins, density=True)
+        ax2.hist(activated_capacities_down, label="Volume Down", color=self.color_dn, alpha=0.8, bins=n_bins, density=True)
+
+        plt.suptitle(f'Reserved capacity volumes in {market.bidding_zone} bidding zone')
+        ax1.set_xlabel('Power (MW)')
+        ax2.set_xlabel('Power (MW)')
+        ax1.set_ylabel('Probability of occurrence')
+        ax1.set_title('Reserved Up')
+        ax2.set_title('Reserved Down')
+        ax1.legend()
+        ax2.legend()
+        plt.tight_layout()
+
+        filename = f"CM_mFRR_reserved_volumes_{market.bidding_zone}"
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
+
+
+
+
+
 
     def save_mpc_plots(self):
 

@@ -15,6 +15,148 @@ import time
 from collections import defaultdict
 from tqdm import tqdm
 from datetime import datetime, timedelta
+import sys
+
+
+class Estimator:
+    '''
+    Estimator assumes a stochastic variable x which has some self similarity and also some covariance with another signal. 
+    The distribution of x is assumed dependent on past values of x
+    The distribution of x is also assumed dependent on values for y
+
+    The estimator trains on datasets of x and y, analyzing covariance and autocorrelations.
+    
+    '''
+
+
+    exact: bool
+
+    n_lags: int
+
+    X     = None
+    Y   = None
+    nx = 0
+    ny = 0
+    
+    training_data_length: int
+
+    covariances: np.ndarray
+    means: np.array
+
+    def __init__(self, n_lags, is_exact = False):
+
+        self.exact = is_exact
+        self.n_lags = n_lags
+
+
+    # def get_estimate(self, Y = None, N = 1):
+
+    #     if self.exact()
+
+
+
+    def add_sample(self, X_sample: np.ndarray, Y_sample: np.ndarray = None):
+
+        if len(X_sample.shape) == 1: X_sample = X_sample.reshape((1,-1))
+
+        assert X_sample.shape[1] == X_sample.shape[1], f"Inconsistent lengths of conditional signal and input signal"
+        assert X_sample.shape[1] > self.n_lags - 1, f"Training signals too short for choice of lag variables"
+
+        if self.X is not None: 
+            assert X_sample.shape[1] == self.X.shape[1],       f"Size inconsistency when adding estimation signal. Expected length {self.X.shape[1]}, received length {X_sample.shape[1]} "
+            self.X = np.vstack((self.X, X_sample))
+        else:
+            self.X = X_sample
+            self.training_data_length = X_sample.shape[1]
+
+        if Y_sample is not None:
+            if len(Y_sample.shape) == 1: Y_sample = Y_sample.reshape((1,-1))
+
+            if self.Y is not None: 
+                assert Y_sample.shape[1] == self.training_data_length,   f"Size inconsistency when adding input signal. Expected length {self.training_data_length}, received length{self.Y.shape[1]} "
+                self.Y = np.vstack((self.Y, Y_sample))
+            else:
+                self.Y = Y_sample
+            
+            self.ny += Y_sample.shape[0]
+
+        self.nx += X_sample.shape[0]
+
+        self.update_covariances()
+
+    def update_covariances(self):
+
+        # for lag in range(self.n_lags): np.array([self.est_signals[k:(est_signals.shape[1] - k)] for k in range(lag)])
+        
+        if self.n_lags > 0: 
+            lagged_signals  = np.vstack((self.X[:,k: self.X.shape[1]-self.n_lags + k] for k in range(1, self.n_lags+1)))
+            all_signals     = np.vstack((self.X[:,:self.X.shape[1]-self.n_lags],
+                                        lagged_signals)) 
+        else:
+            all_signals = self.X
+                                 
+        if self.Y is not None: all_signals = np.vstack((all_signals, self.Y[:,:self.X.shape[1]-self.n_lags]))
+        
+        self.covariances = np.cov(all_signals)
+        self.means = np.mean(all_signals, axis=1)
+    
+    def conditional_estimate(self, X_prev: np.ndarray = None, Y: np.ndarray = None, N = 1):
+        
+        if Y is not None:
+            assert Y.shape[0] == self.ny, f"Expected {self.ny} inputs, but received only {Y.shape[0]}"
+            N = Y.shape[1]
+
+        if X_prev is not None:
+            if len(X_prev.shape) == 1: X_prev = X_prev.reshape((1,-1))
+            assert X_prev.shape[1] >= self.n_lags and X_prev.shape[0] == self.nx, f"Expected past vals of dimension ({self.nx}, {self.n_lags}), but got ({X_prev.shape})"
+            x_est = np.hstack((X_prev, np.zeros((self.nx, N))))
+        else:
+            x_est = np.zeros((self.nx, N))
+        
+        
+        a = self.means[:self.nx].reshape((-1, 1))
+        b = self.means[self.nx:].reshape((-1, 1))
+
+        Pxy     = self.covariances[:self.nx,self.nx:]
+        Pyy     = self.covariances[self.nx:,self.nx:]
+        
+
+        if np.linalg.cond(Pyy) < 1/sys.float_info.epsilon:
+            Pyy_inv = np.linalg.inv(Pyy)
+        else:
+            Pyy_inv = np.linalg.inv(1e-6*np.eye(*Pyy.shape) + Pyy)
+            
+
+        
+        for k in range(N):
+            
+            if Y is not None:
+                y = np.vstack((x_est[:,k:k+self.n_lags].ravel(order='F').reshape((-1,1)), Y[:,k].reshape((-1,1))))
+            else:
+                y = x_est[:,k:k+self.n_lags].ravel(order='F').reshape((-1,1))
+
+            conditional = a + Pxy @ Pyy_inv @ (y - b)
+            
+            x_est[:,self.n_lags+k] = conditional.flatten()
+
+
+        return x_est[:,-N:]
+
+
+
+
+test_estimator = Estimator(n_lags=4)
+
+# y = np.random.randn(1, 100) + np.sin(np.linspace(0,10*np.pi, 100))
+# x = np.vstack((0.2*np.random.randn(1, 100) + 2*y,
+#                 0.2*np.random.randn(1, 100) -4*y))
+
+x = np.repeat([0,1], 100)
+
+test_estimator.add_sample(X_sample=x)
+
+# print(test_estimator.conditional_estimate(past_vals= np.array([[1,1,1,1,1]]), N=20))
+print(test_estimator.conditional_estimate(X_prev=np.array([1,1,1,10]), N=10))
 
 
 def load_spot_prices(file_path, bidding_zone):
@@ -570,3 +712,52 @@ def fetch_CM_data_nucs(target_file_path, start_date, end_date):
     
     print(f"Successfully imported data from {start_date} to {end_date}")
 
+
+
+
+def load_CM_prices(data_folder, bidding_zone):
+
+    """
+
+    """
+
+    all_files = [f for f in os.listdir(data_folder) if "nucs_data" in f and f.endswith(".csv")]
+    all_data = []
+
+    for file in all_files:
+        filepath = os.path.join(data_folder, file)
+
+        # Load the mFRR data
+        data = pd.read_csv(filepath, delimiter=",", encoding="utf-8")
+
+        data = data[['Date', 'Hour'] + [column for column in data.columns if bidding_zone in column]]
+
+        data['Start Time'] = data['Date'] + " " + data['Hour']
+        data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d.%m.%Y %H:%M', errors='coerce')
+
+        up_price_col    = f"{bidding_zone} Up Price"     
+        up_volume_col   = f"{bidding_zone} Up Volume procured"     
+        down_price_col  = f"{bidding_zone} Down Price"     
+        down_volume_col = f"{bidding_zone} Down Volume procured"  
+
+        data = data[['Start Time', up_price_col, up_volume_col, down_price_col, down_volume_col]].rename(
+            columns={up_price_col: 'Clearing Price Up', down_price_col: 'Clearing Price Down',
+                     up_volume_col: 'Volume Up',        down_volume_col: 'Volume Down'}
+        )
+
+        data['Clearing Price Up']   = pd.to_numeric(data['Clearing Price Up'],   errors='coerce')
+        data['Clearing Price Down'] = pd.to_numeric(data['Clearing Price Down'], errors='coerce')
+        data['Volume Up']           = pd.to_numeric(data['Volume Up'],           errors='coerce')
+        data['Volume Down']         = pd.to_numeric(data['Volume Down'],         errors='coerce')
+        
+        # Append processed data to the list
+        all_data.append(data)
+
+    assert len(all_data) > 0, 'Expected non-empty list of data. Verify correctly specified import path.'
+
+    # Merge all data and sort by 'Start Time'
+    merged_data = pd.concat(all_data, ignore_index=True)
+    merged_data.sort_values(by='Start Time', inplace=True)
+    # merged_data.fillna(0, inplace=True)
+
+    return merged_data

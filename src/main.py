@@ -10,15 +10,15 @@ from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 from market_utils import fetch_CM_data_nucs
 
-SIM_NAME            = "nordpool_data"
+SIM_NAME            = "CM_analysis"
 SIMULATION_LENGTH   = 20
 FINAL_FRESHWEIGHT   = 4                   # 1 day
 # FINAL_WEIGHT      = 36.66             # 7 Days
 # FINAL_WEIGHT      = 136.7             # 20 Days 
 # FINAL_WEIGHT      = 2.05              # 20 Days [Directly from germination]
-SIMULATION_DATE = '2024-01-14'
+SIMULATION_DATE = '2024-02-14'
 BIDDING_ZONE    = 'NO2'
-OPTIMISTIC      = 1
+OPTIMISTIC      = 0
 SEARCH_CACHE    = 1
 
 MPC_TIMEHORIZON = 1
@@ -34,7 +34,7 @@ def main():
     settings.update_setting(SIM_NAME = SIM_NAME)
     settings.add_setting('controller', SEARCH_SIM_CACHE = SEARCH_CACHE)
     settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH)
-    settings.add_setting('market', OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE)
+    settings.add_setting('market', SIMULATION_DATE = SIMULATION_DATE, OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE)
     settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT)
 
     config          = Config(settings)
@@ -76,6 +76,7 @@ def main():
     # plotter.plot_financial_report()
 
     # plotter.plot_spot_mfrr_prices() 
+    plotter.plot_CM_data() 
     ''''''
 
     # controller.export_intensity_to_json('Baseline')
@@ -93,7 +94,7 @@ def main():
 
 
     # target_file = config.data_path + 'nucs_data.csv'
-    # fetch_CM_data_nucs(target_file, "02-10-2024", "31-12-2024")
+    # fetch_CM_data_nucs(target_file, "01-01-2025", "24-02-2025")
 
 if __name__ == "__main__":
     main()

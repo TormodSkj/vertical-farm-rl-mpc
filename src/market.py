@@ -65,6 +65,7 @@ class Market:
         self.N = self.T * QUARTER_HOURS_PER_DAY
 
         self.import_spot_mfrr_data()
+        self.import_CM_data()
 
         self.spot_prices = self.get_spotprice() 
 
@@ -253,6 +254,61 @@ class Market:
         self.down_prices_working_set    = down_prices_working_set[np.abs(down_prices_working_set['Clearing Price Down'] - mean_down) / (std_down + epsilon) < self.outlier_max_dist]        
         
         return 0 
+
+
+    def import_CM_data(self):
+        '''
+        Imports mfrr data and processes it into several dataframes.
+
+        `full sets`     : All imported data available from the importing function
+        `working sets`  : Select data from the full sets
+        '''
+
+
+        start_date  = pd.to_datetime(self.date)
+        end_date    = start_date + pd.DateOffset(self.T)
+
+        spot_price_file = self.config.spotprice_data_path
+        spot_prices = load_spot_prices(spot_price_file, self.bidding_zone)
+        CM_prices = load_CM_prices(self.config.data_path, self.bidding_zone)
+
+
+        # Merge datasets
+        CM_data = pd.merge(spot_prices, CM_prices, on='Start Time', how='inner')
+        self.CM_data_full_set = CM_data
+
+        if self.optimistic:
+            self.CM_data_working_set = CM_data[(CM_data['Start Time'] >= start_date) & (CM_data['Start Time'] < end_date) ]
+            CM_up_prices_working_set = CM_data[['Start Time', 'Clearing Price Up', 'Volume Up']][
+                (CM_data['Start Time'] >= start_date)   & 
+                (CM_data['Start Time'] < end_date)      &
+                (CM_data['Volume Up'] > 0)
+                ]
+            CM_down_prices_working_set = CM_data[['Start Time', 'Clearing Price Down', 'Volume Down']][
+                (CM_data['Start Time'] >= start_date) & 
+                (CM_data['Start Time'] < end_date)    &
+                (CM_data['Volume Down'] > 0)
+                ]
+    
+        else:
+            self.CM_data_working_set    = self.CM_data_full_set
+            CM_up_prices_working_set    = CM_data[['Start Time', 'Clearing Price Up', 'Volume Up']]
+            CM_down_prices_working_set  = CM_data[['Start Time', 'Clearing Price Down', 'Volume Down']]
+        
+        # Remove clear outliers
+        
+        mean_up     = np.mean(CM_up_prices_working_set['Clearing Price Up'])
+        std_up      = np.sqrt(np.var(CM_up_prices_working_set['Clearing Price Up']))
+        mean_down   = np.mean(CM_down_prices_working_set['Clearing Price Down'])
+        std_down    = np.sqrt(np.var(CM_down_prices_working_set['Clearing Price Down']))
+        
+        # remove all entries outside 4 standard deviations. These should only be extreme cases
+        epsilon = 1e-6
+        self.CM_up_prices_working_set      = CM_up_prices_working_set[np.abs(CM_up_prices_working_set['Clearing Price Up'] - mean_up) / (std_up + epsilon) < self.outlier_max_dist]
+        self.CM_down_prices_working_set    = CM_down_prices_working_set[np.abs(CM_down_prices_working_set['Clearing Price Down'] - mean_down) / (std_down + epsilon) < self.outlier_max_dist]        
+        
+        return 0 
+
 
 
 
