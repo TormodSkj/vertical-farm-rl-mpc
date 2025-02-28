@@ -495,6 +495,32 @@ class Market:
 
         return clearing_prices_up, clearing_prices_down
     
+    def get_CM_clearing_prices(self, date=None, n_days = None):
+
+        if date==None:
+            date = self.date
+
+        if n_days==None:
+            n_days = self.T
+
+        start_date = pd.to_datetime(date)
+        end_date = start_date + pd.DateOffset(n_days)
+
+        clearing_prices_df = self.CM_data_full_set.copy()
+
+        # Remove dates before simdate
+        clearing_prices_df = clearing_prices_df[
+            (clearing_prices_df['Start Time']   >= start_date)    &
+            (clearing_prices_df['Start Time']   <  end_date) 
+            ]
+        
+        clearing_prices_df.fillna(clearing_prices_df.mean(), inplace=True)
+
+        clearing_prices_up = np.array(clearing_prices_df['Clearing Price Up']).repeat(QUARTER_HOURS_PER_HOUR)
+        clearing_prices_down = np.array(clearing_prices_df['Clearing Price Down']).repeat(QUARTER_HOURS_PER_HOUR)
+
+        return clearing_prices_up, clearing_prices_down
+    
     def get_activation_demands(self, date = None):
         '''
         Returns numpy arrays of length N with balancing demands during each quarter hour from the start time.
@@ -577,4 +603,71 @@ class Market:
         self.rolling_market_potency_df = rolling_market_potency_df
 
         return 0
+    
+
+
+    def calculate_CM_earnings_upper_limit(self, controller, run_id='fixed'):
+
+        runs = controller.optimization_results['runs']
+        assert run_id in runs, f"Run {run_id} is not registered in optimization results"
+        
+        run = runs[run_id]
+
+        if 'bidding result' not in run:
+            return 0
+        
+        CM_clearing_prices_up, CM_clearing_prices_down = self.get_CM_clearing_prices()
+
+        bid_volumes_up = run['timeseries']["P_up"]
+        bid_volumes_down = run['timeseries']["P_dn"]
+
+        return self.C_eur2nok * np.sum(np.multiply(CM_clearing_prices_up, bid_volumes_up) + np.multiply(CM_clearing_prices_down, bid_volumes_down))
+        
+
+
+
+
+    def estimate_prices(self):
+
+        AM_clearing_prices_up, AM_clearing_prices_down = self.get_clearing_prices()
+        CM_clearing_prices_up, CM_clearing_prices_down = self.get_CM_clearing_prices()
+        spot_prices = self.spot_prices.reshape((1,-1))[:,0::4]
+        
+
+        CM_prices = np.vstack((CM_clearing_prices_up, 
+                               CM_clearing_prices_down))[:,0::4]
+        
+        AM_prices = np.vstack((AM_clearing_prices_up, 
+                               AM_clearing_prices_down))[:,0::4]
+        
+        CM_price_estimate = Estimator(CM_prices, spot_prices,                           n_lags=1)
+        AM_price_estimate = Estimator(AM_prices, np.vstack((CM_prices, spot_prices)),   n_lags=3)
+
+        print(f"CM Estimator MSE: {CM_price_estimate.mse}\t lag: {CM_price_estimate.n_lags}")
+        print(f"AM Estimator MSE: {AM_price_estimate.mse}\t lag: {AM_price_estimate.n_lags}")
+
+        fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, sharex=True)
+
+
+        t = np.arange(spot_prices.shape[1])
+        ax1.plot(t, CM_price_estimate[0,:],     label='Est CM clearing up')
+        ax2.plot(t, CM_price_estimate[1,:],     label='Est CM clearing down')
+        ax3.plot(t, AM_price_estimate[0,:],     label='Est AM clearing up')
+        ax4.plot(t, AM_price_estimate[1,:],     label='Est AM clearing down')
+
+        ax1.plot(t, CM_clearing_prices_up[0::4],      linestyle = ':', color='gray', label='CM clearing up')
+        ax2.plot(t, CM_clearing_prices_down[0::4],    linestyle = ':', color='gray', label='CM clearing down')
+        ax3.plot(t, AM_clearing_prices_up[0::4],      linestyle = ':', color='gray', label='AM clearing up')
+        ax4.plot(t, AM_clearing_prices_down[0::4],    linestyle = ':', color='gray', label='AM clearing down')
+
+        ax1.legend()
+        ax2.legend()
+        ax3.legend()
+        ax4.legend()
+
+        plt.show()
+        
+
+
+
 

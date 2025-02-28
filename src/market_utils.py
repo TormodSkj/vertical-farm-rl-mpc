@@ -28,120 +28,267 @@ class Estimator:
     
     '''
 
-
     exact: bool
-
     n_lags: int
 
-    X     = None
-    Y   = None
+    sample_data: np.ndarray
+    estimated_data: np.ndarray
+    
     nx = 0
     ny = 0
     
-    training_data_length: int
+    n_data: int
 
     covariances: np.ndarray
     means: np.array
 
-    def __init__(self, n_lags, is_exact = False):
+    def __init__(self, dependent_data: np.ndarray, independent_data: np.ndarray = None, n_lags = 0, is_exact = False):
+
+        dependent_data, independent_data = self.sanitize_inputs(dependent_data, independent_data)
 
         self.exact = is_exact
         self.n_lags = n_lags
-
-
-    # def get_estimate(self, Y = None, N = 1):
-
-    #     if self.exact()
-
-
-
-    def add_sample(self, X_sample: np.ndarray, Y_sample: np.ndarray = None):
-
-        if len(X_sample.shape) == 1: X_sample = X_sample.reshape((1,-1))
-
-        assert X_sample.shape[1] == X_sample.shape[1], f"Inconsistent lengths of conditional signal and input signal"
-        assert X_sample.shape[1] > self.n_lags - 1, f"Training signals too short for choice of lag variables"
-
-        if self.X is not None: 
-            assert X_sample.shape[1] == self.X.shape[1],       f"Size inconsistency when adding estimation signal. Expected length {self.X.shape[1]}, received length {X_sample.shape[1]} "
-            self.X = np.vstack((self.X, X_sample))
-        else:
-            self.X = X_sample
-            self.training_data_length = X_sample.shape[1]
-
-        if Y_sample is not None:
-            if len(Y_sample.shape) == 1: Y_sample = Y_sample.reshape((1,-1))
-
-            if self.Y is not None: 
-                assert Y_sample.shape[1] == self.training_data_length,   f"Size inconsistency when adding input signal. Expected length {self.training_data_length}, received length{self.Y.shape[1]} "
-                self.Y = np.vstack((self.Y, Y_sample))
-            else:
-                self.Y = Y_sample
-            
-            self.ny += Y_sample.shape[0]
-
-        self.nx += X_sample.shape[0]
-
-        self.update_covariances()
-
-    def update_covariances(self):
-
-        # for lag in range(self.n_lags): np.array([self.est_signals[k:(est_signals.shape[1] - k)] for k in range(lag)])
+        self.sample_data = dependent_data
+        self.n_data = dependent_data.shape[1]
         
-        if self.n_lags > 0: 
-            lagged_signals  = np.vstack((self.X[:,k: self.X.shape[1]-self.n_lags + k] for k in range(1, self.n_lags+1)))
-            all_signals     = np.vstack((self.X[:,:self.X.shape[1]-self.n_lags],
-                                        lagged_signals)) 
-        else:
-            all_signals = self.X
-                                 
-        if self.Y is not None: all_signals = np.vstack((all_signals, self.Y[:,:self.X.shape[1]-self.n_lags]))
+        self.add_sample(X_sample=dependent_data, Y_sample=independent_data)
+
+
+    def __getitem__(self, index):
+        return self.estimated_data[index]
+
+    def __setitem__(self, index, value):
+        self.estimated_data[index] = value
+
+    def mean(self):
+        return np.mean(self.estimated_data)
+
+    def variance(self):
+        return np.var(self.estimated_data)
+
+    def __len__(self):
+        return len(self.estimated_data)
+
+    def __repr__(self):
+        return f"EstimatingArray({self.estimated_data})"
+
+
+
+    def sanitize_inputs(self, dependent_data: np.ndarray, independent_data: np.ndarray = None):
+
+        if len(dependent_data.shape) == 1: dependent_data = dependent_data.reshape((1,-1))
+        
+        if independent_data is None:         independent_data = np.zeros((0, dependent_data.shape[1]))
+        if len(independent_data.shape) == 1: independent_data = independent_data.reshape((1,-1))
+        
+        return dependent_data, independent_data
+
+    def add_sample(self, X_sample: np.ndarray, Y_sample: np.ndarray):
+
+        assert X_sample.shape[1] == Y_sample.shape[1],  f"Inconsistent lengths of dependent and independent data"
+        assert X_sample.shape[1] > self.n_lags - 1,     f"Sample data is too short for choice of lag variables"
+        assert Y_sample.shape[1] == self.n_data,        f"Size inconsistency when adding input signal. Expected length {self.n_data}, received length{Y_sample.shape[1]} "
+        
+        self.ny = Y_sample.shape[0]
+        self.nx = X_sample.shape[0]
+
+        self.update_covariances(Y_sample)
+        self.calculate_estimate(Y_sample)
+
+    def update_covariances(self, Y_sample):
+
+        lagged_data = np.zeros((self.nx*self.n_lags, self.n_data - self.n_lags))
+
+        for k in range(1, self.n_lags+1):
+            lagged_data[self.nx*(k-1):self.nx*k, :] = self.sample_data[:,self.n_lags-k:self.n_data-k]
+
+        all_signals     = np.vstack((self.sample_data[:,self.n_lags:],
+                                    lagged_data, 
+                                    Y_sample[:,self.n_lags:])) 
         
         self.covariances = np.cov(all_signals)
         self.means = np.mean(all_signals, axis=1)
+        # self.means[self.nx:self.nx+self.n_lags*self.nx] = np.repeat(self.means[:self.nx], self.n_lags)
     
-    def conditional_estimate(self, X_prev: np.ndarray = None, Y: np.ndarray = None, N = 1):
-        
-        if Y is not None:
-            assert Y.shape[0] == self.ny, f"Expected {self.ny} inputs, but received only {Y.shape[0]}"
-            N = Y.shape[1]
 
-        if X_prev is not None:
-            if len(X_prev.shape) == 1: X_prev = X_prev.reshape((1,-1))
-            assert X_prev.shape[1] >= self.n_lags and X_prev.shape[0] == self.nx, f"Expected past vals of dimension ({self.nx}, {self.n_lags}), but got ({X_prev.shape})"
-            x_est = np.hstack((X_prev, np.zeros((self.nx, N))))
-        else:
-            x_est = np.zeros((self.nx, N))
+    def build_stable_covariances(self, threshold=1e8):
+        """
+        Incrementally builds a well-conditioned covariance matrix Pyy,
+        skipping lag variables that make it numerically unstable.
         
+        Args:
+            y_lagged: Matrix of lagged y values (shape: [n_samples, n_lags])
+            x_lagged: Corresponding lagged x values (for Pxy update)
+            threshold: Condition number threshold for stability
         
+        Returns:
+            Pyy: Well-conditioned covariance matrix
+            Pxy: Corresponding cross-covariance matrix
+            selected_lags: List of indices of selected lags
+        """
+        n = self.nx + self.n_lags + self.ny
+        selected_lags = []
+
+        full_covariances = self.covariances[self.nx:, self.nx:]
+
+        Pyy = np.zeros((0,0))
+        Pxy = np.zeros((0, self.n_lags + self.ny))  # Matching empty cross-matrix
+
+        for var in range(n - self.nx):
+
+            new_col = full_covariances[selected_lags + [var], var].reshape(-1, 1)
+            new_row = new_col.T
+
+            # Pyy_candidate = self.covariances[self.nx:self.nx+lag, self.nx:self.nx+lag]
+            Pyy_candidate = np.block([
+                [Pyy, new_col[:-1,:]],
+                [new_row[:,:-1], new_row[-1,-1]]
+            ])
+            
+            # Compute condition number
+            cond_number = np.linalg.cond(Pyy_candidate)
+
+            if cond_number < threshold:
+                Pyy = Pyy_candidate  # Accept new column/row
+                selected_lags.append(var)
+
+                # # Update Pxy to match
+                # new_pxy_col = full_covariances[:, lag].reshape(-1, 1)
+                # Pxy = np.hstack((Pxy, new_pxy_col)) if Pxy.size else new_pxy_col
+                # Pxy = Pxy.reshape((self.nx, -1))
+            
+        
+        Pxy = self.covariances[:self.nx, np.array(selected_lags) + self.nx]
+
+        return Pyy, Pxy, selected_lags
+
+
+    def calculate_estimate(self, Y_sample: np.ndarray):
+        
+        if self.exact:
+            self.estimated_data = self.sample_data
+            self.mse = 0
+
+
+        # Pxy     = self.covariances[:self.nx,self.nx:]
+        # Pyy     = self.covariances[self.nx:,self.nx:]
+        
+        # print(self.covariances)
+
+        Pyy, Pxy, selected_vars = self.build_stable_covariances()
+        Pyy_inv = np.linalg.inv(Pyy)
+
+        # selected_lags   = [var for var in selected_vars if var >= self.nx and var < self.nx + self.n_lags]
+        # selected_y      = [var for var in selected_vars if var >= self.nx + self.n_lags]
+        # print(Pxy)
+        # print(Pyy)
+
         a = self.means[:self.nx].reshape((-1, 1))
-        b = self.means[self.nx:].reshape((-1, 1))
+        b = self.means[selected_vars].reshape((-1, 1))
 
-        Pxy     = self.covariances[:self.nx,self.nx:]
-        Pyy     = self.covariances[self.nx:,self.nx:]
-        
-
-        if np.linalg.cond(Pyy) < 1/sys.float_info.epsilon:
-            Pyy_inv = np.linalg.inv(Pyy)
-        else:
-            Pyy_inv = np.linalg.inv(1e-6*np.eye(*Pyy.shape) + Pyy)
+        # if np.linalg.cond(Pyy) < 1/sys.float_info.epsilon:
+        #     Pyy_inv = np.linalg.inv(Pyy)
+        # else:
+        #     print('Adjusting Pyy to make it non-singular')
+        #     Pyy_inv = np.linalg.inv(1e-6*np.eye(*Pyy.shape) + Pyy)
             
 
-        
-        for k in range(N):
+        x_est = np.zeros_like(self.sample_data)
+        x_est[:,:self.n_lags] = np.repeat(self.means[:self.nx].reshape((-1,1)), self.n_lags, axis=1)
+        # x_est[:,:self.n_lags] = self.sample_data[:,:self.n_lags]
+
+        for k in range(self.n_lags, self.n_data):
             
-            if Y is not None:
-                y = np.vstack((x_est[:,k:k+self.n_lags].ravel(order='F').reshape((-1,1)), Y[:,k].reshape((-1,1))))
-            else:
-                y = x_est[:,k:k+self.n_lags].ravel(order='F').reshape((-1,1))
+            # if Y_sample is not None:
+            y = np.vstack((np.flip(self.sample_data[:,k-self.n_lags:k], axis=1).ravel(order='F').reshape((-1,1)), Y_sample[:,k].reshape((-1,1))))[selected_vars, :]
+            # else:
+            #     y = x_est[:,k:k+self.n_lags].ravel(order='F').reshape((-1,1))
 
             conditional = a + Pxy @ Pyy_inv @ (y - b)
             
-            x_est[:,self.n_lags+k] = conditional.flatten()
+            x_est[:,k] = conditional.flatten()
 
 
-        return x_est[:,-N:]
+        # self.estimated_data = np.flip(x_est, axis=0)
+        self.estimated_data = x_est
+                                      
+        self.mse = np.mean(np.square(self.estimated_data[:,self.n_lags:] - self.sample_data[:,self.n_lags:]))
 
+        return
+
+    '''
+    def estimate(self, past_vals: np.ndarray = None, Y_sample: np.ndarray = None):
+        
+        if len(past_vals.shape) == 1: past_vals = past_vals.reshape((self.nx, -1))
+        if len(Y_sample.shape) == 1: Y_sample = Y_sample.reshape((self.ny, -1))
+
+        Pyy, Pxy, selected_vars = self.build_stable_covariances()
+        Pyy_inv = np.linalg.inv(Pyy)
+        a = self.means[:self.nx].reshape((-1, 1))
+        b = self.means[selected_vars].reshape((-1, 1))
+        
+        x_est = np.zeros((self.nx, self.n_lags + Y_sample.shape[1]))
+        x_est[:,:self.n_lags] = past_vals[:,:n_lags]
+
+        for k in range(self.n_lags, self.n_data):
+            
+            y = np.vstack((np.flip(x_est[:,k-self.n_lags:k].ravel(order='F')).reshape((-1,1)), Y_sample[:,k].reshape((-1,1))))[selected_vars, :]
+            
+            conditional = a + Pxy @ Pyy_inv @ (y - b)
+            
+            x_est[:,k] = conditional.flatten()
+
+        return x_est[:,self.n_lags:]
+        '''
+
+''' #
+
+# x = np.sin(np.linspace(0, 6*np.pi,signal_length)).reshape((1,-1))
+# x = np.tile(np.array([[-1,-1,-2,-2],
+                    #   [1,1,2,2]]), int(signal_length/4))
+
+
+# y = x.repeat(1, axis=0)
+# np.random.seed(1133)
+# y = y + 0.2*np.random.randn(*y.shape)
+
+
+signal_length = 100
+y = np.linspace(1, 10, signal_length).reshape((1,-1))
+x = np.vstack((2*y + np.random.randn(*y.shape),
+                -0.2*y + 0.3*np.random.randn(*y.shape)))
+
+
+fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+
+ax1.plot(np.arange(signal_length), x[0,:].flatten(), color='black', label='x', linewidth=3, linestyle=':')
+ax2.plot(np.arange(signal_length), x[1,:].flatten(), color='black', label='x', linewidth=3, linestyle=':')
+
+mse = {}
+
+for lag in [0, 1, 2, 3, 4, 5, 6, 7, 8]:
+    n_lags = lag
+    est = Estimator(x, y, n_lags=n_lags, is_exact=False)
+
+    # print(f"MSE: {est.mse}")
+    mse[lag] = (est.mse)
+
+    past_vals = np.array([0])
+
+    output = est[:,:]
+    # output = est.estimate(past_vals, y)
+
+    ax1.plot(np.arange(signal_length), output[0,:].flatten(), label=f'lag: {lag}')
+    ax2.plot(np.arange(signal_length), output[1,:].flatten(), label=f'lag: {lag}')
+    ax1.legend()
+    ax2.legend()
+
+for lag in mse:
+    print(f"MSE for lag {lag}: {mse[lag]}")
+
+plt.show()
+
+# '''
 
 
 def load_spot_prices(file_path, bidding_zone):
