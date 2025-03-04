@@ -17,7 +17,7 @@ FINAL_FRESHWEIGHT   = 4                   # 1 day
 # FINAL_WEIGHT      = 136.7             # 20 Days 
 # FINAL_WEIGHT      = 2.05              # 20 Days [Directly from germination]
 SIMULATION_DATE = '2024-02-14'
-BIDDING_ZONE    = 'NO2'
+BIDDING_ZONE    = 'NO1'
 OPTIMISTIC      = 1
 SEARCH_CACHE    = 1
 
@@ -73,7 +73,9 @@ def main():
     # run_ids = ['mfrr_opt', 'abs_opt']
     # for run_id in run_ids: print(f"Upper CM participation earnings limit for {run_id}: {market.calculate_CM_earnings_upper_limit(controller, run_id)}")
           
-    market.estimate_prices()
+    # market.estimate_prices()
+    market.calculate_AM_upper_bound()
+
     
     #'''
     # 
