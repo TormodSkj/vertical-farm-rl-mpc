@@ -150,7 +150,7 @@ class PlantModel:
 
         return ca.vertcat(x_sdw_dot, x_nsdw_dot, x_LI_dot)
     
-    def casadi_function_rk(self, ts=SECONDS_PER_QUARTER_HOUR):
+    def casadi_function_rk4(self, ts=SECONDS_PER_QUARTER_HOUR):
         '''Repackages the system equations as a casadi function using Runge-Kutta method'''
 
         states = ca.MX.sym('X', self.nx)

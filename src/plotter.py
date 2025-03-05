@@ -1724,27 +1724,30 @@ class Plotter():
 
         # Table
 
-        table_1 = dict_to_table(controller.specs)
+        table_1 = dict_to_table(controller.settings_data['general'])
         ax1.axis("tight")
         ax1.axis("off")
         ax1.table(cellText=table_1, cellLoc='center', loc='center', colWidths=[0.5, 0.4])
-        ax1.set_title('Controller specs')
+        ax1.set_title('General specs')
 
-        table_2 = dict_to_table(controller.model.specs)
+        table_2 = dict_to_table(controller.settings_data['controller'])
         ax2.axis("tight")
         ax2.axis("off")
         ax2.table(cellText=table_2, cellLoc='center', loc='center', colWidths=[0.5, 0.4])
-        ax2.set_title('Model specs')
-        
-        table_3 = dict_to_table(market.specs)
+        ax2.set_title('Controller specs')
+
+        table_3 = dict_to_table(controller.settings_data['model'])
         ax3.axis("tight")
         ax3.axis("off")
         ax3.table(cellText=table_3, cellLoc='center', loc='center', colWidths=[0.5, 0.4])
-        ax3.set_title('Market specs')
-
-
+        ax3.set_title('Model specs')
+        
+        table_4 = dict_to_table(controller.settings_data['market'])
         ax4.axis("tight")
         ax4.axis("off")
+        ax4.table(cellText=table_4, cellLoc='center', loc='center', colWidths=[0.5, 0.4])
+        ax4.set_title('Market specs')
+
 
         fig.suptitle(f'Specs for {config.sim_name}')
         plt.tight_layout()

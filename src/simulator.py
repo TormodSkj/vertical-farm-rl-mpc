@@ -120,7 +120,7 @@ class Simulator():
         dt = controller.dt
         date = market.date
         spot_prices = controller.spot_prices
-        F = controller.model.casadi_function_fe()
+        F = controller.F
 
         clearing_prices_up, clearing_prices_down = market.get_clearing_prices(date)
         assert len(clearing_prices_up)==N and len(clearing_prices_down)==N, f'Clearing price arrays have inconsistent lengths with simulation duration. N = {self.N}, len(clearing prices up) = {len(clearing_prices_up)}, len(clearing prices down) = {len(clearing_prices_down)}'

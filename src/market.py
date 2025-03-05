@@ -531,7 +531,7 @@ class Market:
             (clearing_prices_df['Start Time']   <  end_date) 
             ]
         
-        clearing_prices_df.fillna(clearing_prices_df.mean(), inplace=True)
+        clearing_prices_df.fillna(self.CM_data_full_set.mean(), inplace=True)
 
         clearing_prices_up = np.array(clearing_prices_df['Clearing Price Up']).repeat(QUARTER_HOURS_PER_HOUR)
         clearing_prices_down = np.array(clearing_prices_df['Clearing Price Down']).repeat(QUARTER_HOURS_PER_HOUR)
@@ -568,6 +568,36 @@ class Market:
         return np.where(demands_up > 0, 1, 0), np.where(demands_dn > 0, 1, 0)
     
 
+
+    def get_CM_reservations(self, date = None, n_days = None):
+        '''
+        Returns numpy arrays of length N with Capacity market reservations during each quarter hour from the start time.
+        For every MTU, a 1 indicates that a reservation was made and a 0 indicates that no reservation was made.
+        Start time is always assumed at 00:00 at the given start date.
+        '''
+
+        if date is None:
+            date = self.date
+
+        if n_days==None:
+            n_days = self.T
+
+        start_date = pd.to_datetime(date)
+        end_date = start_date + pd.DateOffset(n_days)
+
+        reservations_df = self.CM_data_full_set
+
+        # Remove dates before simdate
+        reservations_df = reservations_df[
+            (reservations_df['Start Time']   >= start_date)    &
+            (reservations_df['Start Time']   <  end_date) 
+            ].fillna(0)
+
+        reservations_up = np.array(reservations_df['Volume Up']).repeat(QUARTER_HOURS_PER_HOUR)
+        reservations_dn = np.array(reservations_df['Volume Down']).repeat(QUARTER_HOURS_PER_HOUR)
+
+        return np.where(reservations_up > 0, 1, 0), np.where(reservations_dn > 0, 1, 0)
+    
 
     def analyze_market_potency(self, T=20):
         '''
@@ -717,7 +747,7 @@ class Market:
 
     #     print(yearly_earnings)
 
-    def calculate_AM_upper_bound(self, start_date='01-01-2024', end_date='31-12-2024'):
+    def calculate_AM_upper_bound(self, start_date='15-02-2024', end_date='31-12-2024'):
         """
         Calculates the upper bound for earnings from the AM market by optimizing activation periods.
         
@@ -727,12 +757,16 @@ class Market:
         - Choose the 16 most profitable hours of down_activation and 8 least profitable to be "off".
         - Sum daily earnings over the year.
         """
+
+        print(f"Performing upper bound earnings analysis for mFRR participation in \n{self.bidding_zone} from {start_date} to {end_date}. \nThis might take a while...")
+
         
         # Dates for which to accumulate earnings over.
         dates = pd.date_range(start=pd.to_datetime(start_date, format='%d-%m-%Y'),
                             end=pd.to_datetime(end_date, format='%d-%m-%Y'))
 
-        yearly_earnings_eur = 0
+        yearly_earnings_AM = 0
+        yearly_earnings_CM = 0
         
         electricity_costs_fixed = 0
         electricity_costs_min   = 0
@@ -745,9 +779,20 @@ class Market:
             AM_activation_demands_up, AM_activation_demands_down = self.get_activation_demands(date=date, n_days=1) # Activation market demands, 0 or 1
             spot_prices = self.get_spotprice(date=date, n_days=1)
 
+            CM_clearing_prices_up, CM_clearing_prices_down = self.get_CM_clearing_prices(date=date, n_days=1)       # CM Clearing prices in eur/MWh
+            CM_reservations_up, CM_reservations_down = self.get_CM_reservations(date=date, n_days= 1)
+
+            N_max = len(CM_clearing_prices_up)
+            AM_clearing_prices_up, AM_clearing_prices_down = AM_clearing_prices_up[:N_max], AM_clearing_prices_down[:N_max] 
+            CM_clearing_prices_up, CM_clearing_prices_down = CM_clearing_prices_up[:N_max], CM_clearing_prices_down[:N_max] 
+            AM_activation_demands_up, AM_activation_demands_down = AM_activation_demands_up[:N_max], AM_activation_demands_down [:N_max]
+            spot_prices = spot_prices[:N_max]
+
             # Calculate earnings per quarter hour
-            AM_cost_up      = - np.multiply(AM_clearing_prices_up, AM_activation_demands_up)
+            AM_cost_up      = - np.multiply(AM_clearing_prices_up,   AM_activation_demands_up)
             AM_cost_down    = - np.multiply(AM_clearing_prices_down, AM_activation_demands_down)# + spot_prices*1000/self.C_eur2nok
+            CM_cost_up      = - np.multiply(CM_clearing_prices_up,   CM_reservations_up)
+            CM_cost_down    = - np.multiply(CM_clearing_prices_down, CM_reservations_down)
 
             cost_up_df = pd.DataFrame({'MTU': list(range(len(spot_prices))), 
                                       'Cost': AM_cost_up})
@@ -809,12 +854,22 @@ class Market:
                     qh_on += 1
                     j += 1  
 
-            cost_up     = np.sum(AM_cost_up[np.where(light_schedule==0)])
-            cost_down   = np.sum(AM_cost_down[np.where(light_schedule==1)])
-            energy_cost = np.sum(spot_prices[np.where(light_schedule==1)])
+            AM_earnings_up      = - np.sum(AM_cost_up[np.where(light_schedule==0)])   
+            AM_earnings_down    = - np.sum(AM_cost_down[np.where(light_schedule==1)]) 
 
-            max_earnings = - cost_up - cost_down
-            yearly_earnings_eur += max_earnings
+            CM_earnings_up      = - np.sum(CM_cost_up[np.where(light_schedule==0)])
+            CM_earnings_down    = - np.sum(CM_cost_down[np.where(light_schedule==1)])
+
+            energy_cost         = np.sum(spot_prices[np.where(light_schedule==1)])
+
+            assert not np.isnan(cost_up),   "Cost up is nan"
+            assert not np.isnan(cost_down), "Cost down is nan"
+            
+
+            AM_max_earnings = AM_earnings_up + AM_earnings_down
+            CM_max_earnings = CM_earnings_up + CM_earnings_down
+            yearly_earnings_AM += AM_max_earnings
+            yearly_earnings_CM += CM_max_earnings
             electricity_costs_AM += energy_cost
             electricity_costs_fixed += np.sum(spot_prices[:16*4])
 
@@ -836,18 +891,21 @@ class Market:
             # electricity_costs_AM += np.sum(top_16_down_spot_prices)
             # electricity_costs_fixed += np.sum(spot_prices[:16*4])
 
-        yearly_earnings_nok = yearly_earnings_eur
-
         # convert from nok/kwh to eur/mwh
         # electricity_costs_min  = electricity_costs_min  / self.C_eur2nok * 1000 
+
+        yearly_earnings_total_mFRR = yearly_earnings_AM + yearly_earnings_CM
+
         electricity_costs_AM = electricity_costs_AM / self.C_eur2nok * 1000
         electricity_costs_fixed = electricity_costs_fixed / self.C_eur2nok * 1000
 
 
-        print(f'\nOptimistic earnigns calculations for mFRR AM participation in {self.bidding_zone}')
-        print(f"Total electricity costs without AM participation: \t{electricity_costs_fixed:.2f}")
-        print(f"Total estimated upper bound of AM earnings: \t\t{yearly_earnings_nok:.2f}")
+        print(f'\nOptimistic earnigns calculations for mFRR participation in {self.bidding_zone} for period: {start_date} to {end_date}')
+        print(f"Total costs without mfrr participation: \t\t{electricity_costs_fixed:.2f}")
+        print(f"Estimated upper bound of AM earnings: \t\t\t{yearly_earnings_AM:.2f}")
+        print(f"Estimated upper bound of CM earnings: \t\t\t{yearly_earnings_CM:.2f}")
+        print(f"Estimated upper bound of earnings from mFRR : \t\t{yearly_earnings_total_mFRR:.2f}")
         print(f"Total electricity costs with AM participation: \t\t{electricity_costs_AM:.2f}")
-        print(f"Net cost reduction from AM participation: \t\t{electricity_costs_fixed - electricity_costs_AM + yearly_earnings_nok:.2f}")
-        print(f"Net cost reduction in percentage: \t\t\t{(electricity_costs_fixed - electricity_costs_AM + yearly_earnings_nok)/electricity_costs_fixed * 100 :.2f}")
-        return yearly_earnings_nok
+        print(f"Net cost reduction from mfrr participation: \t\t{electricity_costs_fixed - electricity_costs_AM + yearly_earnings_total_mFRR:.2f}")
+        print(f"Net cost reduction in percentage: \t\t\t{(electricity_costs_fixed - electricity_costs_AM + yearly_earnings_total_mFRR)/electricity_costs_fixed * 100 :.2f}")
+        return yearly_earnings_total_mFRR

@@ -16,7 +16,15 @@ from tqdm import tqdm
 from typing import List
 
 class Controller():
-    """The controller handles open-loop optimization given a model and a set of constraints."""
+    """
+    Generate optimal inputs sequences given a model and a set of constraints.
+
+    Mainly, this is used to generate light schedules for plant models, 
+    but it may be used for entirely different process models.
+
+    All generated input sequences along with predicted state trajectories are stored
+    in the `optimization_results` dict. 
+    """
 
     surpress_output: bool
     import_file: str
@@ -54,10 +62,13 @@ class Controller():
 
     def __init__(self, settings: Settings, plantmodel, market, config):
         '''
-        timehorizon, 
-        mpc_timehorizon, mpc_steplength,
-        warm_start = False, calculate_fw = False):
+        Get settings from settings-object
+
+        Gather specs from other plantmodel, market.
+        Setup optimization_results dict
+        Generate fixed light schedule for reference
         '''
+
         self.settings = settings
         self.controller_settings = settings.get_settings_group('sim_name', 'general', 'controller', 'market', 'plantmodel')
 
@@ -68,6 +79,7 @@ class Controller():
         self.T                  = self.controller_settings['SIMULATION_LENGTH'] 
         self.N                  = self.controller_settings['SIM_N_TIMESTEPS'] 
         self.dt                 = self.controller_settings['SIM_TIMEDELTA'] 
+        self.discretization     = self.controller_settings['DISCRETIZATION']
 
         self.search_cache       = self.controller_settings['SEARCH_SIM_CACHE']
         self.import_file        = self.controller_settings['IMPORT_FILE']
@@ -75,7 +87,7 @@ class Controller():
         self.mpc_settings       = self.settings.get_settings_group('mpc')
         self.mpc_T_horizon      = self.mpc_settings['MPC_TIMEHORIZON']
         mpc_steplength          = self.mpc_settings['MPC_STEPLENGTH']
-
+        
         self.mpc_N_horizon = int(np.ceil(self.mpc_T_horizon * QUARTER_HOURS_PER_DAY))
         self.mpc_T_step = max(mpc_steplength, self.dt/(SECONDS_PER_QUARTER_HOUR * QUARTER_HOURS_PER_DAY))
         self.mpc_N_step = int(np.ceil(self.mpc_T_step * QUARTER_HOURS_PER_DAY))
@@ -84,29 +96,20 @@ class Controller():
         self.model = plantmodel
         self.market = market
         self.config = config
-        
 
-        self.specs = { 
-            'time horizon'          : self.T,
-            'N'                     : self.N,
-            'mpc time horizon'      : self.mpc_T_horizon,
-            'mpc step time'         : self.mpc_T_step,
-            'calculate freshweight' : self.calculate_fw,
-            'warm start'            : self.warm_start
-        }
-        specs_data = {
-            'controller' : self.specs,
-            'model'      : self.model.specs,
-            'market'     : self.market.specs
+        self.settings_data = {
+            'general'    : settings.get_settings_group('general'),
+            'controller' : settings.get_settings_group('controller'),
+            'model'      : settings.get_settings_group('plantmodel'),
+            'market'     : settings.get_settings_group('market')
         }
 
         self.optimization_results = {
             'name'              : self.sim_name,
             'timestamp'         : datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'specs'             : specs_data,
+            'specs'             : self.settings_data,
             'runs'              : {}
             }
-        self.hash = generate_hash(self.optimization_results['specs'])
 
         self.t = np.linspace(0, self.T, self.N)
         self.spot_prices = self.market.get_spotprice()
@@ -121,18 +124,19 @@ class Controller():
             self.A_down.append(0)
 
 
+        if  str(self.discretization).lower() == 'fe':
+            self.F = self.model.casadi_function_fe(self.dt)
+        elif str(self.discretization).lower() == 'rk4':
+            self.F = self.model.casadi_function_rk4(self.dt)
+        else:
+            assert False, "Invalid discretization method"
+
         # Set initial state
         self.x_init = self.model.x_init
 
         # Generate freshweight for the mpc bidding controller to use as reference trajectory
         self.fixed_light_schedule()   
         
- 
-        
-    def set_bids(self, Bid_0, Bid_1):
-        self.Bid_0 = Bid_0
-        self.Bid_1 = Bid_1
-
 
 
     def optimize_mfrr(self, run_id, refrun_id = 'fixed'):
@@ -174,16 +178,11 @@ class Controller():
 
         # Initialize cost function and constraints
         J = self.model.bidding_obj_function(N, self.spot_prices, X, B_volumes = B[:2,:], B_prices = B[2:4,:], U_nom = U_nom, market = self.market)\
-                       + self.model.terminal_cost(self, X, U, Eps)#\
-                       #+ self.model.fluctuating_light_cost(self, U) # Cost function
+                       + self.model.terminal_cost(self, X, U, Eps)
 
 
         g_eq, g_ineq = [], []
         g_eq, g_ineq = self.model.get_process_constraints(self, g_eq, g_ineq, X, U, Eps)
-        # g_eq, g_ineq = self.model.get_static_process_constraints(g_eq, g_ineq, N, dt, X, self.x_init, U, Eps)
-        # g_eq, g_ineq = self.model.get_dynamic_process_constraints(g_eq, g_ineq, N, X, Eps, self.model.Final_fw_sht)
-        # g_eq, g_ineq = self.model.get_initial_bid_constraints(self, g_eq, g_ineq, B)
-
         
         # format constraints
         n_eq    = ca.vertcat(*g_eq).size()[0]
@@ -212,10 +211,10 @@ class Controller():
 
         z0 = ca.DM.zeros((N + 1)*nx + N*4 + neps)  
         if self.warm_start: 
-            z0[:nx*(N+1)]                   = refrun['timeseries']['x'].flatten()   # TODO check if works as intended
-            z0[nx*(N+1):nx*(N+1)+2*N]       = ub_B_volumes.reshape((2*N,1))         # Bid volumes
-            z0[nx*(N+1)+2*N:nx*(N+1)+3*N]   = self.market.expected_prices_up        # Bid prices up
-            z0[nx*(N+1)+3*N:nx*(N+1)+4*N]   = self.market.expected_prices_down        # Bid prices down
+            z0[:nx*(N+1)]                   = refrun['timeseries']['x'].flatten()
+            z0[nx*(N+1):nx*(N+1)+2*N]       = ub_B_volumes.reshape((2*N,1))             # Bid volumes
+            z0[nx*(N+1)+2*N:nx*(N+1)+3*N]   = self.market.expected_prices_up            # Bid prices up
+            z0[nx*(N+1)+3*N:nx*(N+1)+4*N]   = self.market.expected_prices_down          # Bid prices down
         
         sol = solver(x0=z0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
 
@@ -348,7 +347,7 @@ class Controller():
         spot_prices = self.spot_prices
         nx, nu, neps = self.model.nx, self.model.nu, self.model.neps
         market = self.market
-        F = self.model.casadi_function_fe()
+        F = self.F
 
         clearing_prices_up, clearing_prices_down = market.get_clearing_prices(self.market.date)
         assert len(clearing_prices_up)==N and len(clearing_prices_down)==N, f'Clearing price arrays have inconsistent lengths with simulation duration. N = {self.N}, len(clearing prices up) = {len(clearing_prices_up)}, len(clearing prices down) = {len(clearing_prices_down)}'
@@ -623,7 +622,7 @@ class Controller():
         U_initial_guess = np.array(self.model.get_u(N_TH, U_nom, B_prices_initial_guess, B_max_volumes, spot_prices, self.market)).flatten()
         X_initial_guess = ca.DM.zeros(self.model.nx, N_TH+1)
         X_initial_guess[:,0] = x0
-        F = self.model.casadi_function_fe()
+        F = self.F
         for k in range(len(U_initial_guess)):
             X_initial_guess[:,k+1] = F(X_initial_guess[:,k], U_initial_guess[k])
 
@@ -640,7 +639,7 @@ class Controller():
         start_time = time.time()
 
         N = self.N
-        F = self.model.casadi_function_rk()
+        F = self.F
 
         # 18 hours on, 6 hours off in 15 minute intervals
         intervals_per_hour = 4   # Time steps per hour
@@ -873,7 +872,7 @@ class Controller():
         '''
         start_time = time.time()
         N = self.N
-        F = self.model.casadi_function_rk()
+        F = self.F
 
         # Open and load the JSON file
         import_path = os.path.join(self.config.data_path, self.import_file)

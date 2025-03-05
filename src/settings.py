@@ -57,7 +57,8 @@ class Settings():
                          SURPRESS_OUTPUT  = False,
                          WARM_START       = True,
                          CALCULATE_FW     = True,
-                         IMPORT_FILE      = 'scaled_optimal_intensities.json'
+                         IMPORT_FILE      = 'scaled_optimal_intensities.json',
+                         DISCRETIZATION   = 'fe'
                          )
                         
         

@@ -692,7 +692,7 @@ def merge_and_align(spot_prices, mfrr_prices):
 def fetch_CM_data_nucs(target_file_path, start_date, end_date):
     """
     Fetch balancing reserve data for a range of dates, parse HTML tables,
-    and store the data in a CSV file without duplicates.
+    and store the data in a CSV file
     """
 
     base_url = "https://www.nucs.net/balancing/r2/pricesAndVolumesOfProcuredBalancingReserve/show"
@@ -717,7 +717,7 @@ def fetch_CM_data_nucs(target_file_path, start_date, end_date):
 
             bidding_zone_row = table.find_all("tr")[0]
             bidding_zone_cols = list(np.repeat(
-                [th.text.strip().lstrip('MBA|') for th in bidding_zone_row.find_all("th")][2:], 2
+                [th.text.strip() for th in bidding_zone_row.find_all("th")][2:], 2
             ))
 
             headers_row = table.find_all("tr")[2]
@@ -727,7 +727,9 @@ def fetch_CM_data_nucs(target_file_path, start_date, end_date):
                 f"{bidding_zone_cols[i]} {direction_prefix} {headers_cols[i]}" for i in range(len(headers_cols))
             ]
 
-            zone_indices = {zone: i for i, zone in enumerate(new_header_cols) if 'NO' in zone}
+            zone_indices = {zone.lstrip('MBA|'): i for i, zone in enumerate(new_header_cols) if 'MBA|' in zone}
+
+            # new_header_cols = [str(header_col).lstrip('MBA|') for header_col in new_header_cols]
 
             for tr in table.find_all("tr")[3:]:  
                 cols = tr.find_all("td")
@@ -776,9 +778,31 @@ def fetch_CM_data_nucs(target_file_path, start_date, end_date):
                 f"&marketArea.values=CTY|10YNO-0--------C!MBA|10YNO-3--------J"
                 f"&marketArea.values=CTY|10YNO-0--------C!MBA|10YNO-4--------9"
                 f"&marketArea.values=CTY|10YNO-0--------C!MBA|10Y1001A1001A48H"
+                f"&marketArea.values=CTY|10Y1001A1001A65H!MBA|10YDK-1--------W"
+                f"&marketArea.values=CTY|10Y1001A1001A65H!MBA|10YDK-2--------M"
+                f"&marketArea.values=CTY|10YFI-1--------U!MBA|10YFI-1--------U"
+                f"&marketArea.values=CTY|10YSE-1--------K!MBA|10Y1001A1001A44P"
+                f"&marketArea.values=CTY|10YSE-1--------K!MBA|10Y1001A1001A45N"
+                f"&marketArea.values=CTY|10YSE-1--------K!MBA|10Y1001A1001A46L"
+                f"&marketArea.values=CTY|10YSE-1--------K!MBA|10Y1001A1001A47J"
                 f"&dataItems.values=PRICE&dataItems.values=VOLUME"
                 f"&reserveType.values=A97&balancingTypes=TERTIARY&reserveSource.values=ALL&aFRRmFRRType.values=A47"
             )
+
+            # "https://www.nucs.net/balancing/r2/pricesAndVolumesOfProcuredBalancingReserve/show?name=&defaultValue=false&viewType=TABLE&areaType=MBA&atch=false&dateTime.dateTime=12.06.2024+00:00|CET|DAYTIMERANGE&dateTime.endDateTime=12.06.2024+00:00|CET|DAYTIMERANGE&areaSelectType=USER_SELECTED"
+            # "&marketArea.values=CTY|10Y1001A1001A65H!MBA|10YDK-1--------W"
+            # "&marketArea.values=CTY|10Y1001A1001A65H!MBA|10YDK-2--------M"
+            # "&marketArea.values=CTY|10YFI-1--------U!MBA|10YFI-1--------U"
+            # "&marketArea.values=CTY|10YNO-0--------C!MBA|10YNO-1--------2"
+            # "&marketArea.values=CTY|10YNO-0--------C!MBA|10YNO-2--------T"
+            # "&marketArea.values=CTY|10YNO-0--------C!MBA|10YNO-3--------J"
+            # "&marketArea.values=CTY|10YNO-0--------C!MBA|10YNO-4--------9"
+            # "&marketArea.values=CTY|10YNO-0--------C!MBA|10Y1001A1001A48H"
+            # "&marketArea.values=CTY|10YSE-1--------K!MBA|10Y1001A1001A44P"
+            # "&marketArea.values=CTY|10YSE-1--------K!MBA|10Y1001A1001A45N"
+            # "&marketArea.values=CTY|10YSE-1--------K!MBA|10Y1001A1001A46L"
+            # "&marketArea.values=CTY|10YSE-1--------K!MBA|10Y1001A1001A47J"
+            # "&balancingDirection.values=A01&dataItems.values=PRICE&dataItems.values=VOLUME&reserveType.values=A97&balancingTypes=TERTIARY&reserveSource.values=ALL&aFRRmFRRType.values=A47"
 
             url_up = base_url + query_params + "&balancingDirection.values=A01"
             url_down = base_url + query_params + "&balancingDirection.values=A02"
@@ -815,11 +839,13 @@ def fetch_CM_data_nucs(target_file_path, start_date, end_date):
                 # Load existing CSV data (if it exists)
                 try:
                     existing_df = pd.read_csv(target_file_path)
+
+                    # Remove old entries for the current date to avoid duplicates
+                    existing_df = existing_df[existing_df["Date"] != date_str]
                 except FileNotFoundError:
                     existing_df = pd.DataFrame()
 
-                # Remove old entries for the current date to avoid duplicates
-                existing_df = existing_df[existing_df["Date"] != date_str]
+                
 
                 # Append new data and save
                 updated_df = pd.concat([existing_df, new_df], ignore_index=True)
