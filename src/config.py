@@ -32,8 +32,8 @@ class Config():
 
         self.current_sim_plot_path  = os.path.join(self.plots_path, self.sim_name)
 
-        self.mfrr_AM_clearing_prices_path   = os.path.join(self.data_path, self.config_settings['MFRR_AM_CLEARING_PRICES_PATH'])
-        self.mfrr_AM_activation_data_path   = os.path.join(self.data_path, self.config_settings['MFRR_AM_ACTIVATION_DATA_PATH'])
+        # self.mfrr_AM_clearing_prices_path   = os.path.join(self.data_path, self.config_settings['MFRR_AM_CLEARING_PRICES_PATH'])
+        # self.mfrr_AM_activation_data_path   = os.path.join(self.data_path, self.config_settings['MFRR_AM_ACTIVATION_DATA_PATH'])
         self.mfrr_AM_data_path              = os.path.join(self.data_path, self.config_settings['MFRR_AM_DATA_PATH'])
         self.mfrr_CM_data_path              = os.path.join(self.data_path, self.config_settings['MFRR_CM_DATA_PATH'])
         self.mfrr_CBMP_data_path            = os.path.join(self.data_path, self.config_settings['MFRR_CBMP_DATA_PATH'])
@@ -48,16 +48,16 @@ class Config():
                          self.data_path,
                          self.data_analysis_path,
                          self.output_path,
-                         self.mfrr_AM_clearing_prices_path, 
-                         self.mfrr_AM_activation_data_path, 
+                        #  self.mfrr_AM_clearing_prices_path, 
+                        #  self.mfrr_AM_activation_data_path, 
                          self.mfrr_CBMP_data_path                                 
                          )
 
         # Scan all data and store metrics/metadata in a readme
         
-        for key, path in settings.get_settings_group('data').items():
+        for _, path in settings.get_settings_group('data').items():
             if not str(path).endswith('/'): continue
-            scan_data_directory(os.path.join(self.data_path, path))
+            update_dataset_readmes(os.path.join(self.data_path, path))
 
             
 

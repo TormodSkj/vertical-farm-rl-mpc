@@ -6,7 +6,7 @@
 ### To:
  24.02.2025
 ### Source:
- Nucs
+ Nucs. Obtained through market_utils.fetch_CM_data_nucs() function found in src/market_utils.py
 ### Link:
  https://www.nucs.net/balancing/r2/pricesAndVolumesOfProcuredBalancingReserve/show?name=&defaultValue=false&viewType=TABLE&areaType=MBA&atch=false&dateTime.dateTime=05.03.2025+00:00|CET|DAYTIMERANGE&dateTime.endDateTime=05.03.2025+00:00|CET|DAYTIMERANGE&areaSelectType=USER_SELECTED&marketArea.values=CTY|10YNO-0--------C!MBA|10YNO-1--------2&balancingDirection.values=A01&dataItems.values=PRICE&reserveType.values=A97&balancingTypes=TERTIARY&reserveSource.values=ALL&aFRRmFRRType.values=A47
 ### Created:

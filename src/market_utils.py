@@ -838,7 +838,7 @@ def fetch_CM_data_nucs(target_file_path, start_date, end_date):
             if not new_df.empty:
                 # Load existing CSV data (if it exists)
                 try:
-                    existing_df = pd.read_csv(target_file_path)
+                    existing_df = pd.read_csv(target_file_path, delimiter=';')
 
                     # Remove old entries for the current date to avoid duplicates
                     existing_df = existing_df[existing_df["Date"] != date_str]
@@ -849,7 +849,7 @@ def fetch_CM_data_nucs(target_file_path, start_date, end_date):
 
                 # Append new data and save
                 updated_df = pd.concat([existing_df, new_df], ignore_index=True)
-                updated_df.to_csv(target_file_path, index=False)
+                updated_df.to_csv(target_file_path, sep=';', index=False)
 
                 # print(f"Data for {date_str} saved to {target_file_path}")
 
@@ -858,7 +858,7 @@ def fetch_CM_data_nucs(target_file_path, start_date, end_date):
                 df["Date"] = pd.to_datetime(df["Date"], format="%d.%m.%Y")
                 df = df.sort_values(by=["Date", "Hour"])
                 df["Date"] = df["Date"].dt.strftime("%d.%m.%Y")
-                df.to_csv(target_file_path, index=False, delimiter=';')
+                df.to_csv(target_file_path, index=False, sep=';')
             
             else:
                 print(f"WARNING: Data for {date_str} was empty")

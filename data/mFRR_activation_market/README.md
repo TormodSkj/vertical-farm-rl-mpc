@@ -1,6 +1,6 @@
 # BalanceMarket_2024_DK1,DK2,FI,SE1,SE2,SE3,SE4_EUR_None.csv
 ### Description:
- mFRR Activation market data from Denmark, Sweden, Finland for 2024
+ mFRR Activation market data from Denmark, Sweden, Finland for 2024. Descriptions for each of the different prices can be found on the Nordpool website (see link).
 ### From:
  01.01.2024 00:00:00
 ### To:
@@ -20,7 +20,7 @@
 
 # BalanceMarket_2025_DK1,DK2,FI,SE1,SE2,SE3,SE4_EUR_None.csv
 ### Description:
- mFRR Activation market data from Denmark, Sweden, Finland for 2025
+ mFRR Activation market data from Denmark, Sweden, Finland for 2025. Descriptions for each of the different prices can be found on the Nordpool website (see link).
 ### From:
  01.01.2025 00:00:00
 ### To:
@@ -40,7 +40,7 @@
 
 # Nordpool_BalanceMarket_2024.csv
 ### Description:
- mFRR Activation market data from Norway for 2024
+ mFRR Activation market data from Norway for 2024. Descriptions for each of the different prices can be found on the Nordpool website (see link).
 ### From:
  01.01.2024 00:00:00
 ### To:

@@ -1,14 +1,14 @@
 # mFRR_balancing_prices_NO1-NO3_2023_2024.csv
 ### Description:
- (no description)
+ mFRR Activation Market prices for 2023 and 2024 in NO1, NO2 and NO3. 
 ### From:
  01.01.2023/00:00
 ### To:
  31.12.2024/23:00
 ### Source:
- (Add source info here)
+ eSett Opendata
 ### Link:
- None
+ https://opendata.esett.com/prices_single
 ### Created:
  2025-02-07
 ### Modified:

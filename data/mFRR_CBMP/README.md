@@ -1,14 +1,14 @@
 # mFRR_CBMP_NO1_2023.csv
 ### Description:
- (no description)
+ Cross-border marginal prices for mFRR activation market in NO1 through 2023
 ### From:
  Unknown
 ### To:
  Unknown
 ### Source:
- (Add source info here)
+ Entso-e transparency platform under Balancing/CBMPs for aFRR CS
 ### Link:
- None
+ https://transparency.entsoe.eu/balancing/r3/cbmpsForAfrrStandardProduct/show
 ### Created:
  2025-02-07
 ### Modified:
@@ -20,15 +20,15 @@
 
 # mFRR_CBMP_NO1_2024.csv
 ### Description:
- (no description)
+ Cross-border marginal prices for mFRR activation market in NO1 through 2024
 ### From:
  Unknown
 ### To:
  Unknown
 ### Source:
- (Add source info here)
+ Entso-e transparency platform under Balancing/CBMPs for aFRR CS
 ### Link:
- None
+ https://transparency.entsoe.eu/balancing/r3/cbmpsForAfrrStandardProduct/show
 ### Created:
  2025-02-07
 ### Modified:
@@ -40,15 +40,15 @@
 
 # mFRR_CBMP_NO2_2023.csv
 ### Description:
- (no description)
+ Cross-border marginal prices for mFRR activation market in NO2 through 2023
 ### From:
  Unknown
 ### To:
  Unknown
 ### Source:
- (Add source info here)
+ Entso-e transparency platform under Balancing/CBMPs for aFRR CS
 ### Link:
- None
+ https://transparency.entsoe.eu/balancing/r3/cbmpsForAfrrStandardProduct/show
 ### Created:
  2025-02-07
 ### Modified:
@@ -60,15 +60,15 @@
 
 # mFRR_CBMP_NO2_2024.csv
 ### Description:
- (no description)
+ Cross-border marginal prices for mFRR activation market in NO2 through 2024
 ### From:
  Unknown
 ### To:
  Unknown
 ### Source:
- (Add source info here)
+ Entso-e transparency platform under Balancing/CBMPs for aFRR CS
 ### Link:
- None
+ https://transparency.entsoe.eu/balancing/r3/cbmpsForAfrrStandardProduct/show
 ### Created:
  2025-02-07
 ### Modified:
@@ -80,15 +80,15 @@
 
 # mFRR_CBMP_NO3_2023.csv
 ### Description:
- (no description)
+ Cross-border marginal prices for mFRR activation market in NO3 through 2023
 ### From:
  Unknown
 ### To:
  Unknown
 ### Source:
- (Add source info here)
+ Entso-e transparency platform under Balancing/CBMPs for aFRR CS
 ### Link:
- None
+ https://transparency.entsoe.eu/balancing/r3/cbmpsForAfrrStandardProduct/show
 ### Created:
  2025-02-07
 ### Modified:
@@ -100,15 +100,15 @@
 
 # mFRR_CBMP_NO3_2024.csv
 ### Description:
- (no description)
+ Cross-border marginal prices for mFRR activation market in NO3 through 2024
 ### From:
  Unknown
 ### To:
  Unknown
 ### Source:
- (Add source info here)
+ Entso-e transparency platform under Balancing/CBMPs for aFRR CS
 ### Link:
- None
+ https://transparency.entsoe.eu/balancing/r3/cbmpsForAfrrStandardProduct/show
 ### Created:
  2025-02-07
 ### Modified:
