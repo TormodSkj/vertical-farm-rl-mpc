@@ -8,6 +8,7 @@ import pandas as pd
 import casadi as ca
 import scipy as sp
 from globals import *
+from datetime import datetime
 
 
 def plotting(t, timeseries, filename, folder = 'plots'):
@@ -715,3 +716,137 @@ def get_DLI(X):
         DLI[:,k-QUARTER_HOURS_PER_DAY] = LI
             
     return DLI
+
+
+
+# def get_file_metadata(file_path):
+#     """Retrieve creation and last modified timestamps of a file."""
+#     creation_time = os.path.getctime(file_path)
+#     modified_time = os.path.getmtime(file_path)
+#     return (
+#         datetime.fromtimestamp(creation_time).strftime('%Y-%m-%d %H:%M:%S'),
+#         datetime.fromtimestamp(modified_time).strftime('%Y-%m-%d %H:%M:%S')
+#     )
+
+# def generate_readme_content(csv_files):
+#     """Generate README content based on existing CSV files."""
+#     content = "# Dataset Information\n\n"
+#     for file in csv_files:
+#         file_path = file['path']
+#         filename = os.path.basename(file_path)
+#         created, modified = get_file_metadata(file_path)
+        
+#         try:
+#             df = pd.read_csv(file_path, nrows=5)  # Read first 5 rows for efficiency
+#             columns = ', '.join(df.columns)
+#         except Exception as e:
+#             columns = f"Could not read file: {e}"
+
+#         content += (f"## {filename}\n"
+#                     f"- **File Path:** {file_path}\n"
+#                     f"- **Columns:** {columns}\n"
+#                     f"- **Created:** {created}\n"
+#                     f"- **Last Modified:** {modified}\n\n")
+#     return content
+
+# def update_readme_for_folder(folder_path):
+#     """Scan a folder for CSV files and update the README.md file."""
+#     readme_path = os.path.join(folder_path, "README.md")
+    
+#     # Get all CSV files in the folder
+#     csv_files = [{'path': os.path.join(folder_path, f)} for f in os.listdir(folder_path) if f.endswith('.csv')]
+    
+#     # Generate new README content
+#     new_content = generate_readme_content(csv_files)
+    
+#     # Write or update README.md
+#     with open(readme_path, 'w', encoding='utf-8') as f:
+#         f.write(new_content)
+    
+#     print(f"Updated README in: {folder_path}")
+
+# def scan_data_directory(root_dir):
+#     """Scan all subdirectories of root_dir, updating or creating README.md files."""
+#     for subdir, _, _ in os.walk(root_dir):
+#         update_readme_for_folder(subdir)
+
+
+
+
+def scan_data_directory(data_dir):
+    """
+    Updates README.md in each subfolder of data_dir.
+    - Adds entries for new CSV files with filename, columns, creation/modification dates, and first/last row datetime.
+    - Removes entries for missing CSV files.
+    - Preserves user-entered 'Source' fields.
+    """
+    for root, _, files in os.walk(data_dir):
+        readme_path = os.path.join(root, "README.md")
+        existing_entries = {}
+        source_entries = {}
+        link_entries = {}
+        description_entries = {}
+
+        # Load existing README if it exists
+        if os.path.exists(readme_path):
+            with open(readme_path, "r", encoding="utf-8") as f:
+                content = f.read().split("\n\n")
+                for section in content:
+                    lines = section.split("\n")
+                    if len(lines) < 2:
+                        continue
+                    filename = lines[0].lstrip('# ')
+                    existing_entries[filename] = section
+                    
+                    # Preserve source entry
+                    for i, line in enumerate(lines):
+                        if i == 0: continue
+                        if lines[i-1].startswith("### Source:"):
+                            source_entries[filename] = line
+                        if lines[i-1].startswith("### Link:"):
+                            link_entries[filename] = line
+                        if lines[i-1].startswith("### Description:"):
+                            description_entries[filename] = line
+
+        # Discover current CSV files
+        new_entries = {}
+        for file in files:
+            if file.endswith(".csv"):
+                file_path = os.path.join(root, file)
+                created = datetime.fromtimestamp(os.path.getctime(file_path)).strftime("%Y-%m-%d")
+                modified = datetime.fromtimestamp(os.path.getmtime(file_path)).strftime("%Y-%m-%d")
+                
+                # Read first and last rows
+                try:
+                    df = pd.read_csv(file_path, delimiter=';', nrows=1)  # Read only first row
+                    df_tail = pd.read_csv(file_path, delimiter=';').tail(1)  # Read last row efficiently
+                    date_col = next((col for col in df.columns if any(word in col.lower() for word in ['date', 'dato', 'delivery start', 'time'])), None)
+                    first_date = df[date_col].values[0] if date_col else "Unknown"
+                    last_date = df_tail[date_col].values[0] if date_col else "Unknown"
+                except Exception as e:
+                    first_date, last_date = "Error", "Error"
+
+                # Restore source entry if it exists
+                source_entry        = source_entries.get(file, " (Add source info here)")
+                link_entry          = link_entries.get(file, " None")
+                description_entry   = description_entries.get(file, " (no description)")
+                
+                # Format new README entry
+                new_entries[file] = (f"# {file}\n"
+                                     f"### Description:\n{description_entry}\n"
+                                     f"### From:\n {first_date}\n"
+                                     f"### To:\n {last_date}\n"
+                                     f"### Source:\n{source_entry}\n"
+                                     f"### Link:\n{link_entry}\n"
+                                     f"### Created:\n {created}\n"
+                                     f"### Modified:\n {modified}\n"
+                                     f"### Columns:\n {', '.join(df.columns)}\n"
+                                     f"\n")
+        
+        # Remove missing files from README
+        for missing_file in set(existing_entries) - set(new_entries):
+            del existing_entries[missing_file]
+
+        # Write updated README
+        with open(readme_path, "w", encoding="utf-8") as f:
+            f.write("\n\n".join(new_entries.values()) + "\n")

@@ -1,5 +1,6 @@
 import os
 from settings import Settings
+from utils import *
 
 class Config():
     path:       str 
@@ -11,7 +12,7 @@ class Config():
     output_path: str
 
     spotprice_data_path: str
-    mfrr_clearing_prices_path: str
+    mfrr_AM_clearing_prices_path: str
 
     def __init__(self, settings: Settings):
 
@@ -31,12 +32,15 @@ class Config():
 
         self.current_sim_plot_path  = os.path.join(self.plots_path, self.sim_name)
 
-        self.mfrr_clearing_prices_path  = os.path.join(self.data_path, self.config_settings['MFRR_CLEARING_PRICES_PATH'])
-        self.mfrr_activation_data_path  = os.path.join(self.data_path, self.config_settings['MFRR_ACTIVATION_DATA_PATH'])
-        self.mfrr_CBMP_data_path        = os.path.join(self.data_path, self.config_settings['MFRR_CBMP_DATA_PATH'])
+        self.mfrr_AM_clearing_prices_path   = os.path.join(self.data_path, self.config_settings['MFRR_AM_CLEARING_PRICES_PATH'])
+        self.mfrr_AM_activation_data_path   = os.path.join(self.data_path, self.config_settings['MFRR_AM_ACTIVATION_DATA_PATH'])
+        self.mfrr_AM_data_path              = os.path.join(self.data_path, self.config_settings['MFRR_AM_DATA_PATH'])
+        self.mfrr_CM_data_path              = os.path.join(self.data_path, self.config_settings['MFRR_CM_DATA_PATH'])
+        self.mfrr_CBMP_data_path            = os.path.join(self.data_path, self.config_settings['MFRR_CBMP_DATA_PATH'])
 
         # Paths for different datasets
-        self.spotprice_data_path        = os.path.join(self.data_path, self.config_settings['SPOTPRICES_PATH'])
+        self.spotprices_data_path        = os.path.join(self.data_path, self.config_settings['SPOTPRICES_PATH'])
+        self.spotprice_data_path        = os.path.join(self.spotprices_data_path, self.config_settings['SPOTPRICES_NORWAY'])
 
         self.ensure_dirs(self.current_sim_plot_path,
                          self.plots_path,
@@ -44,11 +48,18 @@ class Config():
                          self.data_path,
                          self.data_analysis_path,
                          self.output_path,
-                         self.mfrr_clearing_prices_path, 
-                         self.mfrr_activation_data_path, 
+                         self.mfrr_AM_clearing_prices_path, 
+                         self.mfrr_AM_activation_data_path, 
                          self.mfrr_CBMP_data_path                                 
                          )
-     
+
+        # Scan all data and store metrics/metadata in a readme
+        
+        for key, path in settings.get_settings_group('data').items():
+            if not str(path).endswith('/'): continue
+            scan_data_directory(os.path.join(self.data_path, path))
+
+            
 
     def ensure_dirs(self, *paths):
         for path in paths:

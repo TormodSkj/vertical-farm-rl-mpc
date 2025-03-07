@@ -215,16 +215,16 @@ class Market:
         end_date    = start_date + pd.DateOffset(self.T)
         
         spot_price_file = self.config.spotprice_data_path
-        mfrr_balancing_price_datapath = self.config.mfrr_clearing_prices_path
-        mfrr_activation_datapath = self.config.mfrr_activation_data_path
+        mfrr_balancing_price_datapath = self.config.mfrr_AM_clearing_prices_path
+        mfrr_activation_datapath = self.config.mfrr_AM_activation_data_path
         mfrr_CBMP_datapath = self.config.mfrr_CBMP_data_path
         # Load data
         # CBMP_prices = load_mfrr_CBMP_prices(mfrr_CBMP_datapath, self.bidding_zone)
         spot_prices = load_spot_prices(spot_price_file, self.bidding_zone)
         # mfrr_prices = load_mfrr_balancing_prices(mfrr_balancing_price_datapath, self.bidding_zone)
-        mfrr_prices = load_nordpool_balancing_prices(self.config.data_path, self.bidding_zone)
+        mfrr_prices = load_nordpool_balancing_prices(self.config.mfrr_AM_data_path, self.bidding_zone)
         # activations = load_mfrr_activation_data(mfrr_activation_datapath, self.bidding_zone)
-        activations = load_nordpool_activation_data(self.config.data_path, self.bidding_zone)
+        activations = load_nordpool_activation_data(self.config.mfrr_AM_data_path, self.bidding_zone)
 
 
         # Merge datasets

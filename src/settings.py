@@ -87,10 +87,13 @@ class Settings():
                          )
         
         self.add_setting('data', 'config',
-                         SPOTPRICES_PATH            = 'spotprices_norway_jan_2020_dec_2024.csv',          
-                         MFRR_CLEARING_PRICES_PATH  = 'mFRR_balancing_prices/',
-                         MFRR_ACTIVATION_DATA_PATH  = 'mFRR_activations/',
-                         MFRR_CBMP_DATA_PATH        = 'mFRR_CBMP/'
+                         SPOTPRICES_NORWAY          = 'spotprices_norway_jan_2020_dec_2024.csv',          
+                         SPOTPRICES_PATH            = 'spotprices/',          
+                         MFRR_AM_CLEARING_PRICES_PATH  = 'mFRR_balancing_prices/',
+                         MFRR_AM_ACTIVATION_DATA_PATH  = 'mFRR_activations/',
+                         MFRR_CBMP_DATA_PATH        = 'mFRR_CBMP/',
+                         MFRR_CM_DATA_PATH          = 'mFRR_capacity_market/',
+                         MFRR_AM_DATA_PATH          = 'mFRR_activation_market/'
                          )
 
 

@@ -105,8 +105,8 @@ def main():
     # plotter.plot_random_activations(30)
 
 
-    target_file = config.data_path + 'CM_data_NO_DK_SE_FI.csv'
-    fetch_CM_data_nucs(target_file, "12-02-2024", "31-03-2024")
+    # target_file = config.data_path + 'CM_data_NO_DK_SE_FI.csv'
+    # fetch_CM_data_nucs(target_file, "01-10-2024", "31-12-2024")
 
 if __name__ == "__main__":
     main()

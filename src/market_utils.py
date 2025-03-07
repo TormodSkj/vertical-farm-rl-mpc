@@ -753,7 +753,7 @@ def fetch_CM_data_nucs(target_file_path, start_date, end_date):
 
     # Load existing data
     try:
-        existing_df = pd.read_csv(target_file_path)
+        existing_df = pd.read_csv(target_file_path, delimiter=';')
     except FileNotFoundError:
         existing_df = pd.DataFrame()
 
@@ -854,11 +854,11 @@ def fetch_CM_data_nucs(target_file_path, start_date, end_date):
                 # print(f"Data for {date_str} saved to {target_file_path}")
 
                 # Sort file to ensure it's always chronological
-                df = pd.read_csv(target_file_path)
+                df = pd.read_csv(target_file_path, delimiter=';')
                 df["Date"] = pd.to_datetime(df["Date"], format="%d.%m.%Y")
                 df = df.sort_values(by=["Date", "Hour"])
                 df["Date"] = df["Date"].dt.strftime("%d.%m.%Y")
-                df.to_csv(target_file_path, index=False)
+                df.to_csv(target_file_path, index=False, delimiter=';')
             
             else:
                 print(f"WARNING: Data for {date_str} was empty")
@@ -886,7 +886,7 @@ def load_CM_prices(data_folder, bidding_zone):
         filepath = os.path.join(data_folder, file)
 
         # Load the mFRR data
-        data = pd.read_csv(filepath, delimiter=",", encoding="utf-8")
+        data = pd.read_csv(filepath, delimiter=";", encoding="utf-8")
 
         data = data[['Date', 'Hour'] + [column for column in data.columns if bidding_zone in column]]
 
