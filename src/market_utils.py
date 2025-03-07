@@ -386,7 +386,29 @@ def load_nordpool_balancing_prices(data_folder, bidding_zone):
 
     """
 
-    all_files = [f for f in os.listdir(data_folder) if "Nordpool_BalanceMarket" in f and f.endswith(".csv")]
+    mfrr_AM_data = load_mfrr_AM_data(data_folder, bidding_zone)
+
+    up_price_col    = f"{bidding_zone} Up Price (EUR)"     
+    down_price_col  = f"{bidding_zone} Down Price (EUR)" 
+
+    mfrr_AM_data = mfrr_AM_data[['Start Time', up_price_col, down_price_col]].rename(
+        columns={up_price_col: 'Clearing Price Up', down_price_col: 'Clearing Price Down'}
+    )
+
+    mfrr_AM_data['Clearing Price Up']   = pd.to_numeric(mfrr_AM_data['Clearing Price Up'],   errors='coerce')
+    mfrr_AM_data['Clearing Price Down'] = pd.to_numeric(mfrr_AM_data['Clearing Price Down'], errors='coerce')
+    
+
+    return mfrr_AM_data
+
+
+def load_mfrr_AM_data(data_folder, bidding_zone):
+    """
+
+    """
+
+
+    all_files = [f for f in os.listdir(data_folder) if f.endswith(".csv")]
     all_data = []
 
     for file in all_files:
@@ -395,74 +417,65 @@ def load_nordpool_balancing_prices(data_folder, bidding_zone):
         # Load the mFRR data
         data = pd.read_csv(filepath, delimiter=";", encoding="utf-8")
 
-        data = data[['Delivery Start (CET)'] + [column for column in data.columns if bidding_zone in column]]
+        # data = data[['Delivery Start (CET)'] + [column for column in data.columns if bidding_zone in column]]
 
         data[['Start Time']] = data['Delivery Start (CET)'].str.extract(
             r'(\d{2}.\d{2}.\d{4} \d{2}:\d{2}:\d{2})'
         )
         data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d.%m.%Y %H:%M:%S', errors='coerce')
 
-        up_price_col    = f"{bidding_zone} Up Price (EUR)"     
-        down_price_col  = f"{bidding_zone} Down Price (EUR)" 
-
-        data = data[['Start Time', up_price_col, down_price_col]].rename(
-            columns={up_price_col: 'Clearing Price Up', down_price_col: 'Clearing Price Down'}
-        )
-
-        data['Clearing Price Up']   = pd.to_numeric(data['Clearing Price Up'],   errors='coerce')
-        data['Clearing Price Down'] = pd.to_numeric(data['Clearing Price Down'], errors='coerce')
-        
-        # Append processed data to the list
+        # Append to the list
         all_data.append(data)
+    
+    # Concatenate all data into a single DataFrame
+    combined_df = combine_dataframe_blocks(all_data)
 
-    assert len(all_data) > 0, 'Expected non-empty list of data. Verify correctly specified import path.'
+    # Sort by Start Time
+    combined_df.sort_values(by='Start Time', inplace=True)
 
-    # Merge all data and sort by 'Start Time'
-    merged_data = pd.concat(all_data, ignore_index=True)
-    merged_data.sort_values(by='Start Time', inplace=True)
-    # merged_data.fillna(0, inplace=True)
-
-    return merged_data
+    return combined_df
 
 
 def load_nordpool_activation_data(data_folder, bidding_zone):
     """
 
     """
+    AM_data_df = load_mfrr_AM_data(data_folder, bidding_zone)
 
-    all_files = [f for f in os.listdir(data_folder) if "Nordpool_BalanceMarket" in f and f.endswith(".csv")]
-    all_data = []
-
-    for file in all_files:
-        filepath = os.path.join(data_folder, file)
-
-        # Load the mFRR data
-        data = pd.read_csv(filepath, delimiter=";", encoding="utf-8")
-
-        data = data[['Delivery Start (CET)'] + [column for column in data.columns if bidding_zone in column]]
-
-        data[['Start Time']] = data['Delivery Start (CET)'].str.extract(
-            r'(\d{2}.\d{2}.\d{4} \d{2}:\d{2}:\d{2})'
-        )
-        data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d.%m.%Y %H:%M:%S', errors='coerce')
-
-        # Convert 'Offered' and 'Activated' to numeric
-        data[['Offered Up', 'Activated Up']] = data[[f"{bidding_zone} Accepted Up Volume (MW)" , f"{bidding_zone} Activated Up Volume (MW)" ]].apply(pd.to_numeric, errors='coerce')
-        data[['Offered Down', 'Activated Down']] = data[[f"{bidding_zone} Accepted Down Volume (MW)" , f"{bidding_zone} Activated Down Volume (MW)" ]].apply(pd.to_numeric, errors='coerce')
-        
-        data = data[['Start Time', 'Offered Up', 'Activated Up', 'Offered Down', 'Activated Down']]
-
-        # Append to the list
-        all_data.append(data)
+    # Convert 'Offered' and 'Activated' to numeric
+    AM_data_df[['Offered Up', 'Activated Up']] = AM_data_df[[f"{bidding_zone} Accepted Up Volume (MW)" , f"{bidding_zone} Activated Up Volume (MW)" ]].apply(pd.to_numeric, errors='coerce')
+    AM_data_df[['Offered Down', 'Activated Down']] = AM_data_df[[f"{bidding_zone} Accepted Down Volume (MW)" , f"{bidding_zone} Activated Down Volume (MW)" ]].apply(pd.to_numeric, errors='coerce')
     
-    # Concatenate all data into a single DataFrame
-    combined_df = pd.concat(all_data, ignore_index=True)
-    
-    # Sort by Start Time
-    combined_df.sort_values(by='Start Time', inplace=True)
-    
-    return combined_df
+    AM_data_df = AM_data_df[['Start Time', 'Offered Up', 'Activated Up', 'Offered Down', 'Activated Down']]
 
+    return AM_data_df
+
+
+def combine_dataframe_blocks(blocks):
+    """
+    Combines multiple dataframe blocks by aligning them on the 'Date' column (vertically)
+    and incorporating any new columns that appear (horizontally).
+
+    Parameters:
+        blocks (list of pd.DataFrame): List of dataframes to merge.
+
+    Returns:
+        pd.DataFrame: The fully combined dataframe.
+    """
+
+    if not blocks:
+        raise ValueError("No dataframes provided for merging.")
+
+    # Ensure all blocks have 'Date' column and convert to datetime for proper alignment
+    for i, df in enumerate(blocks):
+        if 'Start Time' not in df.columns:
+            raise ValueError(f"Block {i} is missing the required 'Date' column.")
+        df['Start Time'] = pd.to_datetime(df['Start Time'], errors='coerce')
+
+    # Merge all blocks using outer join on 'Date' to preserve all data
+    full_df = pd.concat(blocks, axis=0, ignore_index=True).sort_values(by='Start Time')
+
+    return full_df
 
 
 def load_mfrr_CBMP_prices(data_folder, bidding_zone):
