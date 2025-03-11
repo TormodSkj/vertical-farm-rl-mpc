@@ -298,7 +298,6 @@ def load_spot_prices(file_path, bidding_zone):
     Parameters:
     - file_path: str, path to the CSV file
     - timestamp_col: str, name of the timestamp column
-    - price_col: str, name of the price column
 
     Returns:
     - pandas DataFrame with 'Timestamp' and 'Spot Price' columns
@@ -322,6 +321,61 @@ def load_spot_prices(file_path, bidding_zone):
     
     # Return the relevant columns with the 'Spot Price' column renamed
     return data[['Start Time', price_col]].rename(columns={price_col: 'Spot Price'})
+
+
+
+import re
+
+def load_spot_prices_energy_charts(data_folder, bidding_zone):
+    """
+    Load spot prices from NO, SE, DK and FI from data gathered via energy-charts.info
+
+    Parameters:
+    - file_path: str, path to the CSV file
+    - timestamp_col: str, name of the timestamp column
+
+    Returns:
+    - pandas DataFrame with 'Spot Price' columns
+    """
+
+    all_files = [f for f in os.listdir(data_folder) if f.endswith(".csv")]
+    all_data = []
+
+    for file in all_files:
+        file_path = os.path.join(data_folder, file)
+        
+        # Read CSV with correct delimiter
+        data = pd.read_csv(file_path, delimiter=";", encoding="utf-8")
+        
+        # Extract 'Start Time' correctly
+        date_col = next((col for col in data.columns if 'date' in col.lower()), None)
+        if date_col is None:
+            raise ValueError(f"Date column not found in {file}")
+        
+        data[date_col] = data[date_col].str.extract(r"(\d{4}-\d{2}-\d{2}T\d{2}):\d{2}")
+        data[date_col] = pd.to_datetime(data[date_col], errors='coerce')
+
+        auction_cols = [col for col in data.columns if 'day ahead auction' in col.lower()]
+        rename_dict = {date_col: 'Start Time'}
+        rename_dict.update({col: col if (match := re.search(r"\((.*?)\)", col)) is None else match.group(1) for col in auction_cols})
+        data.rename(columns=rename_dict, inplace=True)
+
+        drop_columns = ['Renewable', 'Non-Renewable', 'Nuclear']
+
+        # Convert drop_columns to lowercase to ensure case-insensitive matching
+        drop_columns = [word.lower() for word in drop_columns]
+
+        # Drop exact matches (case insensitive)
+        data.drop(columns=[col for col in data.columns if col.lower() in drop_columns], inplace=True) 
+
+        all_data.append(data)
+
+
+    merged_df = combine_dataframe_blocks(all_data)
+
+    return_df = merged_df[['Start Time', bidding_zone]].rename(columns={bidding_zone: 'Spot Price'})
+
+    return return_df
 
 
 
@@ -366,7 +420,7 @@ def load_mfrr_balancing_prices(data_folder, bidding_zone):
             columns={up_price_col: 'Clearing Price Up', down_price_col: 'Clearing Price Down'}
         )
 
-        data['Clearing Price Up'] = pd.to_numeric(data['Clearing Price Up'].str.replace(',', '.'), errors='coerce')
+        data['Clearing Price Up']   = pd.to_numeric(data['Clearing Price Up'].str.replace(',', '.'), errors='coerce')
         data['Clearing Price Down'] = pd.to_numeric(data['Clearing Price Down'].str.replace(',', '.'), errors='coerce')
         
         # Append processed data to the list
@@ -430,9 +484,6 @@ def load_mfrr_AM_data(data_folder, bidding_zone):
     # Concatenate all data into a single DataFrame
     combined_df = combine_dataframe_blocks(all_data)
 
-    # Sort by Start Time
-    combined_df.sort_values(by='Start Time', inplace=True)
-
     return combined_df
 
 
@@ -452,28 +503,23 @@ def load_nordpool_activation_data(data_folder, bidding_zone):
 
 
 def combine_dataframe_blocks(blocks):
-    """
-    Combines multiple dataframe blocks by aligning them on the 'Date' column (vertically)
-    and incorporating any new columns that appear (horizontally).
-
-    Parameters:
-        blocks (list of pd.DataFrame): List of dataframes to merge.
-
-    Returns:
-        pd.DataFrame: The fully combined dataframe.
-    """
-
     if not blocks:
         raise ValueError("No dataframes provided for merging.")
 
-    # Ensure all blocks have 'Date' column and convert to datetime for proper alignment
+    # Ensure all blocks have 'Start Time' column and convert it to datetime
     for i, df in enumerate(blocks):
         if 'Start Time' not in df.columns:
-            raise ValueError(f"Block {i} is missing the required 'Date' column.")
+            raise ValueError(f"Block {i} is missing the required 'Start Time' column.")
         df['Start Time'] = pd.to_datetime(df['Start Time'], errors='coerce')
 
-    # Merge all blocks using outer join on 'Date' to preserve all data
-    full_df = pd.concat(blocks, axis=0, ignore_index=True).sort_values(by='Start Time')
+    # Concatenate all blocks (this keeps all columns)
+    full_df = pd.concat(blocks, axis=0, ignore_index=True)
+
+    # Group by 'Start Time' and merge overlapping data
+    full_df = full_df.groupby('Start Time', as_index=False).first()
+
+    # Sort chronologically
+    full_df = full_df.sort_values(by='Start Time').reset_index(drop=True)
 
     return full_df
 
@@ -892,7 +938,7 @@ def load_CM_prices(data_folder, bidding_zone):
 
     """
 
-    all_files = [f for f in os.listdir(data_folder) if "nucs_data" in f and f.endswith(".csv")]
+    all_files = [f for f in os.listdir(data_folder) if f.endswith(".csv")]
     all_data = []
 
     for file in all_files:

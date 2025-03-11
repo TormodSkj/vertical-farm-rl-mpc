@@ -213,8 +213,9 @@ class Market:
         start_date  = pd.to_datetime(self.date)
         end_date    = start_date + pd.DateOffset(self.T)
         
-        spot_price_file = self.config.spotprice_data_path
-        spot_prices = load_spot_prices(spot_price_file, self.bidding_zone)
+        # spot_prices_path = self.config.spotprices_data_path
+        spot_prices = load_spot_prices_energy_charts(self.config.spotprices_data_path, self.bidding_zone)
+        spot_prices['Spot Price'] = self.C_eur2nok / 1000 * spot_prices['Spot Price']
         mfrr_prices = load_nordpool_balancing_prices(self.config.mfrr_AM_data_path, self.bidding_zone)
         activations = load_nordpool_activation_data(self.config.mfrr_AM_data_path, self.bidding_zone)
 
@@ -225,10 +226,10 @@ class Market:
         activation_data = pd.merge(spot_prices, activations, on='Start Time', how='inner')
         self.activations_full_set = activation_data
 
-        up_prices_merged_data = pd.merge(price_data[['Start Time', 'Spot Price', 'Clearing Price Up']], activation_data[['Start Time', 'Offered Up', 'Activated Up']], on='Start Time', how='inner')
-        down_prices_merged_data = pd.merge(price_data[['Start Time', 'Spot Price', 'Clearing Price Down']], activation_data[['Start Time', 'Offered Down', 'Activated Down']], on='Start Time', how='inner')
-        self.up_prices_full_set = up_prices_merged_data
-        self.down_prices_full_set = down_prices_merged_data
+        up_prices_merged_data       = pd.merge(price_data[['Start Time', 'Spot Price', 'Clearing Price Up']], activation_data[['Start Time', 'Offered Up', 'Activated Up']], on='Start Time', how='inner')
+        down_prices_merged_data     = pd.merge(price_data[['Start Time', 'Spot Price', 'Clearing Price Down']], activation_data[['Start Time', 'Offered Down', 'Activated Down']], on='Start Time', how='inner')
+        self.up_prices_full_set     = up_prices_merged_data
+        self.down_prices_full_set   = down_prices_merged_data
 
         if self.optimistic:
             self.prices_working_set         = price_data[(price_data['Start Time'] >= start_date) & (price_data['Start Time'] < end_date) ]
@@ -277,9 +278,8 @@ class Market:
         start_date  = pd.to_datetime(self.date)
         end_date    = start_date + pd.DateOffset(self.T)
 
-        spot_price_file = self.config.spotprice_data_path
-        spot_prices = load_spot_prices(spot_price_file, self.bidding_zone)
-        CM_prices = load_CM_prices(self.config.data_path, self.bidding_zone)
+        spot_prices = load_spot_prices_energy_charts(self.config.spotprices_data_path, self.bidding_zone)
+        CM_prices = load_CM_prices(self.config.mfrr_CM_data_path, self.bidding_zone)
 
 
         # Merge datasets
@@ -486,7 +486,7 @@ class Market:
         if n_days==None:
             n_days = self.T
 
-        start_date = pd.to_datetime(date)
+        start_date = pd.to_datetime(date, dayfirst=True)
         end_date = start_date + pd.DateOffset(n_days)
 
         clearing_prices_df = self.prices_full_set.copy()
@@ -671,6 +671,12 @@ class Market:
 
     def estimate_prices(self):
 
+
+        mfrr_AM_raw_data = load_mfrr_AM_data(self.config.mfrr_AM_data_path, None)
+        # spot_prices = 
+        
+
+
         AM_clearing_prices_up, AM_clearing_prices_down = self.get_clearing_prices()
         CM_clearing_prices_up, CM_clearing_prices_down = self.get_CM_clearing_prices()
         spot_prices = self.spot_prices.reshape((1,-1))[:,0::4]
@@ -750,7 +756,7 @@ class Market:
         - Sum daily earnings over the year.
         """
 
-        print(f"Performing upper bound earnings analysis for mFRR participation in \n{self.bidding_zone} from {start_date} to {end_date}. \nThis might take a while...")
+        print(f"\nPerforming upper bound earnings analysis for mFRR participation in \n{self.bidding_zone} from {start_date} to {end_date}. \nThis might take a while...")
 
         
         # Dates for which to accumulate earnings over.
@@ -764,127 +770,123 @@ class Market:
         electricity_costs_min   = 0
         electricity_costs_AM  = 0
 
+        N = len(dates)
+        AM_clearing_prices_up_full, AM_clearing_prices_down_full = self.get_clearing_prices(date=start_date, n_days=N)          # Clearing prices in eur/MWh
+        AM_activation_demands_up_full, AM_activation_demands_down_full = self.get_activation_demands(date=start_date, n_days=N) # Activation market demands, 0 or 1
+        spot_prices_full = self.get_spotprice(date=start_date, n_days=N)
 
-        for date in dates:
-            # Get clearing prices and activation demands for the current day
-            AM_clearing_prices_up, AM_clearing_prices_down = self.get_clearing_prices(date=date, n_days=1)          # Clearing prices in eur/MWh
-            AM_activation_demands_up, AM_activation_demands_down = self.get_activation_demands(date=date, n_days=1) # Activation market demands, 0 or 1
-            spot_prices = self.get_spotprice(date=date, n_days=1)
+        CM_clearing_prices_up_full, CM_clearing_prices_down_full = self.get_CM_clearing_prices(date=start_date, n_days=N)       # CM Clearing prices in eur/MWh
+        CM_reservations_up_full, CM_reservations_down_full = self.get_CM_reservations(date=start_date, n_days= N)
 
-            CM_clearing_prices_up, CM_clearing_prices_down = self.get_CM_clearing_prices(date=date, n_days=1)       # CM Clearing prices in eur/MWh
-            CM_reservations_up, CM_reservations_down = self.get_CM_reservations(date=date, n_days= 1)
+        with tqdm(total=N,desc="Calculating ...") as pbar:
+            for k, date in enumerate(dates):
+                # Get clearing prices and activation demands for the current day
 
-            N_max = len(CM_clearing_prices_up)
-            AM_clearing_prices_up, AM_clearing_prices_down = AM_clearing_prices_up[:N_max], AM_clearing_prices_down[:N_max] 
-            CM_clearing_prices_up, CM_clearing_prices_down = CM_clearing_prices_up[:N_max], CM_clearing_prices_down[:N_max] 
-            AM_activation_demands_up, AM_activation_demands_down = AM_activation_demands_up[:N_max], AM_activation_demands_down [:N_max]
-            spot_prices = spot_prices[:N_max]
+                daily_slice = slice(k*QUARTER_HOURS_PER_DAY, (k+1)*QUARTER_HOURS_PER_DAY)
 
-            # Calculate earnings per quarter hour
-            AM_cost_up      = - np.multiply(AM_clearing_prices_up,   AM_activation_demands_up)
-            AM_cost_down    = - np.multiply(AM_clearing_prices_down, AM_activation_demands_down)# + spot_prices*1000/self.C_eur2nok
-            CM_cost_up      = - np.multiply(CM_clearing_prices_up,   CM_reservations_up)
-            CM_cost_down    = - np.multiply(CM_clearing_prices_down, CM_reservations_down)
+                AM_clearing_prices_up       = AM_clearing_prices_up_full[daily_slice]
+                AM_clearing_prices_down     = AM_clearing_prices_down_full[daily_slice]
+                AM_activation_demands_up    = AM_activation_demands_up_full[daily_slice]
+                AM_activation_demands_down  = AM_activation_demands_down_full[daily_slice]
+                spot_prices                 = spot_prices_full[daily_slice]
 
-            cost_up_df = pd.DataFrame({'MTU': list(range(len(spot_prices))), 
-                                      'Cost': AM_cost_up})
-            
-            cost_down_df = pd.DataFrame({'MTU': list(range(len(spot_prices))), 
-                                      'Cost': AM_cost_down})
+                CM_clearing_prices_up       = CM_clearing_prices_up_full[daily_slice]
+                CM_clearing_prices_down     = CM_clearing_prices_down_full[daily_slice]
+                CM_reservations_up          = CM_reservations_up_full[daily_slice]
+                CM_reservations_down        = CM_reservations_down_full[daily_slice]
 
-            cost_up_df.sort_values('Cost', inplace=True)
-            cost_down_df.sort_values('Cost', inplace=True)
+                N_max = len(CM_clearing_prices_up)
+                AM_clearing_prices_up, AM_clearing_prices_down = AM_clearing_prices_up[:N_max], AM_clearing_prices_down[:N_max] 
+                CM_clearing_prices_up, CM_clearing_prices_down = CM_clearing_prices_up[:N_max], CM_clearing_prices_down[:N_max] 
+                AM_activation_demands_up, AM_activation_demands_down = AM_activation_demands_up[:N_max], AM_activation_demands_down [:N_max]
+                spot_prices = spot_prices[:N_max]
 
-            # light_schedule = np.zeros_like(spot_prices)
-            # qh_on = 0
-            # qh_off = 0
+                # Calculate earnings per quarter hour
+                AM_cost_up      = - np.multiply(AM_clearing_prices_up,   AM_activation_demands_up)
+                AM_cost_down    = - np.multiply(AM_clearing_prices_down, AM_activation_demands_down)# + spot_prices*1000/self.C_eur2nok
+                CM_cost_up      = - np.multiply(CM_clearing_prices_up,   CM_reservations_up)
+                CM_cost_down    = - np.multiply(CM_clearing_prices_down, CM_reservations_down)
 
-            # for i in range(len(spot_prices)):
+                cost_up_df = pd.DataFrame({'MTU': list(range(len(spot_prices))), 
+                                        'Cost': AM_cost_up})
+                
+                cost_down_df = pd.DataFrame({'MTU': list(range(len(spot_prices))), 
+                                        'Cost': AM_cost_down})
 
-            #     if qh_off < 32 or cost_up_df.iloc[i]['Cost'] < cost_down_df.iloc[i]['Cost']:
-            #         mtu = cost_up_df.loc[i, 'MTU']
-            #         light_schedule[mtu] = 0
-            #         cost_up_df = cost_up_df.drop(index=i)
-            #         cost_down_df = cost_down_df[cost_down_df['MTU'] != mtu]
-            #         qh_off += 1
-            #         continue
+                cost_up_df.sort_values('Cost', inplace=True)
+                cost_down_df.sort_values('Cost', inplace=True)
 
-            #     elif qh_on < 64:
-            #         mtu = cost_down_df.loc[i, 'MTU']
-            #         light_schedule[mtu] = 1
-            #         cost_down_df = cost_down_df.drop(index=i)
-            #         cost_up_df = cost_up_df[cost_up_df['MTU'] != mtu]
-            #         qh_on += 1
-            #         continue
+                # light_schedule = np.zeros_like(spot_prices)
+                # qh_on = 0
+                # qh_off = 0
 
-            # Light schedule (default 1 = light ON)
-            light_schedule = np.ones(len(spot_prices))
+                # for i in range(len(spot_prices)):
 
-            # Counters for 32 up (off) and 64 down (on) activations
-            qh_on, qh_off = 0, 0
+                #     if qh_off < 32 or cost_up_df.iloc[i]['Cost'] < cost_down_df.iloc[i]['Cost']:
+                #         mtu = cost_up_df.loc[i, 'MTU']
+                #         light_schedule[mtu] = 0
+                #         cost_up_df = cost_up_df.drop(index=i)
+                #         cost_down_df = cost_down_df[cost_down_df['MTU'] != mtu]
+                #         qh_off += 1
+                #         continue
 
-            # Iterators for sorted data
-            i, j = 0, 0
+                #     elif qh_on < 64:
+                #         mtu = cost_down_df.loc[i, 'MTU']
+                #         light_schedule[mtu] = 1
+                #         cost_down_df = cost_down_df.drop(index=i)
+                #         cost_up_df = cost_up_df[cost_up_df['MTU'] != mtu]
+                #         qh_on += 1
+                #         continue
 
-            while qh_off < 32 or qh_on < 64:
-                if i >= len(cost_up_df) or j >= len(cost_down_df):
-                    break  # Safety check in case of edge cases
+                # Light schedule (default 1 = light ON)
+                light_schedule = np.ones(len(spot_prices))
 
-                mtu_up, cost_up = int(cost_up_df.iloc[i]['MTU']), cost_up_df.iloc[i]['Cost']
-                mtu_down, cost_down = int(cost_down_df.iloc[j]['MTU']), cost_down_df.iloc[j]['Cost']
+                # Counters for 32 up (off) and 64 down (on) activations
+                qh_on, qh_off = 0, 0
 
-                if (qh_off < 32 and cost_up <= cost_down) or qh_on >= 64:  
-                    # Prefer up (off) regulation if cheaper or if we already have 64 down activations
-                    light_schedule[mtu_up] = 0  
-                    cost_down_df = cost_down_df[cost_down_df['MTU'] != mtu_up]  # Remove conflicting MTU
-                    qh_off += 1
-                    i += 1  
-                else:  
-                    # Prefer down (on) regulation if cheaper or if we already have 32 up activations
-                    light_schedule[mtu_down] = 1  
-                    cost_up_df = cost_up_df[cost_up_df['MTU'] != mtu_down]  # Remove conflicting MTU
-                    qh_on += 1
-                    j += 1  
+                # Iterators for sorted data
+                i, j = 0, 0
 
-            AM_earnings_up      = - np.sum(AM_cost_up[np.where(light_schedule==0)])   
-            AM_earnings_down    = - np.sum(AM_cost_down[np.where(light_schedule==1)]) 
+                while qh_off < 32 or qh_on < 64:
+                    if i >= len(cost_up_df) or j >= len(cost_down_df):
+                        break  # Safety check in case of edge cases
 
-            CM_earnings_up      = - np.sum(CM_cost_up[np.where(light_schedule==0)])
-            CM_earnings_down    = - np.sum(CM_cost_down[np.where(light_schedule==1)])
+                    mtu_up,     cost_up     = int(cost_up_df.iloc[i]['MTU']),   cost_up_df.iloc[i]['Cost']
+                    mtu_down,   cost_down   = int(cost_down_df.iloc[j]['MTU']), cost_down_df.iloc[j]['Cost']
 
-            energy_cost         = np.sum(spot_prices[np.where(light_schedule==1)])
+                    if (qh_off < 32 and cost_up <= cost_down) or qh_on >= 64:  
+                        # Prefer up (off) regulation if cheaper or if we already have 64 down activations
+                        light_schedule[mtu_up] = 0  
+                        cost_down_df = cost_down_df[cost_down_df['MTU'] != mtu_up]  # Remove conflicting MTU
+                        qh_off += 1
+                        i += 1  
+                    else:  
+                        # Prefer down (on) regulation if cheaper or if we already have 32 up activations
+                        light_schedule[mtu_down] = 1  
+                        cost_up_df = cost_up_df[cost_up_df['MTU'] != mtu_down]  # Remove conflicting MTU
+                        qh_on += 1
+                        j += 1  
 
-            assert not np.isnan(cost_up),   "Cost up is nan"
-            assert not np.isnan(cost_down), "Cost down is nan"
-            
+                AM_earnings_up      = - np.sum(AM_cost_up[np.where(light_schedule==0)])   
+                AM_earnings_down    = - np.sum(AM_cost_down[np.where(light_schedule==1)]) 
 
-            AM_max_earnings = AM_earnings_up + AM_earnings_down
-            CM_max_earnings = CM_earnings_up + CM_earnings_down
-            yearly_earnings_AM += AM_max_earnings
-            yearly_earnings_CM += CM_max_earnings
-            electricity_costs_AM += energy_cost
-            electricity_costs_fixed += np.sum(spot_prices[:16*4])
+                CM_earnings_up      = - np.sum(CM_cost_up[np.where(light_schedule==0)])
+                CM_earnings_down    = - np.sum(CM_cost_down[np.where(light_schedule==1)])
 
-            # cheapest_32_up      = []
-            # cheapest_64_down    = []
+                energy_cost         = np.sum(spot_prices[np.where(light_schedule==1)])
 
-            # # Sort in ascending order and choose the n most profiable quarter hours
-            # top_8_up_earnings = np.sort(AM_cost_up)[-8*4:] 
-            # top_16_down_earnings = np.sort(AM_cost_down)[-16*4:]
+                assert not np.isnan(cost_up),   "Cost up is nan"
+                assert not np.isnan(cost_down), "Cost down is nan"
+                
 
-            # top_16_down_indices = np.argsort(AM_cost_down)[-16*4:]
-            # top_16_down_spot_prices = spot_prices[top_16_down_indices]
+                AM_max_earnings = AM_earnings_up + AM_earnings_down
+                CM_max_earnings = CM_earnings_up + CM_earnings_down
+                yearly_earnings_AM += AM_max_earnings
+                yearly_earnings_CM += CM_max_earnings
+                electricity_costs_AM += energy_cost
+                electricity_costs_fixed += np.sum(spot_prices[:16*4])
 
-            # lowest_16_spot_prices = np.sort(spot_prices)[:16*4]
-
-            # max_earnings = np.sum(top_8_up_earnings) + np.sum(top_16_down_earnings)
-            # yearly_earnings_eur += max_earnings
-            # electricity_costs_min += np.sum(lowest_16_spot_prices)
-            # electricity_costs_AM += np.sum(top_16_down_spot_prices)
-            # electricity_costs_fixed += np.sum(spot_prices[:16*4])
-
-        # convert from nok/kwh to eur/mwh
-        # electricity_costs_min  = electricity_costs_min  / self.C_eur2nok * 1000 
+                pbar.update(1)
 
         yearly_earnings_total_mFRR = yearly_earnings_AM + yearly_earnings_CM
 

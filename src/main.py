@@ -10,14 +10,14 @@ from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 from market_utils import fetch_CM_data_nucs
 
-SIM_NAME            = "rk4_test"
+SIM_NAME            = "new_spotprices"
 SIMULATION_LENGTH   = 20
 FINAL_FRESHWEIGHT   = 4                   # 1 day
 # FINAL_WEIGHT      = 36.66             # 7 Days
 # FINAL_WEIGHT      = 136.7             # 20 Days 
 # FINAL_WEIGHT      = 2.05              # 20 Days [Directly from germination]
 SIMULATION_DATE = '2024-02-14'
-BIDDING_ZONE    = 'NO2'
+BIDDING_ZONE    = 'SE1'
 OPTIMISTIC      = 1
 SEARCH_CACHE    = 1
 
@@ -87,8 +87,8 @@ def main():
     # plotter.save_ocp_plots()
     # plotter.plot_financial_report()
 
-    # plotter.plot_spot_mfrr_prices() 
-    # plotter.plot_CM_data() 
+    plotter.plot_spot_mfrr_prices() 
+    plotter.plot_CM_data() 
     ''''''
 
     # controller.export_intensity_to_json('Baseline')

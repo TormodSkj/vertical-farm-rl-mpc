@@ -1232,7 +1232,7 @@ class Plotter():
         price_data = price_data_raw.where(price_data_raw['Clearing Price Up']<500).where(price_data_raw['Clearing Price Down']>-500).dropna()
 
         timestamps      = price_data['Start Time']
-        spot_prices     = np.array(price_data['Spot Price'])
+        spot_prices     = market.C_eur2nok / 1000 * np.array(price_data['Spot Price'])
         mfrr_prices_up  = np.array(price_data['Clearing Price Up'])
         mfrr_prices_dn  = np.array(price_data['Clearing Price Down'])
         spot_prices_eur = np.array(spot_prices)*1000/market.C_eur2nok
@@ -1363,13 +1363,13 @@ class Plotter():
 
         ax1.hist(mfrr_prices_up-spot_prices_eur, label="Clearing price up", color='blue', alpha=0.4, bins=2*n_bins, density=True)
         ax1.set_xlabel("Bidding prices (€/MW)")
-        ax1.set_xlim([-75, 25])
+        # ax1.set_xlim([-75, 25])
         ax1.legend()
 
 
         ax2.hist(mfrr_prices_dn-spot_prices_eur, label="Clearing price down", color='red', alpha=0.4, bins=n_bins, density=True)
         ax2.set_xlabel("Bidding prices (€/MW)")
-        ax2.set_xlim([-75, 25])
+        # ax2.set_xlim([-75, 25])
         ax2.legend()
 
         plt.suptitle(f'Relative clearing prices, normalized ({market.bidding_zone}, {market.date})')
