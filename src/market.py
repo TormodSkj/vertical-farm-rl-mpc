@@ -680,7 +680,7 @@ class Market:
 
 
 
-    def estimate_prices(self):
+    def estimate_prices(self, n_xlags = 10, n_ylags = 10):
 
 
         # mfrr_AM_raw_data = (self.config.mfrr_AM_data_path, None)
@@ -697,11 +697,19 @@ class Market:
         # CM_clearing_prices_up, CM_clearing_prices_down = self.get_CM_clearing_prices()
         # spot_prices = self.spot_prices.reshape((1,-1))[:,0::4]
         
-        AM_clearing_prices_up   = np.array(price_data[[col for col in price_data if 'AM' in col and 'Price' in col and 'Up' in col]]).T
-        AM_clearing_prices_down = np.array(price_data[[col for col in price_data if 'AM' in col and 'Price' in col and 'Down' in col]]).T
-        CM_clearing_prices_up   = np.array(price_data[[col for col in price_data if 'CM' in col and 'Price' in col and 'Up' in col]]).T
-        CM_clearing_prices_down = np.array(price_data[[col for col in price_data if 'CM' in col and 'Price' in col and 'Down' in col]]).T
-        spot_prices             = np.array(price_data[[col for col in price_data if 'Spot Price' in col]]).T
+        AM_prices_labels_up     = [col for col in price_data if 'AM' in col and 'Price' in col and 'Up' in col]
+        AM_prices_labels_down   = [col for col in price_data if 'AM' in col and 'Price' in col and 'Down' in col]
+        CM_prices_labels_up     = [col for col in price_data if 'CM' in col and 'Price' in col and 'Up' in col]
+        CM_prices_labels_down   = [col for col in price_data if 'CM' in col and 'Price' in col and 'Down' in col]
+        spot_price_labels       = [col for col in price_data if 'Spot Price' in col]
+        AM_prices_labels = AM_prices_labels_up + AM_prices_labels_down
+        CM_prices_labels = CM_prices_labels_up + CM_prices_labels_down
+        
+        AM_clearing_prices_up   = np.array(price_data[AM_prices_labels_up]).T
+        AM_clearing_prices_down = np.array(price_data[AM_prices_labels_down]).T
+        CM_clearing_prices_up   = np.array(price_data[CM_prices_labels_up]).T
+        CM_clearing_prices_down = np.array(price_data[CM_prices_labels_down]).T
+        spot_prices             = np.array(price_data[spot_price_labels]).T
         
 
         CM_prices = np.vstack((CM_clearing_prices_up, 
@@ -710,25 +718,43 @@ class Market:
         AM_prices = np.vstack((AM_clearing_prices_up, 
                                AM_clearing_prices_down))
         
-        CM_price_estimate = Estimator(CM_prices, spot_prices,                           n_lags=10)
-        AM_price_estimate = Estimator(AM_prices, np.vstack((CM_prices, spot_prices)),   n_lags=10)
+        '''
+        for i in range(CM_prices.shape[0]):
+            CM_price_estimate = Estimator(CM_prices[i,:], spot_prices,   
+                                        x_labels = CM_prices_labels[i], n_xlags=n_xlags, n_ylags=n_ylags)
+            CM_price_estimate.measure_performance(how='array')
 
-        print(f"CM Estimator RMSE: {CM_price_estimate.rmse}\t lag: {CM_price_estimate.n_lags}")
-        print(f"AM Estimator RMSE: {AM_price_estimate.rmse}\t lag: {AM_price_estimate.n_lags}")
+        for i in range(AM_prices.shape[0]):
+            AM_price_estimate = Estimator(AM_prices[i,:], np.vstack((CM_prices, spot_prices)),   
+                                        x_labels = AM_prices_labels[i], n_xlags=n_xlags, n_ylags=n_ylags)
+            AM_price_estimate.measure_performance(how='array')
+        '''
+        CM_price_estimate = Estimator(CM_prices, spot_prices,   
+                                        x_labels = CM_prices_labels, n_xlags=n_xlags, n_ylags=n_ylags)
+        AM_price_estimate = Estimator(AM_prices, np.vstack((CM_prices, spot_prices)),   
+                                        x_labels = AM_prices_labels, n_xlags=n_xlags, n_ylags=n_ylags)
+        
+        print(f"CM Estimator RMSE: {CM_price_estimate.rmse}\t lag: {CM_price_estimate.n_xlags}")
+        print(f"AM Estimator RMSE: {AM_price_estimate.rmse}\t lag: {AM_price_estimate.n_xlags}")
+
+        print("\n Performance measures:")
+        CM_price_estimate.measure_performance()
+        AM_price_estimate.measure_performance()
+        
 
         fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, sharex=True)
 
 
         t = np.arange(spot_prices.shape[1])
         ax1.plot(t, CM_price_estimate[0,:],     label='Est CM clearing up')
-        ax2.plot(t, CM_price_estimate[1,:],     label='Est CM clearing down')
+        ax2.plot(t, CM_price_estimate[12,:],     label='Est CM clearing down')
         ax3.plot(t, AM_price_estimate[0,:],     label='Est AM clearing up')
-        ax4.plot(t, AM_price_estimate[1,:],     label='Est AM clearing down')
+        ax4.plot(t, AM_price_estimate[12,:],     label='Est AM clearing down')
 
-        ax1.plot(t, CM_clearing_prices_up[0,:],      linestyle = ':', color='gray', label='CM clearing up')
-        ax2.plot(t, CM_clearing_prices_down[1,:],    linestyle = ':', color='gray', label='CM clearing down')
-        ax3.plot(t, AM_clearing_prices_up[0,:],      linestyle = ':', color='gray', label='AM clearing up')
-        ax4.plot(t, AM_clearing_prices_down[1,:],    linestyle = ':', color='gray', label='AM clearing down')
+        ax1.plot(t, CM_prices[0,:],    linestyle = ':', color='gray', label='CM clearing up')
+        ax2.plot(t, CM_prices[12,:],    linestyle = ':', color='gray', label='CM clearing down')
+        ax3.plot(t, AM_prices[0,:],    linestyle = ':', color='gray', label='AM clearing up')
+        ax4.plot(t, AM_prices[12,:],    linestyle = ':', color='gray', label='AM clearing down')
 
         ax1.legend()
         ax2.legend()

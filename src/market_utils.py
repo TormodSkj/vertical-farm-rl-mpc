@@ -29,7 +29,7 @@ class Estimator:
     '''
 
     exact: bool
-    n_lags: int
+    n_xlags: int
 
     sample_data: np.ndarray
     estimated_data: np.ndarray
@@ -42,16 +42,26 @@ class Estimator:
     covariances: np.ndarray
     means: np.array
 
-    def __init__(self, dependent_data: np.ndarray, independent_data: np.ndarray = None, n_lags = 0, is_exact = False):
+    def __init__(self, dependent_data: np.ndarray, independent_data: np.ndarray = None, 
+                 x_labels = [], y_labels = [], n_xlags = 0, n_ylags=0, is_exact = False):
 
-        dependent_data, independent_data = self.sanitize_inputs(dependent_data, independent_data)
+        dependent_data, independent_data, x_labels, y_labels = self.sanitize_inputs(dependent_data, independent_data, x_labels, y_labels)
+        if x_labels: assert len(x_labels) == dependent_data.shape[0]
+        if y_labels: assert len(y_labels) == independent_data.shape[0]
 
         self.exact = is_exact
-        self.n_lags = n_lags
+        self.n_xlags = n_xlags
+        self.n_ylags = n_ylags
+        self.max_lags = max(n_xlags, n_ylags)
+        self.min_lags = min(n_xlags, n_ylags)
         self.sample_data = dependent_data
         self.n_data = dependent_data.shape[1]
+
+        self.x_labels = x_labels
+        self.y_labels = y_labels
         
         self.add_sample(X_sample=dependent_data, Y_sample=independent_data)
+        self.calculate_estimate(Y_sample = independent_data)
 
 
     def __getitem__(self, index):
@@ -74,37 +84,46 @@ class Estimator:
 
 
 
-    def sanitize_inputs(self, dependent_data: np.ndarray, independent_data: np.ndarray = None):
+    def sanitize_inputs(self, dependent_data: np.ndarray, independent_data: np.ndarray = None,  x_labels=[], y_labels=[]):
 
         if len(dependent_data.shape) == 1: dependent_data = dependent_data.reshape((1,-1))
         
         if independent_data is None:         independent_data = np.zeros((0, dependent_data.shape[1]))
         if len(independent_data.shape) == 1: independent_data = independent_data.reshape((1,-1))
         
-        return dependent_data, independent_data
+        if type(x_labels) == str: x_labels = [x_labels]
+        if type(y_labels) == str: y_labels = [y_labels]
+
+        return dependent_data, independent_data, x_labels, y_labels
 
     def add_sample(self, X_sample: np.ndarray, Y_sample: np.ndarray):
 
         assert X_sample.shape[1] == Y_sample.shape[1],  f"Inconsistent lengths of dependent and independent data"
-        assert X_sample.shape[1] > self.n_lags - 1,     f"Sample data is too short for choice of lag variables"
+        assert X_sample.shape[1] > self.n_xlags - 1,     f"Sample data is too short for choice of lag variables"
         assert Y_sample.shape[1] == self.n_data,        f"Size inconsistency when adding input signal. Expected length {self.n_data}, received length{Y_sample.shape[1]} "
         
         self.ny = Y_sample.shape[0]
         self.nx = X_sample.shape[0]
 
         self.update_covariances(Y_sample)
-        self.calculate_estimate(Y_sample)
+        
 
     def update_covariances(self, Y_sample):
 
-        lagged_data = np.zeros((self.nx*self.n_lags, self.n_data - self.n_lags))
+        lagged_xdata = np.zeros((self.nx*self.n_xlags, self.n_data - self.n_xlags))
 
-        for k in range(1, self.n_lags+1):
-            lagged_data[self.nx*(k-1):self.nx*k, :] = self.sample_data[:,self.n_lags-k:self.n_data-k]
+        for k in range(1, self.n_xlags+1):
+            lagged_xdata[self.nx*(k-1):self.nx*k, :] = self.sample_data[:,self.n_xlags-k:self.n_data-k]
 
-        all_signals     = np.vstack((self.sample_data[:,self.n_lags:],
-                                    lagged_data, 
-                                    Y_sample[:,self.n_lags:])) 
+
+        lagged_ydata = np.zeros((self.ny*self.n_ylags, self.n_data - self.n_ylags))
+        for k in range(1, self.n_ylags+1):
+            lagged_ydata[self.ny*(k-1):self.ny*k, :] = Y_sample[:,self.n_ylags-k:self.n_data-k]
+
+        all_signals     = np.vstack((self.sample_data[:,self.max_lags:],
+                                    lagged_xdata[:,self.max_lags - self.n_xlags:], 
+                                    Y_sample[:,self.max_lags:],
+                                    lagged_ydata[:,self.max_lags - self.n_ylags:])) 
         
         self.covariances = np.cov(all_signals)
         self.means = np.mean(all_signals, axis=1)
@@ -126,13 +145,13 @@ class Estimator:
             Pxy: Corresponding cross-covariance matrix
             selected_lags: List of indices of selected lags
         """
-        n = self.nx + self.n_lags + self.ny
+        n = self.nx + self.n_xlags + self.ny + self.n_ylags
         selected_lags = []
 
         full_covariances = self.covariances[self.nx:, self.nx:]
 
         Pyy = np.zeros((0,0))
-        Pxy = np.zeros((0, self.n_lags + self.ny))  # Matching empty cross-matrix
+        Pxy = np.zeros((0, self.n_xlags + self.ny + self.n_ylags))  # Matching empty cross-matrix
 
         for var in range(n - self.nx):
 
@@ -175,7 +194,7 @@ class Estimator:
         # Pyy     = self.covariances[self.nx:,self.nx:]
         
         # print(self.covariances)
-
+        Pxx = self.covariances[:self.nx, :self.nx]
         Pyy, Pxy, selected_vars = self.build_stable_covariances()
         Pyy_inv = np.linalg.inv(Pyy)
 
@@ -195,28 +214,48 @@ class Estimator:
             
 
         x_est = np.zeros_like(self.sample_data)
-        x_est[:,:self.n_lags] = np.repeat(self.means[:self.nx].reshape((-1,1)), self.n_lags, axis=1)
+        x_est[:,:self.max_lags] = np.repeat(self.means[:self.nx].reshape((-1,1)), self.max_lags, axis=1)
         # x_est[:,:self.n_lags] = self.sample_data[:,:self.n_lags]
 
-        for k in range(self.n_lags, self.n_data):
+        for k in range(self.max_lags, self.n_data):
             
             # if Y_sample is not None:
-            y = np.vstack((np.flip(self.sample_data[:,k-self.n_lags:k], axis=1).ravel(order='F').reshape((-1,1)), Y_sample[:,k].reshape((-1,1))))[selected_vars, :]
+            y = np.vstack((np.flip(self.sample_data[:,k-self.n_xlags:k], axis=1).ravel(order='F').reshape((-1,1)), 
+                           Y_sample[:,k].reshape((-1,1)),
+                           np.flip(Y_sample[:,k-self.n_ylags:k], axis=1).ravel(order='F').reshape((-1,1))
+                           ))[selected_vars, :]
             # else:
             #     y = x_est[:,k:k+self.n_lags].ravel(order='F').reshape((-1,1))
 
-            conditional = a + Pxy @ Pyy_inv @ (y - b)
+            conditional_expectation = a + Pxy @ Pyy_inv @ (y - b)
             
-            x_est[:,k] = conditional.flatten()
+            x_est[:,k] = conditional_expectation.flatten()
 
+        self.conditional_covariance  = Pxx - Pxy @ Pyy_inv @ Pxy.T
 
         # self.estimated_data = np.flip(x_est, axis=0)
         self.estimated_data = x_est
-                                      
-        self.mse = np.mean(np.square(self.estimated_data[:,self.n_lags:] - self.sample_data[:,self.n_lags:]))
+
+        self.mse = np.mean(np.square(self.estimated_data[:,self.max_lags:] - self.sample_data[:,self.max_lags:]))
         self.rmse = np.sqrt(self.mse)
+                                      
+        return
+    
+    def measure_performance(self, how='array'):
+        
+        if how=='single':
+            print(f"RMSE: {rmse} \tWith expected covariance {self.conditional_covariance[i,i]}")
+
+        elif how=='array':
+            for i in range(self.nx):
+                signal_name = self.x_labels[i] if self.x_labels else f"X{i}"
+                rmse = np.sqrt(np.mean(np.square(self.estimated_data[i,self.max_lags:] - self.sample_data[i,self.max_lags:])))
+                print(f"RMSE for {signal_name}: {rmse} \tWith expected covariance {self.conditional_covariance[i,i]}")
+
 
         return
+
+
 
     '''
     def estimate(self, past_vals: np.ndarray = None, Y_sample: np.ndarray = None):

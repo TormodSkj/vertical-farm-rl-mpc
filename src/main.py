@@ -77,7 +77,7 @@ def main():
     # run_ids = ['mfrr_opt', 'abs_opt']
     # for run_id in run_ids: print(f"Upper CM participation earnings limit for {run_id}: {market.calculate_CM_earnings_upper_limit(controller, run_id)}")
           
-    market.estimate_prices()
+    # market.estimate_prices(n_xlags=10, n_ylags=10)
     # market.calculate_AM_upper_bound()
 
     
