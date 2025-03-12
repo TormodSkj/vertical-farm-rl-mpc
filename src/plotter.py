@@ -423,7 +423,7 @@ class Plotter():
                 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=self.aspect_ratio, sharex=True)
 
 
-                clearing_prices_up, clearing_prices_down = market.get_clearing_prices()
+                clearing_prices_up, clearing_prices_down = market.get_AM_clearing_prices()
                 activations_up, activations_down = market.get_activation_demands()
 
                 expected_prices_up, expected_prices_down = conditional_expectation(controller.spot_prices, market.price_means, market.price_covs)
@@ -513,17 +513,17 @@ class Plotter():
                 # plt.figure(figsize=self.aspect_ratio)
                 fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=self.aspect_ratio, sharex=True)
 
-                price_data_raw = market.prices_working_set
+                price_data_raw = market.AM_prices_working_set
                 price_data = price_data_raw.where(price_data_raw['Clearing Price Up']<500).where(price_data_raw['Clearing Price Down']>-500).dropna()
 
                 mfrr_prices_up  = np.array(price_data['Clearing Price Up'])
                 mfrr_prices_dn  = np.array(price_data['Clearing Price Down'])
 
-                clearing_prices_up, clearing_prices_down = market.get_clearing_prices()
+                clearing_prices_up, clearing_prices_down = market.get_AM_clearing_prices()
                 clearing_prices_up = clearing_prices_up[np.where(clearing_prices_up<500)]
                 clearing_prices_down = clearing_prices_down[np.where(clearing_prices_down<500)]
                 
-                activated_prices_up, activated_prices_dn = market.get_clearing_prices()
+                activated_prices_up, activated_prices_dn = market.get_AM_clearing_prices()
                 activation_demand_up, activation_demand_dn = market.mfrr_demands_up, market.mfrr_demands_down
                 activated_prices_up = activated_prices_up[np.where(np.logical_and(activated_prices_up<500, activation_demand_up > 0))]
                 activated_prices_dn = activated_prices_dn[np.where(np.logical_and(activated_prices_dn<500, activation_demand_dn > 0))]
@@ -570,7 +570,7 @@ class Plotter():
                 # plt.figure(figsize=self.aspect_ratio)
                 fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=self.aspect_ratio, sharex=True)
 
-                clearing_prices_up, clearing_prices_down = market.get_clearing_prices(market.date)
+                clearing_prices_up, clearing_prices_down = market.get_AM_clearing_prices(market.date)
                 
                 n_bins = 50
 
@@ -829,7 +829,7 @@ class Plotter():
         market = controller.market
 
         # Remove drastic outliers
-        price_data_raw = market.prices_working_set
+        price_data_raw = market.AM_prices_working_set
         price_data = price_data_raw.where(price_data_raw['Clearing Price Up']<500).where(price_data_raw['Clearing Price Down']>-500).dropna()
 
         timestamps      = price_data['Start Time']
@@ -984,7 +984,7 @@ class Plotter():
         #           MONTHLY mFRR ACTIVATION FREQUENCIES
 
 
-        activations_df = market.activations_full_set.copy()
+        activations_df = market.AM_activations_full_set.copy()
 
         # Process data up
         activations_df['Start Time'] = pd.to_datetime(activations_df['Start Time'])
@@ -1071,7 +1071,7 @@ class Plotter():
         ######################################################
         #           ACTIVATION VOLUMES HISTOGRAM
 
-        activations_df = market.activations_full_set.copy()
+        activations_df = market.AM_activations_full_set.copy()
         activated_capacities_up = activations_df['Activated Up'].loc[activations_df['Activated Up'] > 0]
         activated_capacities_down = activations_df['Activated Down'].loc[activations_df['Activated Down'] > 0]
         
@@ -1121,7 +1121,7 @@ class Plotter():
         ######################################################
         #        ACTIVATED/OFFERED RATIO HISTOGRAM
 
-        activations_df = market.activations_full_set.copy()
+        activations_df = market.AM_activations_full_set.copy()
         offered_capacities_up = activations_df['Offered Up']
         offered_capacities_down = activations_df['Offered Down']
         activated_capacities_up = activations_df['Activated Up']
@@ -1153,7 +1153,7 @@ class Plotter():
         ######################################################
         #           OFFERED VOLUMES HISTOGRAM
 
-        activations_df = market.activations_full_set.copy()
+        activations_df = market.AM_activations_full_set.copy()
         activated_capacities_up = activations_df['Offered Up']
         activated_capacities_down = activations_df['Offered Down']
         

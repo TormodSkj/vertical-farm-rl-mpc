@@ -85,7 +85,7 @@ class Simulator():
             mu_dn = conditional_expectation(controller.spot_prices, market.price_means, market.price_covs)[1]
 
             clearing_prices_up = np.random.normal(loc=mu_up, scale=market.sigma_up)
-            clearing_prices_dn = np.random.normal(loc=mu_dn, scale=market.sigma_dn)
+            clearing_prices_dn = np.random.normal(loc=mu_dn, scale=market.sigma_down)
 
             u = u_nom + 1000*(np.where(np.logical_and(activation_demands == -1, bidding_price_dn < clearing_prices_dn), bidding_vol_dn, 0)\
                             - np.where(np.logical_and(activation_demands == 1, bidding_price_up < clearing_prices_up), bidding_vol_up, 0))/controller.model.C_conv_PPFD
@@ -122,7 +122,7 @@ class Simulator():
         spot_prices = controller.spot_prices
         F = controller.F
 
-        clearing_prices_up, clearing_prices_down = market.get_clearing_prices(date)
+        clearing_prices_up, clearing_prices_down = market.get_AM_clearing_prices(date)
         assert len(clearing_prices_up)==N and len(clearing_prices_down)==N, f'Clearing price arrays have inconsistent lengths with simulation duration. N = {self.N}, len(clearing prices up) = {len(clearing_prices_up)}, len(clearing prices down) = {len(clearing_prices_down)}'
         
         activation_demands_up, activation_demands_down = market.mfrr_demands_up, market.mfrr_demands_down

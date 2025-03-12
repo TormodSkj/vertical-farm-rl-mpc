@@ -31,7 +31,7 @@ class Settings():
                          C_eur2nok           = 11.76,
                          n_given_bids        = 2,
                          n_given_activations = 1,
-                         outlier_max_dist    = 3
+                         OUTLIER_DIST_LIMIT  = 3
                          )
 
         # Model settings

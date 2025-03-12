@@ -77,7 +77,7 @@ def main():
     # run_ids = ['mfrr_opt', 'abs_opt']
     # for run_id in run_ids: print(f"Upper CM participation earnings limit for {run_id}: {market.calculate_CM_earnings_upper_limit(controller, run_id)}")
           
-    # market.estimate_prices()
+    market.estimate_prices()
     # market.calculate_AM_upper_bound()
 
     
@@ -87,8 +87,8 @@ def main():
     # plotter.save_ocp_plots()
     # plotter.plot_financial_report()
 
-    plotter.plot_spot_mfrr_prices() 
-    plotter.plot_CM_data() 
+    # plotter.plot_spot_mfrr_prices() 
+    # plotter.plot_CM_data() 
     ''''''
 
     # controller.export_intensity_to_json('Baseline')

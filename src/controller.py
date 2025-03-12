@@ -349,7 +349,7 @@ class Controller():
         market = self.market
         F = self.F
 
-        clearing_prices_up, clearing_prices_down = market.get_clearing_prices(self.market.date)
+        clearing_prices_up, clearing_prices_down = market.get_AM_clearing_prices(self.market.date)
         assert len(clearing_prices_up)==N and len(clearing_prices_down)==N, f'Clearing price arrays have inconsistent lengths with simulation duration. N = {self.N}, len(clearing prices up) = {len(clearing_prices_up)}, len(clearing prices down) = {len(clearing_prices_down)}'
         
         activation_demands_up, activation_demands_down = market.mfrr_demands_up, market.mfrr_demands_down
@@ -928,7 +928,7 @@ class Controller():
         refrun = self.optimization_results['runs'][refrun_id]
 
         activations_up, activations_down = self.market.get_activation_demands()
-        clearing_prices_up, clearing_prices_down = self.market.get_clearing_prices()
+        clearing_prices_up, clearing_prices_down = self.market.get_AM_clearing_prices()
         U_nom = refrun['timeseries']['u']
 
         N = self.N
@@ -1105,10 +1105,10 @@ class Controller():
         # Print market metrics
         market_data = [
             ['Mean Expected clearing price', np.mean(self.market.expected_prices_up), np.mean(self.market.expected_prices_down)],
-            ['Mean Recorded clearing price', np.mean(self.market.get_clearing_prices()[0]), np.mean(self.market.get_clearing_prices()[1])],
-            ['Mean Recorded activated clearing price', np.mean(self.market.get_clearing_prices()[0][np.where(self.market.mfrr_demands_up >0)]), np.mean(self.market.get_clearing_prices()[1][np.where(self.market.mfrr_demands_down >0)])],
-            ['Mean Expected / Recorded clearing price delta',  np.mean(self.market.expected_prices_up - self.market.get_clearing_prices()[0]), np.mean(self.market.expected_prices_down - self.market.get_clearing_prices()[1])],
-            ['Clearing price standard deviation', self.market.sigma_up, self.market.sigma_dn], 
+            ['Mean Recorded clearing price', np.mean(self.market.get_AM_clearing_prices()[0]), np.mean(self.market.get_AM_clearing_prices()[1])],
+            ['Mean Recorded activated clearing price', np.mean(self.market.get_AM_clearing_prices()[0][np.where(self.market.mfrr_demands_up >0)]), np.mean(self.market.get_AM_clearing_prices()[1][np.where(self.market.mfrr_demands_down >0)])],
+            ['Mean Expected / Recorded clearing price delta',  np.mean(self.market.expected_prices_up - self.market.get_AM_clearing_prices()[0]), np.mean(self.market.expected_prices_down - self.market.get_AM_clearing_prices()[1])],
+            ['Clearing price standard deviation', self.market.sigma_up, self.market.sigma_down], 
             ['Expected activation occurence rate', self.market.demand_prob_up(), self.market.demand_prob_down()],
             ['Recorded activation occurence rate', np.mean(self.market.mfrr_demands_up), np.mean(self.market.mfrr_demands_down)]
         ]

@@ -168,6 +168,7 @@ class Estimator:
         if self.exact:
             self.estimated_data = self.sample_data
             self.mse = 0
+            self.rmse = 0
 
 
         # Pxy     = self.covariances[:self.nx,self.nx:]
@@ -213,6 +214,7 @@ class Estimator:
         self.estimated_data = x_est
                                       
         self.mse = np.mean(np.square(self.estimated_data[:,self.n_lags:] - self.sample_data[:,self.n_lags:]))
+        self.rmse = np.sqrt(self.mse)
 
         return
 
@@ -326,7 +328,7 @@ def load_spot_prices(file_path, bidding_zone):
 
 import re
 
-def load_spot_prices_energy_charts(data_folder, bidding_zone):
+def load_spot_data(data_folder):
     """
     Load spot prices from NO, SE, DK and FI from data gathered via energy-charts.info
 
@@ -373,7 +375,13 @@ def load_spot_prices_energy_charts(data_folder, bidding_zone):
 
     merged_df = combine_dataframe_blocks(all_data)
 
-    return_df = merged_df[['Start Time', bidding_zone]].rename(columns={bidding_zone: 'Spot Price'})
+    # return_df = merged_df[['Start Time', bidding_zone]].rename(columns={bidding_zone: 'Spot Price'})
+
+    return_df = merged_df.rename(
+        columns={
+            col: col + ' Spot Price' for col in merged_df.columns if 'Start Time' not in col
+            }
+        )
 
     return return_df
 
@@ -440,7 +448,7 @@ def load_nordpool_balancing_prices(data_folder, bidding_zone):
 
     """
 
-    mfrr_AM_data = load_mfrr_AM_data(data_folder, bidding_zone)
+    mfrr_AM_data = load_mfrr_AM_data(data_folder)
 
     up_price_col    = f"{bidding_zone} Up Price (EUR)"     
     down_price_col  = f"{bidding_zone} Down Price (EUR)" 
@@ -456,11 +464,10 @@ def load_nordpool_balancing_prices(data_folder, bidding_zone):
     return mfrr_AM_data
 
 
-def load_mfrr_AM_data(data_folder, bidding_zone):
+def load_mfrr_AM_data(data_folder):
     """
 
     """
-
 
     all_files = [f for f in os.listdir(data_folder) if f.endswith(".csv")]
     all_data = []
@@ -478,11 +485,21 @@ def load_mfrr_AM_data(data_folder, bidding_zone):
         )
         data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d.%m.%Y %H:%M:%S', errors='coerce')
 
+        data.drop(columns=['Delivery Start (CET)', 'Delivery End (CET)'])
+
         # Append to the list
         all_data.append(data)
     
     # Concatenate all data into a single DataFrame
     combined_df = combine_dataframe_blocks(all_data)
+    rename_dict = {}
+    rename_dict.update({col: col[:-5] for col in combined_df.columns if 'Accepted' in col})
+    rename_dict.update({col: col[:-5] for col in combined_df.columns if 'Activated' in col})
+    rename_dict.update({col: col[:-6] for col in combined_df.columns if 'Price' in col})
+    combined_df.rename(columns = rename_dict, inplace=True)
+
+    combined_df.drop(columns = ['Delivery Start (CET)', 'Delivery End (CET)'], inplace=True)
+    combined_df.drop(columns = [col for col in combined_df.columns if 'Imbalance' in col], inplace=True)
 
     return combined_df
 
@@ -502,6 +519,27 @@ def load_nordpool_activation_data(data_folder, bidding_zone):
     return AM_data_df
 
 
+# def combine_dataframe_blocks(blocks):
+#     if not blocks:
+#         raise ValueError("No dataframes provided for merging.")
+
+#     # Ensure all blocks have 'Start Time' column and convert it to datetime
+#     for i, df in enumerate(blocks):
+#         if 'Start Time' not in df.columns:
+#             raise ValueError(f"Block {i} is missing the required 'Start Time' column.")
+#         df['Start Time'] = pd.to_datetime(df['Start Time'], errors='coerce')
+
+#     # Concatenate all blocks (this keeps all columns)
+#     full_df = pd.concat(blocks, axis=0, ignore_index=True)
+
+#     # Group by 'Start Time' and merge overlapping data
+#     full_df = full_df.groupby('Start Time', as_index=False).first()
+
+#     # Sort chronologically
+#     full_df = full_df.sort_values(by='Start Time').reset_index(drop=True)
+
+#     return full_df
+
 def combine_dataframe_blocks(blocks):
     if not blocks:
         raise ValueError("No dataframes provided for merging.")
@@ -517,6 +555,10 @@ def combine_dataframe_blocks(blocks):
 
     # Group by 'Start Time' and merge overlapping data
     full_df = full_df.groupby('Start Time', as_index=False).first()
+
+    # Sort columns: Keep 'Start Time' first, sort the rest alphabetically
+    sorted_columns = ['Start Time'] + sorted([col for col in full_df.columns if col != 'Start Time'])
+    full_df = full_df[sorted_columns]
 
     # Sort chronologically
     full_df = full_df.sort_values(by='Start Time').reset_index(drop=True)
@@ -932,7 +974,7 @@ def fetch_CM_data_nucs(target_file_path, start_date, end_date):
 
 
 
-def load_CM_prices(data_folder, bidding_zone):
+def load_mfrr_CM_data(data_folder):
 
     """
 
@@ -947,34 +989,36 @@ def load_CM_prices(data_folder, bidding_zone):
         # Load the mFRR data
         data = pd.read_csv(filepath, delimiter=";", encoding="utf-8")
 
-        data = data[['Date', 'Hour'] + [column for column in data.columns if bidding_zone in column]]
+        # data = data[['Date', 'Hour'] + [column for column in data.columns if bidding_zone in column]]
 
         data['Start Time'] = data['Date'] + " " + data['Hour']
         data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d.%m.%Y %H:%M', errors='coerce')
 
-        up_price_col    = f"{bidding_zone} Up Price"     
-        up_volume_col   = f"{bidding_zone} Up Volume procured"     
-        down_price_col  = f"{bidding_zone} Down Price"     
-        down_volume_col = f"{bidding_zone} Down Volume procured"  
+        # up_price_col    = f"{bidding_zone} Up Price"     
+        # up_volume_col   = f"{bidding_zone} Up Volume procured"     
+        # down_price_col  = f"{bidding_zone} Down Price"     
+        # down_volume_col = f"{bidding_zone} Down Volume procured"  
 
-        data = data[['Start Time', up_price_col, up_volume_col, down_price_col, down_volume_col]].rename(
-            columns={up_price_col: 'Clearing Price Up', down_price_col: 'Clearing Price Down',
-                     up_volume_col: 'Volume Up',        down_volume_col: 'Volume Down'}
-        )
+        # data = data[['Start Time', up_price_col, up_volume_col, down_price_col, down_volume_col]].rename(
+        #     columns={up_price_col: 'Clearing Price Up', down_price_col: 'Clearing Price Down',
+        #              up_volume_col: 'Volume Up',        down_volume_col: 'Volume Down'}
+        # )
 
-        data['Clearing Price Up']   = pd.to_numeric(data['Clearing Price Up'],   errors='coerce')
-        data['Clearing Price Down'] = pd.to_numeric(data['Clearing Price Down'], errors='coerce')
-        data['Volume Up']           = pd.to_numeric(data['Volume Up'],           errors='coerce')
-        data['Volume Down']         = pd.to_numeric(data['Volume Down'],         errors='coerce')
+        # data['Clearing Price Up']   = pd.to_numeric(data['Clearing Price Up'],   errors='coerce')
+        # data['Clearing Price Down'] = pd.to_numeric(data['Clearing Price Down'], errors='coerce')
+        # data['Volume Up']           = pd.to_numeric(data['Volume Up'],           errors='coerce')
+        # data['Volume Down']         = pd.to_numeric(data['Volume Down'],         errors='coerce')
         
+        data.drop(columns=['Date', 'Hour'],inplace=True)
+
         # Append processed data to the list
         all_data.append(data)
 
     assert len(all_data) > 0, 'Expected non-empty list of data. Verify correctly specified import path.'
 
     # Merge all data and sort by 'Start Time'
-    merged_data = pd.concat(all_data, ignore_index=True)
-    merged_data.sort_values(by='Start Time', inplace=True)
+    merged_data = combine_dataframe_blocks(all_data)
+    # merged_data.sort_values(by='Start Time', inplace=True)
     # merged_data.fillna(0, inplace=True)
 
     return merged_data
