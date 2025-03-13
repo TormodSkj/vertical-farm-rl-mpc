@@ -10,14 +10,14 @@ from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 from market_utils import fetch_CM_data_nucs
 
-SIM_NAME            = "new_spotprices"
+SIM_NAME            = "se1_abs_test"
 SIMULATION_LENGTH   = 20
 FINAL_FRESHWEIGHT   = 4                   # 1 day
 # FINAL_WEIGHT      = 36.66             # 7 Days
 # FINAL_WEIGHT      = 136.7             # 20 Days 
 # FINAL_WEIGHT      = 2.05              # 20 Days [Directly from germination]
 SIMULATION_DATE = '2024-02-14'
-BIDDING_ZONE    = 'SE1'
+BIDDING_ZONE    = 'DK1'
 OPTIMISTIC      = 1
 SEARCH_CACHE    = 1
 
@@ -39,12 +39,12 @@ def main():
     settings.add_setting('market', SIMULATION_DATE = SIMULATION_DATE, OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE)
     settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT)
 
-    config          = Config(settings)
-    plant           = PlantModel(settings)
-    market          = Market(settings, config)
-    controller      = Controller(settings, plant, market, config)
-    simulator       = Simulator(settings, plant, market, config, controller)
-    plotter         = Plotter(settings, config, controller, simulator)
+    config      = Config(settings)
+    plant       = PlantModel(settings)
+    market      = Market(settings, config)
+    controller  = Controller(settings, plant, market, config)
+    simulator   = Simulator(settings, plant, market, config, controller)
+    plotter     = Plotter(settings, config, controller, simulator)
 
     ''' OPTIMIZAION '''
     # market.optimal_bidding_price_prediction(controller.spot_prices)
@@ -52,7 +52,7 @@ def main():
     # '''
     # controller.import_baseline('imported')
 
-    # controller.optimize_spotprice('spot_opt')         #
+    controller.optimize_spotprice('spot_opt')         #
     # controller.optimize_mfrr('mfrr_opt', 'spot_opt')  #
     # simulator.apply_mfrr_clearing_prices('mfrr_applied', 'mfrr_opt')
     
@@ -62,23 +62,23 @@ def main():
     # controller.optimize_mfrr_mpc('mfrr_mpc_spot', 'spot_opt')
     # simulator.apply_mfrr_clearing_prices('apply_prices_mpc_spot', 'mfrr_mpc_spot')
 
-    # controller.generate_optimal_bidding_strategy('abs_opt', 'spot_opt')
-    # simulator.apply_mfrr_clearing_prices('abs_applied', 'abs_opt')
+    controller.generate_optimal_bidding_strategy('abs_opt', 'spot_opt')
+    simulator.apply_mfrr_clearing_prices('abs_applied', 'abs_opt')
 
 
     # controller.optimize_mfrr('mfrr_fixed', 'fixed')
     # simulator.apply_mfrr_clearing_prices('mfrr_fixed_applied', 'mfrr_fixed')
     
     '''Status report'''
-    # controller.status_report()
-    # controller.save_to_json()
+    controller.status_report()
+    controller.save_to_json()
     ''''''
 
     # run_ids = ['mfrr_opt', 'abs_opt']
     # for run_id in run_ids: print(f"Upper CM participation earnings limit for {run_id}: {market.calculate_CM_earnings_upper_limit(controller, run_id)}")
           
     # market.estimate_prices(n_xlags=10, n_ylags=10)
-    # market.calculate_AM_upper_bound()
+    market.calculate_AM_upper_bound()
 
     
     #'''

@@ -1013,7 +1013,7 @@ def fetch_CM_data_nucs(target_file_path, start_date, end_date):
 
 
 
-def load_mfrr_CM_data(data_folder):
+def load_mfrr_CM_data(data_folder)->pd.DataFrame:
 
     """
 
