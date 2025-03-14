@@ -234,8 +234,8 @@ def conditional_covariance(price_covs):
     cov_spot_up     = price_cov_up[0, 1]      # Covariance between Spot and Up Price
     cov_spot_down   = price_cov_down[0, 1]    # Covariance between Spot and Down Price
     
-    cond_cov_up = var_up - cov_spot_up * var_spot_up * cov_spot_up
-    cond_cov_down = var_down - cov_spot_down * var_spot_down * cov_spot_down
+    cond_cov_up = var_up - cov_spot_up /var_spot_up * cov_spot_up
+    cond_cov_down = var_down - cov_spot_down /var_spot_down * cov_spot_down
     
     return np.array([cond_cov_up, cond_cov_down])
 

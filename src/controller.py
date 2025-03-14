@@ -447,7 +447,6 @@ class Controller():
 
                 past_X[:,-min(QUARTER_HOURS_PER_DAY, min(N_iter, N_horizon)):] = X[:,k:k+min(QUARTER_HOURS_PER_DAY, min(N_iter, N_horizon))]
 
-                #TODO temp solution
                 Eps = max(0, target_weight[-1] - self.model.freshweight(X[:,-1]))
 
                 k += N_iter
@@ -744,8 +743,8 @@ class Controller():
 
 
             expected_prices_up, expected_prices_down = self.market.expected_prices_up, self.market.expected_prices_down
-            bidding_earnings_up     = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(bid_activations_up,     bid_volumes_up),    expected_prices_up)
-            bidding_earnings_down   = self.market.C_eur2nok * 1/4 * np.multiply(np.multiply(bid_activations_down,   bid_volumes_down),  expected_prices_down)
+            bidding_earnings_up     = 1/4 * np.multiply(np.multiply(bid_activations_up,     bid_volumes_up),    expected_prices_up)
+            bidding_earnings_down   = 1/4 * np.multiply(np.multiply(bid_activations_down,   bid_volumes_down),  expected_prices_down)
             bidding_earnings    = np.sum(bidding_earnings_up) + np.sum(bidding_earnings_down)
 
             bidding_costs = self.model.spotopt_obj_function(self.N, self.spot_prices, x, u)
@@ -966,9 +965,9 @@ class Controller():
 
         L = 0
         for k in range(0, N): #from k = 2, to N-1. 
-            L += spot_prices[k] * self.model.C_conv_PPFD * U_nom[:,k] \
-                  + (1000*spot_prices[k] - self.market.C_eur2nok * expected_prices_down[:,k]) * bid_volumes_down[k] * activations_down[k]\
-                  - (1000*spot_prices[k] + self.market.C_eur2nok * expected_prices_up[:,k]) * bid_volumes_up[k] * activations_up[k]
+            L += spot_prices[k] * self.model.C_conv_PPFD/1000 * U_nom[:,k] \
+                  + (spot_prices[k] - expected_prices_down[:,k]) * bid_volumes_down[k] * activations_down[k]\
+                  - (spot_prices[k] + expected_prices_up[:,k]) * bid_volumes_up[k] * activations_up[k]
 
         J = L/4 + self.model.terminal_cost(self, X, U, Eps)
 

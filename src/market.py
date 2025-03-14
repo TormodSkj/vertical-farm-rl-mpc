@@ -71,7 +71,7 @@ class Market:
         self.spot_prices = self.get_spotprice() 
 
         self.analyze_price_covariances()
-        conditional_variance_up, conditional_variance_down    = conditional_covariance(self.price_covs)
+        conditional_variance_up, conditional_variance_down  = conditional_covariance(self.price_covs)
         self.expected_prices_up, self.expected_prices_down  = conditional_expectation(self.spot_prices, self.price_means, self.price_covs)
         
         self.analyze_activation_covariances()
@@ -101,34 +101,6 @@ class Market:
         self.mfrr_demands_up, self.mfrr_demands_down = self.get_activation_demands(self.date)
         self.analyze_market_potency(T = self.T)
     
-
-    def get_spotprice(self, date=None, n_days=None, zone=None) -> np.array:
-
-        if date     == None: date   = self.date
-        if n_days   == None: n_days = self.T
-        if zone     == None: zone   = self.bidding_zone
-
-        start_date = pd.to_datetime(date, format='%Y-%m-%d')
-        end_date = start_date + pd.DateOffset(n_days)
-        
-        
-        # N = self.N
-        # n_hours = int(np.ceil(N/4))
-
-        df = self.AM_prices_full_set.copy()
-        # start_idx = df[df['Start Time'] == pd.to_datetime(self.date)].index[0]
-
-        # Remove dates before simdate
-        df = df[
-            (df['Start Time']   >= start_date)    &
-            (df['Start Time']   <  end_date) 
-            ]
-        
-        df.fillna(df.mean(), inplace=True)
-        
-        spot_prices_hours = np.array(df[zone + ' Spot Price'].values)
-        spot_prices = np.repeat(spot_prices_hours, QUARTER_HOURS_PER_HOUR)
-        return spot_prices
     
 
     def activation_prob_up(self, spot_price, bid_price_up):
@@ -474,6 +446,29 @@ class Market:
         self.both_activation_occurance_rate   = np.mean(both_activation_occurances)
 
         return 0
+
+    def get_spotprice(self, date=None, n_days=None, zone=None) -> np.array:
+
+        if date     == None: date   = self.date
+        if n_days   == None: n_days = self.T
+        if zone     == None: zone   = self.bidding_zone
+
+        start_date = pd.to_datetime(date, format='%Y-%m-%d')
+        end_date = start_date + pd.DateOffset(n_days)
+        
+        df = self.AM_prices_full_set.copy()
+
+        # Remove dates before simdate
+        df = df[
+            (df['Start Time']   >= start_date)    &
+            (df['Start Time']   <  end_date) 
+            ]
+        
+        df.fillna(df.mean(), inplace=True)
+        
+        spot_prices_hours = np.array(df[f'{zone} Spot Price'].values)
+        spot_prices = np.repeat(spot_prices_hours, QUARTER_HOURS_PER_HOUR)
+        return spot_prices
     
     def get_AM_clearing_prices(self, date=None, n_days = None, zone = None):
 
@@ -758,7 +753,7 @@ class Market:
         
 
 
-    def calculate_AM_upper_bound(self, zones = None, start_date='2024-02-15', end_date = '2024-12-31'): #end_date='2025-02-15'):
+    def calculate_AM_upper_bound(self, zones = None, start_date='2024-02-15', end_date='2025-02-15'):
         """
         Calculates the upper bound for earnings from the AM market by optimizing activation periods.
         
@@ -779,7 +774,7 @@ class Market:
         dates = pd.date_range(start=pd.to_datetime(start_date, format='%Y-%m-%d'),
                             end=pd.to_datetime(end_date, format='%Y-%m-%d'))
 
-        results = []
+        results = {}
 
     
         with tqdm(total=len(zones), desc="Calculating ...") as pbar:
@@ -889,22 +884,95 @@ class Market:
 
                 total_earnings_mFRR = total_earnings_AM + total_earnings_CM
 
-                # print(f'\nOptimistic earnigns calculations for mFRR participation in {zone} for period: {start_date} to {end_date}')
-                # print(f"Total costs without mfrr participation: \t\t{electricity_costs_fixed:.2f}")
-                # print(f"Estimated upper bound of AM earnings: \t\t\t{yearly_earnings_AM:.2f}")
-                # print(f"Estimated upper bound of CM earnings: \t\t\t{yearly_earnings_CM:.2f}")
-                # print(f"Estimated upper bound of earnings from mFRR : \t\t{yearly_earnings_total_mFRR:.2f}")
-                # print(f"Total electricity costs with AM participation: \t\t{electricity_costs_AM:.2f}")
-                # print(f"Net cost reduction from mfrr participation: \t\t{electricity_costs_fixed - electricity_costs_AM + yearly_earnings_total_mFRR:.2f}")
-                
+                results[zone] = {}
+                results[zone]['AM_earnings'] = total_earnings_AM
+                results[zone]['CM_earnings'] = total_earnings_CM
+                results[zone]['mFRR_earnings'] = total_earnings_mFRR
+                results[zone]['nom_cost'] = total_electricity_costs_fixed
+                results[zone]['new_cost'] = total_electricity_costs_AM
+                results[zone]['mFRR_cost'] = total_electricity_costs_AM - total_earnings_mFRR
+
                 AM_earnings_perc    = 100 * total_earnings_AM / (total_earnings_AM + total_earnings_CM)
                 CM_earnings_perc    = 100 * total_earnings_CM / (total_earnings_AM + total_earnings_CM)
                 mFRR_cost           = total_electricity_costs_AM - total_earnings_mFRR
 
                 cost_reduction = (total_electricity_costs_fixed - mFRR_cost)/total_electricity_costs_fixed * 100
-                results.append(f"Net cost reduction in percentage for {zone}: \t{cost_reduction:.2f}, AM: {AM_earnings_perc:.2f}, CM: {CM_earnings_perc:.2f}, \tNominal cost: {total_electricity_costs_fixed:.2f}, mFRR cost: {mFRR_cost:.2f}")
+                results[zone]['cost_reduction'] = cost_reduction
+                results[zone]['message'] = f"Net cost reduction in percentage for {zone}: \t{cost_reduction:.2f}, AM: {AM_earnings_perc:.2f}, CM: {CM_earnings_perc:.2f}, \tNominal cost: {total_electricity_costs_fixed:.2f}, mFRR cost: {mFRR_cost:.2f}"
                 pbar.update(1)
 
-        for result in results: print(result)
-        
+        for zone in results: print(results[zone]['message'])
+
+
+        cmap = plt.get_cmap("Set3")
+        colors = {
+            "nominal": cmap(8),   # Gray 
+            "AM": cmap(3),        # Red
+            "CM": cmap(0),        # Blue
+            "mFRR_cost": cmap(6)  # Green
+        }
+
+        zones = list(results.keys())  
+        cost_reduction = np.array([results[zone]['cost_reduction'] for zone in zones])  # Total cost reduction per zone
+        AM_earnings = np.array([results[zone]['AM_earnings'] for zone in zones])  # Absolute AM earnings
+        CM_earnings = np.array([results[zone]['CM_earnings'] for zone in zones])  # Absolute CM earnings
+
+        # Convert AM and CM earnings to their proportional contributions
+        total_earnings = AM_earnings + CM_earnings
+        AM_earnings_perc = AM_earnings / total_earnings  # Fraction of total earnings from AM
+        CM_earnings_perc = CM_earnings / total_earnings  # Fraction of total earnings from CM
+
+        # Compute actual bar heights for stacked representation
+        AM_heights = cost_reduction * AM_earnings_perc
+        CM_heights = cost_reduction * CM_earnings_perc
+
+        # Create the stacked bar chart
+        fig, ax = plt.subplots(figsize=(10, 5))
+
+        ax.bar(zones, CM_heights, color=colors['CM'], label="Capacity Market")
+        ax.bar(zones, AM_heights, bottom=CM_heights, color=colors['AM'], label="Activation Market")
+
+        # Labels and Title
+        ax.set_xlabel("Zones")
+        ax.set_ylabel("Cost Reduction (%)")
+        ax.set_title("Upper estimate of cost reduction for a VF in Nordic bidding zones")
+        ax.set_xticklabels(zones, rotation=0)
+        ax.legend()
+
+        plt.show()
+
+
+        zones = list(results.keys())  
+        nominal_cost = np.array([results[zone]['nom_cost'] for zone in zones])  # Total electricity cost without mFRR
+        new_cost = np.array([results[zone]['new_cost'] for zone in zones])  # Total electricity cost with mFRR
+        mfrr_cost = np.array([results[zone]['mFRR_cost'] for zone in zones])  # Remaining cost after mFRR earnings
+        mfrr_earnings = np.array([results[zone]['mFRR_earnings'] for zone in zones])  # Total mfrr earnings
+        AM_earnings = np.array([results[zone]['AM_earnings'] for zone in zones])  # Absolute AM earnings
+        CM_earnings = np.array([results[zone]['CM_earnings'] for zone in zones])  # Absolute CM earnings
+        mfrr_cost = nominal_cost - mfrr_earnings  # Remaining cost after mFRR earnings
+
+        # Bar positions
+        x = np.arange(len(zones))  # X-axis positions
+        bar_width = 0.3  # Width of each bar
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        ax.bar(x - bar_width, nominal_cost, width=bar_width, color=colors["nominal"], label="Nominal Cost")
+
+        ax.bar(x, CM_earnings, width=bar_width, color=colors["CM"], label="Earnings from Capacity Market")
+        ax.bar(x, AM_earnings, width=bar_width, bottom=CM_earnings, color=colors["AM"], label="Earnings from Activation Market")
+
+        ax.bar(x + bar_width, mfrr_cost, width=bar_width, color=colors["mFRR_cost"], label="Cost after mFRR participation")
+
+
+        # Labels and Title
+        ax.set_xlabel("Zones")
+        ax.set_ylabel("Cost / Earnings (€)")
+        ax.set_title("Cost Breakdown before and after mFRR participation for a VF in Nordic bidding zones")
+        ax.set_xticks(x)
+        ax.set_xticklabels(zones, rotation=0)
+        ax.legend()
+
+        plt.show()
+
         return
