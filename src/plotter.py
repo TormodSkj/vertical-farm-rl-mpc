@@ -223,6 +223,7 @@ class Plotter():
         market      = controller.market
         t           = self.controller.t
         spot_prices = self.controller.spot_prices
+        zone        = market.bidding_zone
 
         run_id = run_group[0]
         dependencies = tuple(controller.optimization_results['runs'][run_id]['dependencies'])
@@ -426,7 +427,8 @@ class Plotter():
                 AM_clearing_prices_up, AM_clearing_prices_down = market.get_AM_clearing_prices()
                 activations_up, activations_down = market.get_activation_demands()
 
-                expected_prices_up, expected_prices_down = conditional_expectation(controller.spot_prices, market.price_means, market.price_covs)
+                expected_prices_up   = conditional_expectation(controller.spot_prices, market.AM_price_stats[zone]['Up']['means'],   market.AM_price_stats[zone]['Up']['cov'])
+                expected_prices_down = conditional_expectation(controller.spot_prices, market.AM_price_stats[zone]['Down']['means'], market.AM_price_stats[zone]['Down']['cov'])
 
                 linewidth = 0.4
 
@@ -513,7 +515,7 @@ class Plotter():
                 # plt.figure(figsize=self.aspect_ratio)
                 fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=self.aspect_ratio, sharex=True)
 
-                AM_prices_working_set_raw = market.AM_prices_working_set
+                AM_prices_working_set_raw = market.AM_data_working_set
                 AM_price_data_trimmed = AM_prices_working_set_raw.where(AM_prices_working_set_raw[f'{market.bidding_zone} Up Price']<500).where(AM_prices_working_set_raw[f'{market.bidding_zone} Down Price']>-500).dropna()
 
                 AM_prices_up  = np.array(AM_price_data_trimmed[f'{market.bidding_zone} Up Price'])
@@ -540,10 +542,14 @@ class Plotter():
                 ax4.hist(AM_activated_prices_dn, label="Activated", color=self.color_dn, alpha=0.8, bins=30, density=True)
 
                 # Gaussian pdfs of clearing prices
-                mu_up, mu_down = market.price_means[2:4]
-                sigma_up, sigma_down = np.sqrt(market.price_covs[0][1, 1]), np.sqrt(market.price_covs[1][1, 1])
-                x_up = np.linspace(mu_up-3*sigma_up,mu_up+3*sigma_up, 1000)
-                x_dn = np.linspace(mu_down-3*sigma_down,mu_down+3*sigma_down, 1000)
+                mu_up   = market.AM_price_stats[zone]['Up']['means'][1]
+                mu_down = market.AM_price_stats[zone]['Down']['means'][1]
+
+                sigma_up   = np.sqrt(market.AM_price_stats[zone]['Up']['cov'][1,1]), 
+                sigma_down = np.sqrt(market.AM_price_stats[zone]['Down']['cov'][1,1])
+                                
+                x_up = np.linspace(mu_up -3*sigma_up,     mu_up +3*sigma_up,     1000)
+                x_dn = np.linspace(mu_down -3*sigma_down, mu_down +3*sigma_down, 1000)
                 
                 ax3.plot(x_up,  stats.norm.pdf(x_up, mu_up, sigma_up),      label="Estimate of activated prices", color='navy')
                 ax4.plot(x_dn,  stats.norm.pdf(x_dn, mu_down, sigma_down),  label="Estimate of activated prices", color='maroon')
@@ -812,16 +818,6 @@ class Plotter():
 
 
 
-
-
-
-
-
-
-
-
-
-
     def plot_spot_mfrr_prices(self):
 
         config = self.config
@@ -830,7 +826,7 @@ class Plotter():
         zone = market.bidding_zone
 
         # Remove drastic outliers
-        price_data_raw = market.AM_prices_working_set
+        price_data_raw = market.AM_data_working_set
         price_data = price_data_raw.where(price_data_raw[f'{zone} Up Price']<500).where(price_data_raw[f'{zone} Down Price']>-500).dropna()
 
         timestamps      = price_data['Start Time']
@@ -906,17 +902,20 @@ class Plotter():
 
         n_bins = 100
 
-        mu_up, mu_dn = market.price_means[2:4]
-        sigma_up, sigma_dn = np.sqrt(market.price_covs[0][1, 1]), np.sqrt(market.price_covs[1][1, 1])
+        mu_up   = market.AM_price_stats[zone]['Up']['means'][1]
+        mu_down = market.AM_price_stats[zone]['Down']['means'][1]
+                
+        sigma_up   = np.sqrt(market.AM_price_stats[zone]['Up']['cov'][1,1]), 
+        sigma_down = np.sqrt(market.AM_price_stats[zone]['Down']['cov'][1,1])
 
         x_up = np.linspace(mu_up-3*sigma_up,mu_up+3*sigma_up, 1000)
-        x_dn = np.linspace(mu_dn-3*sigma_dn,mu_dn+3*sigma_dn, 1000)
+        x_dn = np.linspace(mu_down-3*sigma_down,mu_down+3*sigma_down, 1000)
 
         plt.hist(mfrr_prices_up,    label="Clearing price up",   color='blue',  alpha=0.4, bins=n_bins, density=True)
         plt.hist(mfrr_prices_dn,    label="Clearing price down", color='red',   alpha=0.4, bins=n_bins, density=True)
         plt.hist(spot_prices_eur,   label="Spot prices",         color='grey',  alpha=0.4, bins=n_bins, density=True)
         plt.plot(x_up, stats.norm.pdf(x_up, mu_up, sigma_up), label="Estimated Up-price distribution", color='blue')
-        plt.plot(x_dn, stats.norm.pdf(x_dn, mu_dn, sigma_dn), label="Estimated Down-price distribution", color='red')
+        plt.plot(x_dn, stats.norm.pdf(x_dn, mu_down, sigma_down), label="Estimated Down-price distribution", color='red')
         plt.xlabel("Bidding prices (€/MW)")
         plt.title(f"Clearing prices histogram normalized ({market.bidding_zone}, {market.date})")
         plt.legend()
@@ -985,7 +984,7 @@ class Plotter():
         #           MONTHLY mFRR ACTIVATION FREQUENCIES
 
 
-        activations_df = market.AM_activations_full_set.copy()
+        activations_df = market.AM_data_full_set.copy()
 
         # Process data up
         activations_df['Start Time'] = pd.to_datetime(activations_df['Start Time'])
@@ -1072,7 +1071,7 @@ class Plotter():
         ######################################################
         #           ACTIVATION VOLUMES HISTOGRAM
         
-        activations_df = market.AM_activations_full_set.copy()
+        activations_df = market.AM_data_full_set.copy()
         activated_capacities_up = activations_df[f'{zone} Activated Up Volume'].loc[activations_df[f'{zone} Activated Up Volume'] > 0]
         activated_capacities_down = activations_df[f'{zone} Activated Down Volume'].loc[activations_df[f'{zone} Activated Down Volume'] > 0]
         
@@ -1122,7 +1121,7 @@ class Plotter():
         ######################################################
         #        ACTIVATED/OFFERED RATIO HISTOGRAM
 
-        activations_df = market.AM_activations_full_set.copy()
+        activations_df = market.AM_data_full_set.copy()
         offered_capacities_up = activations_df[f'{zone} Accepted Up Volume']
         offered_capacities_down = activations_df[f'{zone} Accepted Down Volume']
         activated_capacities_up = activations_df[f'{zone} Activated Up Volume']
@@ -1154,7 +1153,7 @@ class Plotter():
         ######################################################
         #           OFFERED VOLUMES HISTOGRAM
 
-        activations_df = market.AM_activations_full_set.copy()
+        activations_df = market.AM_data_full_set.copy()
         activated_capacities_up = activations_df[f'{zone} Accepted Up Volume']
         activated_capacities_down = activations_df[f'{zone} Accepted Down Volume']
         
@@ -1303,12 +1302,6 @@ class Plotter():
         # plt.figure(figsize=self.aspect_ratio)
 
         n_bins = 100
-
-        # mu_up, mu_dn = market.price_means[2:4]
-        # sigma_up, sigma_dn = np.sqrt(market.price_covs[0][1, 1]), np.sqrt(market.price_covs[1][1, 1])
-
-        # x_up = np.linspace(mu_up-3*sigma_up,mu_up+3*sigma_up, 1000)
-        # x_dn = np.linspace(mu_dn-3*sigma_dn,mu_dn+3*sigma_dn, 1000)
 
         ax1.hist(mfrr_prices_up[np.where(mfrr_prices_up < 100)], label="Clearing price up",   color='blue',  alpha=0.4, bins=n_bins, density=True)
         ax1.hist(mfrr_prices_down[np.where(mfrr_prices_down < 100)], label="Clearing price down", color='red',   alpha=0.4, bins=n_bins, density=True)

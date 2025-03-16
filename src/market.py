@@ -24,13 +24,14 @@ class Market:
     settings: Settings
 
     C_eur2nok:                  float           # € -> NOK conversion rate as of nov 14 2024
-    price_means:                np.ndarray
-    price_cov:                  np.ndarray
+    # price_means:                np.ndarray
+    # price_cov:                  np.ndarray
+    AM_price_stats: dict
 
-    AM_prices_full_set:            pd.DataFrame    # Full dataset of spot prices, clearing prices
-    AM_prices_working_set:         pd.DataFrame    # Slice of full dataset used in market model for control. 
-    AM_activations_full_set:       pd.DataFrame    # Full dataset of mfrr activations
-    AM_activations_working_set:    pd.DataFrame    # Slice of full dataset used in market model for control.
+    # AM_prices_full_set:            pd.DataFrame    # Full dataset of spot prices, clearing prices
+    # AM_prices_working_set:         pd.DataFrame    # Slice of full dataset used in market model for control. 
+    # AM_activations_full_set:       pd.DataFrame    # Full dataset of mfrr activations
+    # AM_activations_working_set:    pd.DataFrame    # Slice of full dataset used in market model for control.
 
     expected_prices_up:         np.array        # Array of most likely clearing prices for up-regulation at each time step      (length: N)
     expected_prices_down:         np.array        # Array of most likely clearing prices for down-regulation at each time step    (length: N)
@@ -70,11 +71,13 @@ class Market:
 
         self.spot_prices = self.get_spotprice() 
 
-        self.analyze_price_covariances()
-        conditional_variance_up, conditional_variance_down  = conditional_covariance(self.price_covs)
-        self.expected_prices_up, self.expected_prices_down  = conditional_expectation(self.spot_prices, self.price_means, self.price_covs)
+        self.statistical_analysis_AM()
+        conditional_variance_up     = conditional_covariance(self.AM_price_stats[self.bidding_zone]['Up']['cov'])
+        conditional_variance_down   = conditional_covariance(self.AM_price_stats[self.bidding_zone]['Down']['cov'])
+        self.expected_prices_up     = conditional_expectation(self.spot_prices, self.AM_price_stats[self.bidding_zone]['Up']['means'],    self.AM_price_stats[self.bidding_zone]['Up']['cov'])
+        self.expected_prices_down   = conditional_expectation(self.spot_prices, self.AM_price_stats[self.bidding_zone]['Down']['means'],  self.AM_price_stats[self.bidding_zone]['Down']['cov'])
         
-        self.analyze_activation_covariances()
+        # self.analyze_activation_covariances()
 
 
         epsilon = 1e-6  # For numerical stability. Avoids 0-variance
@@ -90,8 +93,8 @@ class Market:
             'simdate'                       : self.date,
             'optimistic'                    : self.optimistic,
             'eur to nok'                    : self.C_eur2nok,
-            'Avg activation price up'       : self.price_means[2],
-            'Avg activation price down'     : self.price_means[3],          
+            'Avg activation price up'       : self.AM_price_stats[self.bidding_zone]['Up']['means'][1],
+            'Avg activation price down'     : self.AM_price_stats[self.bidding_zone]['Up']['means'][1],          
             'Cond covariance spot - up'     : conditional_variance_up,
             'Cond covariance spot - Down'   : conditional_variance_down,
             'Outlier max std-dev distance'  : self.outlier_max_dist
@@ -105,19 +108,19 @@ class Market:
 
     def activation_prob_up(self, spot_price, bid_price_up):
         bid_price_up = bid_price_up.reshape((1,-1))
-
-        mu_up = conditional_expectation(spot_price, self.price_means, self.price_covs)[0]
+        
+        mu_up = conditional_expectation(spot_price, self.AM_price_stats[self.bidding_zone]['Up']['means'], self.AM_price_stats[self.bidding_zone]['Up']['cov'])
         sigma_up = self.sigma_up
 
         bid_price_up_normalized = ((bid_price_up - ca.vertcat(*mu_up).reshape((1,-1)))/sigma_up).reshape((1,-1))
 
         # return norm.cdf(-Bc_up_norm)
-        return np.multiply(self.demand_prob_up(spot_price), (1.0 + self.error_function(-bid_price_up_normalized / ca.sqrt(2.0))) / 2.0)
+        return np.multiply(self.demand_prob_up(spot_price), (1.0 + ca.erf(-bid_price_up_normalized / ca.sqrt(2.0))) / 2.0)
 
     def activation_prob_down(self, spot_price, bid_price_down):
         bid_price_down = bid_price_down.reshape((1,-1))
 
-        mu_down = conditional_expectation(spot_price, self.price_means, self.price_covs)[1]
+        mu_down = conditional_expectation(spot_price, self.AM_price_stats[self.bidding_zone]['Down']['means'], self.AM_price_stats[self.bidding_zone]['Down']['cov'])
         sigma_down = self.sigma_down
         
         # bid_price_down_normalized = (bid_price_down - ca.vertcat(*mu_down))/sigma_down
@@ -125,52 +128,32 @@ class Market:
 
         # return norm.cdf(-Bc_dn_norm)
         # return self.demand_prob_dn() * (1.0 + ca.erf(-Bc_dn_norm / ca.sqrt(2.0))) / 2.0
-        return np.multiply(self.demand_prob_down(spot_price), (1.0 + self.error_function(-bid_price_down_normalized / ca.sqrt(2.0))) / 2.0)
-
-
-    def error_function(self, x):
-        '''
-        Function implemented to explore alternatives to ca.erf
-        Some quick testing shows that ca.erf is sufficiently fast, most likely due to the simpler derivative
-        '''
-
-        # tanh error funciton approx:
-        # return ca.tanh(x)
-        
-        # Casadi error function 
-        return ca.erf(x)
-
+        return np.multiply(self.demand_prob_down(spot_price), (1.0 + ca.erf(-bid_price_down_normalized / ca.sqrt(2.0))) / 2.0)
 
 
     def demand_prob_up(self, spot_price = None):
         # Probability of the grid needing up regulation.
-        # TODO implement actual model from Erlend when that's ready
 
         if spot_price is None: return np.mean(self.mfrr_demands_up)    # Use mean spot_price if none other is specified
 
-        # return self.up_activation_occurance_rate      # Use predicted demand rate from data
-        # return np.mean(self.mfrr_demands_up)            # Use actual demand rate
-        
-        expected_activation_up = ca.horzcat(*conditional_expectation(spot_price, self.activation_means, self.activation_covs)[0]).reshape((1,-1))
-        
-        # Custom function which bounds activation chance between 0 and 1. (1 + abs(x) - abs(x-1))/2 with abs(x) = sqrt(x^2)
-        expected_activation_up = 0.5 + 0.5*(ca.sqrt(ca.power(expected_activation_up, 2)) - ca.sqrt(ca.power(expected_activation_up - 1, 2)))
-        
-        return expected_activation_up
+        expected_activation_up = ca.horzcat(*conditional_expectation(spot_price, 
+                                                                     self.AM_activation_stats[self.bidding_zone]['Up']['means'], 
+                                                                     self.AM_activation_stats[self.bidding_zone]['Up']['cov']
+                                                                     )).reshape((1,-1))
+                
+        return casadi_saturate(expected_activation_up, 0, 1)
     
     def demand_prob_down(self, spot_price = None):  
         # Probability of the grid needing down regulation.
-        # TODO implement actual model from Erlend when that's ready
 
         if spot_price is None: return np.mean(self.mfrr_demands_down)     # Use mean spot_price if none other is specified
 
-        # return self.down_activation_occurance_rate    # Use predicted demand rate from data
-        # return np.mean(self.mfrr_demands_down)            # Use actual demand rate
-        expected_activation_down = ca.horzcat(*conditional_expectation(spot_price, self.activation_means, self.activation_covs)[1]).reshape((1,-1))
+        expected_activation_down = ca.horzcat(*conditional_expectation(spot_price, 
+                                                                       self.AM_activation_stats[self.bidding_zone]['Down']['means'], 
+                                                                       self.AM_activation_stats[self.bidding_zone]['Down']['cov']
+                                                                       )).reshape((1,-1))
 
-        # Custom function which bounds activation chance between 0 and 1. (1 + abs(x) - abs(x-1))/2 with abs(x) = sqrt(x^2)
-        expected_activation_down = 0.5 + 0.5*(ca.sqrt(ca.power(expected_activation_down, 2)) - ca.sqrt(ca.power(expected_activation_down - 1, 2)))
-        return expected_activation_down
+        return casadi_saturate(expected_activation_down, 0, 1)
 
 
     def import_market_data(self):
@@ -196,175 +179,88 @@ class Market:
                                        mfrr_CM_data.copy().rename(columns = {col: f'CM {col}' for col in mfrr_CM_data.columns if 'Start Time' not in col}), 
                                        on='Start Time', how='inner')
 
-        AM_prices_full_set        = AM_data_full_set[['Start Time'] + [col for col in AM_data_full_set.columns if 'Price' in col]]
-        AM_activations_full_set   = AM_data_full_set[['Start Time'] + [col for col in AM_data_full_set.columns if 'Volume' in col or 'Spot' in col]]
-        CM_prices_full_set        = CM_data_full_set[['Start Time'] + [col for col in CM_data_full_set.columns if 'Price' in col]]
-        CM_reservations_full_set  = CM_data_full_set[['Start Time'] + [col for col in CM_data_full_set.columns if 'Volume' in col or 'Spot' in col]]
-        
-        up_prices_full_set     = AM_data_full_set[['Start Time'] + [col for col in AM_data_full_set.columns if ('Up' in col and 'Price' in col) or 'Spot' in col]]
-        down_prices_full_set   = AM_data_full_set[['Start Time'] + [col for col in AM_data_full_set.columns if ('Down' in col and 'Price' in col) or 'Spot' in col]]
-
         if self.optimistic:
-            AM_prices_working_set         = AM_prices_full_set[(AM_prices_full_set['Start Time'] >= start_date) & (AM_prices_full_set['Start Time'] < end_date)]
-            AM_activations_working_set    = AM_activations_full_set[(AM_activations_full_set['Start Time'] >= start_date) & (AM_activations_full_set['Start Time'] < end_date)]
-            CM_prices_working_set         = CM_prices_full_set[(CM_prices_full_set['Start Time'] >= start_date) & (CM_prices_full_set['Start Time'] < end_date)]
-            CM_reservations_working_set   = CM_reservations_full_set[(CM_reservations_full_set['Start Time'] >= start_date) & (CM_reservations_full_set['Start Time'] < end_date)]
+
+            AM_data_working_set = AM_data_full_set[(AM_data_full_set['Start Time'] >= start_date) & (AM_data_full_set['Start Time'] < end_date)]
+            CM_data_working_set = CM_data_full_set[(CM_data_full_set['Start Time'] >= start_date) & (CM_data_full_set['Start Time'] < end_date)]
 
         else:
-            AM_prices_working_set      = AM_prices_full_set
-            AM_activations_working_set = AM_activations_full_set
-            # up_prices_working_set   = up_prices_full_set
-            # down_prices_working_set = down_prices_full_set
-            CM_prices_working_set       = CM_prices_full_set
-            CM_reservations_working_set = CM_reservations_full_set
-        
-        self.AM_prices_full_set      = AM_prices_full_set      
-        self.AM_activations_full_set = AM_activations_full_set 
-        self.AM_up_prices_full_set   = up_prices_full_set   
-        self.AM_down_prices_full_set = down_prices_full_set 
-        self.CM_prices_full_set       = CM_prices_full_set      
-        self.CM_reservations_full_set = CM_reservations_full_set
 
-        self.AM_prices_working_set             = AM_prices_working_set      
-        self.AM_activations_working_set        = AM_activations_working_set 
-        # self.up_prices_working_set          = up_prices_working_set   
-        # self.down_prices_working_set        = down_prices_working_set 
-        self.CM_prices_working_set          = CM_prices_working_set      
-        self.CM_reservations_working_set    = CM_reservations_working_set
+            AM_data_working_set = AM_data_full_set
+            CM_data_working_set = CM_data_full_set
+
         
         self.spot_data_full_set             = spot_data
         self.AM_data_full_set               = AM_data_full_set
+        self.AM_data_working_set            = AM_data_working_set
         self.CM_data_full_set               = CM_data_full_set
+        self.CM_data_working_set            = CM_data_working_set
 
         self.mfrr_data_full_set = mfrr_data_full_set
 
         return 0 
 
-        '''
-    def import_CM_data(self):
-        '''
-        # Imports mfrr data and processes it into several dataframes.
 
-        # `full sets`     : All imported data available from the importing function
-        # `working sets`  : Select data from the full sets
-        '''
-
-
-        start_date  = pd.to_datetime(self.date)
-        end_date    = start_date + pd.DateOffset(self.T)
-        zone        = self.bidding_zone
-
-        spot_prices = load_spot_data(self.config.spotprices_data_path)
-        CM_prices   = load_mfrr_CM_data(self.config.mfrr_CM_data_path)
-
-
-
-        # Merge datasets
-        CM_data = pd.merge(spot_prices, CM_prices, on='Start Time', how='inner')
-        self.CM_data_full_set = CM_data
-
-        if self.optimistic:
-            self.CM_data_working_set = CM_data[(CM_data['Start Time'] >= start_date) & (CM_data['Start Time'] < end_date)]
-            # CM_up_prices_working_set = CM_data[['Start Time', zone + ' Up Price', zone + ' Up Volume procured']][
-            #     (CM_data['Start Time'] >= start_date)   & 
-            #     (CM_data['Start Time'] < end_date)      &
-            #     (CM_data[zone + ' Up Volume procured'] > 0)
-            #     ].rename(columns={zone + ' Up Volume procured': 'Volume Up'})
-            # CM_down_prices_working_set = CM_data[['Start Time', zone + ' Down Price', zone + ' Down Volume procured']][
-            #     (CM_data['Start Time'] >= start_date) & 
-            #     (CM_data['Start Time'] < end_date)    &
-            #     (CM_data[zone + ' Down Volume procured'] > 0)
-            #     ].rename(columns={zone + ' Down Volume procured': 'Volume Down'})
-    
-        else:
-            self.CM_data_working_set    = self.CM_data_full_set
-            CM_up_prices_working_set    = CM_data[['Start Time', 'Clearing Price Up', 'Volume Up']]
-            CM_down_prices_working_set  = CM_data[['Start Time', 'Clearing Price Down', 'Volume Down']]
-        
-        
-        return 0 
-    '''
-
-
-
-    def analyze_price_covariances(self):
+    def statistical_analysis_AM(self):
         """
-        Analyze price covariances or load precomputed results from a JSON file if it exists.
+        Analyze mFRR Activation Market prices
+        Store stastistical analysis in a dict:
+        - zone 
+            - direction 
+                - 'means'
+                - 'cov'
+        
+        optimistic bool indicates wether to use only spot prices and market clearing prices at times of activations
+        basically cherrypicking the analysis for the planned usecase, which is to estimate good clearing prices.
         """
         
         print("Performing price analysis.")
         # Paths to CSV files
     
-        up_price_data   = self.AM_up_prices_full_set.dropna()
-        down_price_data = self.AM_down_prices_full_set.dropna()
+        AM_data   = self.AM_data_working_set.copy()
 
-        if up_price_data.empty:
-            print("The working dataset for up prices is empty. Using full dataset")
-            up_price_data = self.AM_up_prices_full_set
-            assert False, 'Up price data is empty, date is likely not supported in the dataset. Or there are no activations of this type during the simulation time'
-        elif down_price_data.empty:
-            print("The working dataset for down prices is empty. Using full dataset")
-            down_price_data = self.AM_down_prices_full_set
-            assert False, 'Down price data is empty, date is likely not supported in the dataset Or there are no activations of this type during the simulation time'
+        price_statistics = {}
+        activation_statistics = {}
+        zones = [self.bidding_zone]
 
-        # covariance_matrix = calculate_covariance_matrix(price_data, ['Spot Price', 'Clearing Price Up', 'Clearing Price Down'])
-        
-        zone = self.bidding_zone
-        spot_up_cov     = np.cov(up_price_data[[zone    + ' Spot Price', zone + ' Up Price']].T)
-        spot_down_cov   = np.cov(down_price_data[[zone  + ' Spot Price', zone + ' Down Price']].T)
-        
-        mean_price_up       = up_price_data[zone + ' Up Price'].mean() #-10
-        mean_spot_price_up  = up_price_data[zone + ' Spot Price'].mean()
+        for zone in zones:
+            price_statistics[zone] = {}
+            activation_statistics[zone] = {}
 
-        mean_price_down      = down_price_data[zone + ' Down Price'].mean() #+10
-        mean_spot_price_down = down_price_data[zone + ' Spot Price'].mean()
+            for direction in ['Up', 'Down']:
+                price_statistics[zone][direction] = {}
+                activation_statistics[zone][direction] = {}
 
-        # Save results
-        self.price_means = np.array([mean_spot_price_up, mean_spot_price_down, mean_price_up, mean_price_down])
-        self.price_covs = np.array([spot_up_cov, spot_down_cov])
+                if self.optimistic:
+                    price_data = AM_data[[f'{zone} Spot Price', 
+                                    f'{zone} {direction} Price']][AM_data[f'{zone} Activated {direction} Volume'] > 0]
+                    activation_data = AM_data[[f'{zone} Spot Price', 
+                                    f'{zone} {direction} Price']][AM_data[f'{zone} Activated {direction} Volume'] > 0]
+                else:
+                    price_data      = AM_data[[f'{zone} Spot Price', f'{zone} {direction} Price']]
+                    activation_data = AM_data[[f'{zone} Spot Price', f'{zone} Activated {direction} Volume']]
+                
+                price_statistics[zone][direction]['means']      = np.mean(np.array(price_data), axis=0)
+                price_statistics[zone][direction]['cov']        = np.cov(np.array(price_data).reshape((2,-1)))
+                activation_statistics[zone][direction]['means'] = np.mean(np.array(activation_data), axis=0)
+                activation_statistics[zone][direction]['cov']   = np.cov(np.array(activation_data).reshape((2,-1)))
 
-        return 0
-    
-
-    def analyze_activation_covariances(self):
-        """
-        Analyze activation covariances
-        """
-        
-        print("Performing activation analysis.")
-    
-        activation_data   = self.AM_activations_working_set
-
-        assert not activation_data.empty, 'Activation data is empty, date is likely not supported in the dataset. Or there are no activations of this type during the simulation time'
-    
-        # covariance_matrix = calculate_covariance_matrix(price_data, ['Spot Price', 'Clearing Price Up', 'Clearing Price Down'])
-        
-        zone = self.bidding_zone
-        activated_binary_up     = np.where(activation_data[zone + ' Activated Up Volume']      > 0, 1, 0)
-        activated_binary_down   = np.where(activation_data[zone + ' Activated Down Volume']    > 0, 1, 0)
-        spot_prices             = np.array(activation_data[zone + ' Spot Price'])
-
-        activation_cov_up     = np.cov(np.array([spot_prices, activated_binary_up]))
-        activation_cov_down   = np.cov(np.array([spot_prices, activated_binary_down]))
-        
-        mean_activations_up   = np.mean(activated_binary_up)
-        mean_activations_down = np.mean(activated_binary_down)
-        mean_spot_price       = np.mean(spot_prices)
-
-        # Save results
-        self.activation_means = np.array([mean_spot_price, mean_spot_price, mean_activations_up, mean_activations_down])
-        self.activation_covs = np.array([activation_cov_up, activation_cov_down])
+        self.AM_price_stats = price_statistics
+        self.AM_activation_stats = price_statistics
 
         return 0
-
-
+    
 
     def optimal_bidding_price_prediction(self, spot_prices):    
 
         start_time = time.time()
         print("Starting price prediction")
 
-        mu_up, mu_dn = conditional_expectation(spot_prices, self.price_means, self.price_covs)
+        prices_stats_up     = self.AM_price_stats[self.bidding_zone]['Up']
+        prices_stats_down   = self.AM_price_stats[self.bidding_zone]['Down']
+
+        mu_up   = conditional_expectation(spot_prices, prices_stats_up['means'],    prices_stats_up['cov'])
+        mu_down = conditional_expectation(spot_prices, prices_stats_down['means'],  prices_stats_down['cov'])
 
         # Create decision variables for the optimization problem
         N = len(spot_prices)
@@ -378,7 +274,7 @@ class Market:
         ubx = 1000
 
         # Flatten decision variables and bounds
-        Z =   ca.vertcat(ca.reshape(X, -1, 1))
+        Z   = ca.vertcat(ca.reshape(X,   -1, 1))
         lbz = ca.vertcat(ca.reshape(lbx, -1, 1))
         ubz = ca.vertcat(ca.reshape(ubx, -1, 1))
 
@@ -389,7 +285,7 @@ class Market:
         opts = {'ipopt.print_level': 0, 'print_time': 0}
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
 
-        u0 = np.vstack((mu_up, mu_dn)).ravel(order='F')
+        u0 = np.vstack((mu_up, mu_down)).ravel(order='F')
         sol = solver(x0 = u0, lbx=lbz, ubx=ubz)
 
         # Extract solution
@@ -428,7 +324,7 @@ class Market:
 
     def mfrr_activation_data_analysis(self):
         
-        activation_df = self.AM_activations_working_set
+        activation_df = self.AM_data_working_set
 
         # Activation rate of each offered MW of capacity 
         zone = self.bidding_zone
@@ -456,7 +352,7 @@ class Market:
         start_date = pd.to_datetime(date, format='%Y-%m-%d')
         end_date = start_date + pd.DateOffset(n_days)
         
-        df = self.AM_prices_full_set.copy()
+        df = self.spot_data_full_set.copy()
 
         # Remove dates before simdate
         df = df[
@@ -479,7 +375,7 @@ class Market:
         start_date = pd.to_datetime(date, format='%Y-%m-%d')
         end_date = start_date + pd.DateOffset(n_days)
 
-        clearing_prices_df = self.AM_prices_full_set.copy()
+        clearing_prices_df = self.AM_data_full_set.copy()
 
         # Remove dates before simdate
         clearing_prices_df = clearing_prices_df[
@@ -532,7 +428,7 @@ class Market:
         start_date = pd.to_datetime(date, format='%Y-%m-%d')
         end_date = start_date + pd.DateOffset(n_days)
 
-        activations_df = self.AM_activations_full_set
+        activations_df = self.AM_data_full_set
 
         # Remove dates before simdate
         activations_df = activations_df[
@@ -584,7 +480,7 @@ class Market:
         '''
 
         zone = self.bidding_zone
-        activations_df = self.AM_activations_full_set.copy()
+        activations_df = self.AM_data_full_set.copy()
         activations_df = activations_df[['Start Time'] + [col for col in activations_df.columns if zone in col]].rename(
             columns = {zone + ' Activated Up Volume': 'Activated Up',
                        zone + ' Activated Down Volume': 'Activated Down',
@@ -592,7 +488,7 @@ class Market:
                        zone + ' Accepted Down Volume': 'Offered Down'
                        }
         )
-        clearing_prices_df = self.AM_prices_full_set.copy()
+        clearing_prices_df = self.AM_data_full_set.copy()
         clearing_prices_df = clearing_prices_df[['Start Time'] + [col for col in clearing_prices_df.columns if zone in col]].rename(
             columns = {zone + ' Up Price': 'Clearing Price Up',
                        zone + ' Down Price': 'Clearing Price Down'

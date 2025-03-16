@@ -187,7 +187,7 @@ def calculate_covariance_matrix(data, columns):
     return np.cov(data[columns].T)
 
 
-def conditional_expectation(spot_price, means, covs):
+def conditional_expectation(y, means, cov_matrix):
     """
     Calculate the expected Up and Down prices given a known Spot Price.
 
@@ -199,45 +199,29 @@ def conditional_expectation(spot_price, means, covs):
     Returns:
         tuple: Expected Up Price and Down Price.
     """
+    y = np.array(y)
 
     
     # cov_spot_others = np.array(price_covs[0][1,1], price_covs[1][1,1])
-    var_spot_up = covs[0][0,0]
-    cov_spot_up = covs[0][0,1]
-    var_spot_down = covs[1][0,0]
-    cov_spot_down = covs[1][0,1]
 
-    # Means of Up and Down prices
-    mean_spot_up    = means[0]
-    mean_spot_down  = means[1]
-    mean_up_price   = means[2]
-    mean_down_price = means[3]
+    Pxy         = cov_matrix[0,1]
+    Pyy         = cov_matrix[0,0]
 
-    # Conditional expectation formula
-    spot_price = np.array(spot_price)
-    conditional_mean_up     = np.repeat(mean_up_price, spot_price.size)     + (cov_spot_up / var_spot_up)       * (spot_price - mean_spot_up)
-    conditional_mean_down   = np.repeat(mean_down_price, spot_price.size)   + (cov_spot_down / var_spot_down)   * (spot_price - mean_spot_down)
+    mean_y   = means[0]
+    mean_x   = means[1]
+
+    conditional_mean = np.repeat(mean_x, y.size) + (Pxy / Pyy) * (y - mean_y)
     
-    return np.array([conditional_mean_up]), np.array([conditional_mean_down])
+    return np.array([conditional_mean])
 
-def conditional_covariance(price_covs):
+def conditional_covariance(cov_matrix):
     
-    price_cov_up = price_covs[0]
-    price_cov_down = price_covs[1]
+    Pxx = cov_matrix[1,1]
+    Pxy = cov_matrix[0,1]
+    Pyy = cov_matrix[0,0]
 
-
-    # Extract covariance submatrices
-    var_spot_up     = price_cov_up[0, 0]      # Variance of Spot Price for Up prices
-    var_spot_down   = price_cov_down[0, 0]    # Variance of Spot Price for Down prices
-    var_up          = price_cov_up[1,1]       # Variance of up-price
-    var_down        = price_cov_down[1,1]     # Variance of down-price
-    cov_spot_up     = price_cov_up[0, 1]      # Covariance between Spot and Up Price
-    cov_spot_down   = price_cov_down[0, 1]    # Covariance between Spot and Down Price
-    
-    cond_cov_up = var_up - cov_spot_up /var_spot_up * cov_spot_up
-    cond_cov_down = var_down - cov_spot_down /var_spot_down * cov_spot_down
-    
-    return np.array([cond_cov_up, cond_cov_down])
+    cond_cov = Pxx - Pxy /Pyy* Pxy    
+    return cond_cov
 
 
 
@@ -519,6 +503,10 @@ def propagate_process_covariance(controller, x_bid, u_bid, bidding_volumes_up, b
 
 
 
+def casadi_saturate(x, min, max):
+    # Custom function which bounds activation chance between 0 and 1. (1 + abs(x) - abs(x-1))/2 with abs(x) = sqrt(x^2)
+    
+    return (max + min + ca.sqrt(ca.power(x-min, 2)) - ca.sqrt(ca.power(x-max, 2))) / 2
 
 
 def vertigrow_calculate_energy_consumption(controller):

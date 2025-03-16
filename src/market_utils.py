@@ -170,12 +170,6 @@ class Estimator:
             if cond_number < threshold:
                 Pyy = Pyy_candidate  # Accept new column/row
                 selected_lags.append(var)
-
-                # # Update Pxy to match
-                # new_pxy_col = full_covariances[:, lag].reshape(-1, 1)
-                # Pxy = np.hstack((Pxy, new_pxy_col)) if Pxy.size else new_pxy_col
-                # Pxy = Pxy.reshape((self.nx, -1))
-            
         
         Pxy = self.covariances[:self.nx, np.array(selected_lags) + self.nx]
 
@@ -188,30 +182,14 @@ class Estimator:
             self.estimated_data = self.sample_data
             self.mse = 0
             self.rmse = 0
-
-
-        # Pxy     = self.covariances[:self.nx,self.nx:]
-        # Pyy     = self.covariances[self.nx:,self.nx:]
         
         # print(self.covariances)
         Pxx = self.covariances[:self.nx, :self.nx]
         Pyy, Pxy, selected_vars = self.build_stable_covariances()
         Pyy_inv = np.linalg.inv(Pyy)
 
-        # selected_lags   = [var for var in selected_vars if var >= self.nx and var < self.nx + self.n_lags]
-        # selected_y      = [var for var in selected_vars if var >= self.nx + self.n_lags]
-        # print(Pxy)
-        # print(Pyy)
-
         a = self.means[:self.nx].reshape((-1, 1))
         b = self.means[selected_vars].reshape((-1, 1))
-
-        # if np.linalg.cond(Pyy) < 1/sys.float_info.epsilon:
-        #     Pyy_inv = np.linalg.inv(Pyy)
-        # else:
-        #     print('Adjusting Pyy to make it non-singular')
-        #     Pyy_inv = np.linalg.inv(1e-6*np.eye(*Pyy.shape) + Pyy)
-            
 
         x_est = np.zeros_like(self.sample_data)
         x_est[:,:self.max_lags] = np.repeat(self.means[:self.nx].reshape((-1,1)), self.max_lags, axis=1)
@@ -557,27 +535,6 @@ def load_nordpool_activation_data(data_folder, bidding_zone):
 
     return AM_data_df
 
-
-# def combine_dataframe_blocks(blocks):
-#     if not blocks:
-#         raise ValueError("No dataframes provided for merging.")
-
-#     # Ensure all blocks have 'Start Time' column and convert it to datetime
-#     for i, df in enumerate(blocks):
-#         if 'Start Time' not in df.columns:
-#             raise ValueError(f"Block {i} is missing the required 'Start Time' column.")
-#         df['Start Time'] = pd.to_datetime(df['Start Time'], errors='coerce')
-
-#     # Concatenate all blocks (this keeps all columns)
-#     full_df = pd.concat(blocks, axis=0, ignore_index=True)
-
-#     # Group by 'Start Time' and merge overlapping data
-#     full_df = full_df.groupby('Start Time', as_index=False).first()
-
-#     # Sort chronologically
-#     full_df = full_df.sort_values(by='Start Time').reset_index(drop=True)
-
-#     return full_df
 
 def combine_dataframe_blocks(blocks):
     if not blocks:
@@ -1033,21 +990,6 @@ def load_mfrr_CM_data(data_folder)->pd.DataFrame:
         data['Start Time'] = data['Date'] + " " + data['Hour']
         data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d.%m.%Y %H:%M', errors='coerce')
 
-        # up_price_col    = f"{bidding_zone} Up Price"     
-        # up_volume_col   = f"{bidding_zone} Up Volume procured"     
-        # down_price_col  = f"{bidding_zone} Down Price"     
-        # down_volume_col = f"{bidding_zone} Down Volume procured"  
-
-        # data = data[['Start Time', up_price_col, up_volume_col, down_price_col, down_volume_col]].rename(
-        #     columns={up_price_col: 'Clearing Price Up', down_price_col: 'Clearing Price Down',
-        #              up_volume_col: 'Volume Up',        down_volume_col: 'Volume Down'}
-        # )
-
-        # data['Clearing Price Up']   = pd.to_numeric(data['Clearing Price Up'],   errors='coerce')
-        # data['Clearing Price Down'] = pd.to_numeric(data['Clearing Price Down'], errors='coerce')
-        # data['Volume Up']           = pd.to_numeric(data['Volume Up'],           errors='coerce')
-        # data['Volume Down']         = pd.to_numeric(data['Volume Down'],         errors='coerce')
-        
         data.drop(columns=['Date', 'Hour'],inplace=True)
 
         # Append processed data to the list
@@ -1057,7 +999,5 @@ def load_mfrr_CM_data(data_folder)->pd.DataFrame:
 
     # Merge all data and sort by 'Start Time'
     merged_data = combine_dataframe_blocks(all_data)
-    # merged_data.sort_values(by='Start Time', inplace=True)
-    # merged_data.fillna(0, inplace=True)
 
     return merged_data

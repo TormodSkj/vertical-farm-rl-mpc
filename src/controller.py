@@ -609,15 +609,14 @@ class Controller():
 
 
         # Expected value of clearing prices given spot prices
-        clearing_price_mu = conditional_expectation(spot_prices, self.market.price_means, self.market.price_covs)
-        clearing_price_mu_up = clearing_price_mu[0]
-        clearing_price_mu_dn = clearing_price_mu[1]
+        clearing_price_mu_up    = conditional_expectation(spot_prices, self.market.AM_price_stats[self.bidding_zone]['Up']['means'], self.market.AM_price_stats[self.bidding_zone]['Up']['cov'])
+        clearing_price_mu_down  = conditional_expectation(spot_prices, self.market.AM_price_stats[self.bidding_zone]['Down']['means'], self.market.AM_price_stats[self.bidding_zone]['Down']['cov'])
 
         # clearing_price_mu_up = 10*clearing_price_mu[0]
         # clearing_price_mu_dn = 10*clearing_price_mu[1]
 
         # Set initial optimal bidding guess to be maximum possible volume and exactly at clearing price
-        B_prices_initial_guess = np.vstack((clearing_price_mu_up, clearing_price_mu_dn))
+        B_prices_initial_guess = np.vstack((clearing_price_mu_up, clearing_price_mu_down))
         U_initial_guess = np.array(self.model.get_u(N_TH, U_nom, B_prices_initial_guess, B_max_volumes, spot_prices, self.market)).flatten()
         X_initial_guess = ca.DM.zeros(self.model.nx, N_TH+1)
         X_initial_guess[:,0] = x0
