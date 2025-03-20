@@ -28,7 +28,6 @@ class Settings():
                          SIMULATION_DATE     = '2024-01-14',
                          BIDDING_ZONE        = 'NO2',
                          OPTIMISTIC          = 1,
-                         C_eur2nok           = 11.76,
                          n_given_bids        = 2,
                          n_given_activations = 1,
                          OUTLIER_DIST_LIMIT  = 3

@@ -23,18 +23,13 @@ class Market:
     config: Config
     settings: Settings
 
-    C_eur2nok:                  float           # € -> NOK conversion rate as of nov 14 2024
-    # price_means:                np.ndarray
-    # price_cov:                  np.ndarray
     AM_price_stats: dict
+    CM_price_stats: dict
 
-    # AM_prices_full_set:            pd.DataFrame    # Full dataset of spot prices, clearing prices
-    # AM_prices_working_set:         pd.DataFrame    # Slice of full dataset used in market model for control. 
-    # AM_activations_full_set:       pd.DataFrame    # Full dataset of mfrr activations
-    # AM_activations_working_set:    pd.DataFrame    # Slice of full dataset used in market model for control.
-
-    expected_prices_up:         np.array        # Array of most likely clearing prices for up-regulation at each time step      (length: N)
-    expected_prices_down:         np.array        # Array of most likely clearing prices for down-regulation at each time step    (length: N)
+    expected_AM_prices_up:         np.array        # Array of most likely clearing prices for up-regulation at each time step      (length: N)
+    expected_AM_prices_down:         np.array        # Array of most likely clearing prices for down-regulation at each time step    (length: N)
+    expected_CM_prices_up:         np.array        # Array of most likely clearing prices for up-regulation at each time step      (length: N)
+    expected_CM_prices_down:         np.array        # Array of most likely clearing prices for down-regulation at each time step    (length: N)
     opt_prices_up:              np.array        # Array of most profitable bidding prices for up-regulation at each time step   (length: N)
     opt_prices_down:              np.array        # Array of most profitable bidding prices for down-regulation at each time step (length: N)
     spot_prices:                np.array        # Array of spot prices used in optimization                                     (length: N)
@@ -61,7 +56,6 @@ class Market:
         self.bidding_zone       = self.market_settings['BIDDING_ZONE']
         self.date               = self.market_settings['SIMULATION_DATE']
         self.optimistic         = self.market_settings['OPTIMISTIC']
-        self.C_eur2nok          = self.market_settings['C_eur2nok']
         self.seed               = self.market_settings['SEED']
         self.outlier_max_dist   = self.market_settings['OUTLIER_DIST_LIMIT']
         self.N = self.T * QUARTER_HOURS_PER_DAY
@@ -72,31 +66,36 @@ class Market:
         self.spot_prices = self.get_spotprice() 
 
         self.statistical_analysis_AM()
-        conditional_variance_up     = conditional_covariance(self.AM_price_stats[self.bidding_zone]['Up']['cov'])
-        conditional_variance_down   = conditional_covariance(self.AM_price_stats[self.bidding_zone]['Down']['cov'])
-        self.expected_prices_up     = conditional_expectation(self.spot_prices, self.AM_price_stats[self.bidding_zone]['Up']['means'],    self.AM_price_stats[self.bidding_zone]['Up']['cov'])
-        self.expected_prices_down   = conditional_expectation(self.spot_prices, self.AM_price_stats[self.bidding_zone]['Down']['means'],  self.AM_price_stats[self.bidding_zone]['Down']['cov'])
+        conditional_variance_AM_up     = conditional_covariance(self.AM_price_stats[self.bidding_zone]['Up']['cov'])
+        conditional_variance_AM_down   = conditional_covariance(self.AM_price_stats[self.bidding_zone]['Down']['cov'])
+        self.expected_AM_prices_up     = conditional_expectation(self.spot_prices, self.AM_price_stats[self.bidding_zone]['Up']['means'],    self.AM_price_stats[self.bidding_zone]['Up']['cov'])
+        self.expected_AM_prices_down   = conditional_expectation(self.spot_prices, self.AM_price_stats[self.bidding_zone]['Down']['means'],  self.AM_price_stats[self.bidding_zone]['Down']['cov'])
         
-        # self.analyze_activation_covariances()
-
+        self.statistical_analysis_CM()
+        conditional_variance_CM_up     = conditional_covariance(self.CM_price_stats[self.bidding_zone]['Up']['cov'])
+        conditional_variance_CM_down   = conditional_covariance(self.CM_price_stats[self.bidding_zone]['Down']['cov'])
+        self.expected_CM_prices_up     = conditional_expectation(self.spot_prices, self.CM_price_stats[self.bidding_zone]['Up']['means'],    self.CM_price_stats[self.bidding_zone]['Up']['cov'])
+        self.expected_CM_prices_down   = conditional_expectation(self.spot_prices, self.CM_price_stats[self.bidding_zone]['Down']['means'],  self.CM_price_stats[self.bidding_zone]['Down']['cov'])
+        
 
         epsilon = 1e-6  # For numerical stability. Avoids 0-variance
-        self.sigma_up   = np.sqrt(conditional_variance_up) + epsilon
-        self.sigma_down = np.sqrt(conditional_variance_down) + epsilon
+        self.sigma_AM_up   = max(np.sqrt(conditional_variance_AM_up),   epsilon)
+        self.sigma_AM_down = max(np.sqrt(conditional_variance_AM_down), epsilon)
+        self.sigma_CM_up   = max(np.sqrt(conditional_variance_CM_up),   epsilon)
+        self.sigma_CM_down = max(np.sqrt(conditional_variance_CM_down), epsilon)
         
         # Initialize optimal prices on expected value.
-        self.opt_prices_up = self.expected_prices_up
-        self.opt_prices_down = self.expected_prices_down
+        self.opt_prices_up = self.expected_AM_prices_up
+        self.opt_prices_down = self.expected_AM_prices_down
 
         self.specs = {
             'bidding zone'                  : self.bidding_zone,
             'simdate'                       : self.date,
             'optimistic'                    : self.optimistic,
-            'eur to nok'                    : self.C_eur2nok,
             'Avg activation price up'       : self.AM_price_stats[self.bidding_zone]['Up']['means'][1],
             'Avg activation price down'     : self.AM_price_stats[self.bidding_zone]['Up']['means'][1],          
-            'Cond covariance spot - up'     : conditional_variance_up,
-            'Cond covariance spot - Down'   : conditional_variance_down,
+            'Cond covariance spot - up'     : conditional_variance_AM_up,
+            'Cond covariance spot - Down'   : conditional_variance_AM_down,
             'Outlier max std-dev distance'  : self.outlier_max_dist
             }
             
@@ -110,7 +109,7 @@ class Market:
         bid_price_up = bid_price_up.reshape((1,-1))
         
         mu_up = conditional_expectation(spot_price, self.AM_price_stats[self.bidding_zone]['Up']['means'], self.AM_price_stats[self.bidding_zone]['Up']['cov'])
-        sigma_up = self.sigma_up
+        sigma_up = self.sigma_AM_up
 
         bid_price_up_normalized = ((bid_price_up - ca.vertcat(*mu_up).reshape((1,-1)))/sigma_up).reshape((1,-1))
 
@@ -121,7 +120,7 @@ class Market:
         bid_price_down = bid_price_down.reshape((1,-1))
 
         mu_down = conditional_expectation(spot_price, self.AM_price_stats[self.bidding_zone]['Down']['means'], self.AM_price_stats[self.bidding_zone]['Down']['cov'])
-        sigma_down = self.sigma_down
+        sigma_down = self.sigma_AM_down
         
         # bid_price_down_normalized = (bid_price_down - ca.vertcat(*mu_down))/sigma_down
         bid_price_down_normalized = ((bid_price_down - ca.vertcat(*mu_down).reshape((1,-1)))/sigma_down).reshape((1,-1))
@@ -204,7 +203,7 @@ class Market:
     def statistical_analysis_AM(self):
         """
         Analyze mFRR Activation Market prices
-        Store stastistical analysis in a dict:
+        Store statistical analysis in a dict:
         - zone 
             - direction 
                 - 'means'
@@ -234,12 +233,11 @@ class Market:
                 if self.optimistic:
                     price_data = AM_data[[f'{zone} Spot Price', 
                                     f'{zone} {direction} Price']][AM_data[f'{zone} Activated {direction} Volume'] > 0]
-                    activation_data = AM_data[[f'{zone} Spot Price', 
-                                    f'{zone} {direction} Price']][AM_data[f'{zone} Activated {direction} Volume'] > 0]
                 else:
                     price_data      = AM_data[[f'{zone} Spot Price', f'{zone} {direction} Price']]
-                    activation_data = AM_data[[f'{zone} Spot Price', f'{zone} Activated {direction} Volume']]
                 
+                activation_data = AM_data[[f'{zone} Spot Price', f'{zone} Activated {direction} Volume']]
+
                 price_statistics[zone][direction]['means']      = np.mean(np.array(price_data), axis=0)
                 price_statistics[zone][direction]['cov']        = np.cov(np.array(price_data).reshape((2,-1)))
                 activation_statistics[zone][direction]['means'] = np.mean(np.array(activation_data), axis=0)
@@ -247,6 +245,54 @@ class Market:
 
         self.AM_price_stats = price_statistics
         self.AM_activation_stats = price_statistics
+
+        return 0
+    
+    def statistical_analysis_CM(self):
+        """
+        Analyze mFRR Capacity Market prices
+        Store statistical analysis in a dict:
+        - zone 
+            - direction 
+                - 'means'
+                - 'cov'
+        
+        optimistic bool indicates wether to use only spot prices and market clearing prices at times of activations
+        basically cherrypicking the analysis for the planned usecase, which is to estimate good clearing prices.
+        """
+        
+        print("Performing price analysis.")
+        # Paths to CSV files
+    
+        CM_data   = self.CM_data_working_set.copy()
+
+        price_statistics = {}
+        reservation_statistics = {}
+        zones = [self.bidding_zone]
+
+        for zone in zones:
+            price_statistics[zone] = {}
+            reservation_statistics[zone] = {}
+
+            for direction in ['Up', 'Down']:
+                price_statistics[zone][direction] = {}
+                reservation_statistics[zone][direction] = {}
+
+                if self.optimistic:
+                    price_data = CM_data[[f'{zone} Spot Price', 
+                                    f'{zone} {direction} Price']][CM_data[f'{zone} {direction} Volume procured'] > 0]
+                else:
+                    price_data      = CM_data[[f'{zone} Spot Price', f'{zone} {direction} Price']]
+                
+                activation_data = CM_data[[f'{zone} Spot Price', f'{zone} {direction} Volume procured']]
+                
+                price_statistics[zone][direction]['means']      = np.mean(np.array(price_data), axis=0)
+                price_statistics[zone][direction]['cov']        = np.cov(np.array(price_data).reshape((2,-1)))
+                reservation_statistics[zone][direction]['means'] = np.mean(np.array(activation_data), axis=0)
+                reservation_statistics[zone][direction]['cov']   = np.cov(np.array(activation_data).reshape((2,-1)))
+
+        self.CM_price_stats = price_statistics
+        self.CM_activation_stats = price_statistics
 
         return 0
     
@@ -669,10 +715,16 @@ class Market:
         # Dates for which to accumulate earnings over.
         dates = pd.date_range(start=pd.to_datetime(start_date, format='%Y-%m-%d'),
                             end=pd.to_datetime(end_date, format='%Y-%m-%d'))
+        N = len(dates)
 
         results = {}
 
-    
+        nominal_costs_df = pd.DataFrame({'Date': dates})
+        mfrr_costs_df    = pd.DataFrame({'Date': dates})
+   
+        nominal_costs_df[zones] = np.zeros((N, len(zones)))
+        mfrr_costs_df[zones]    = np.zeros((N, len(zones)))
+
         with tqdm(total=len(zones), desc="Calculating ...") as pbar:
             for zone in zones:
 
@@ -681,7 +733,6 @@ class Market:
                 total_electricity_costs_fixed   = 0
                 total_electricity_costs_AM      = 0
 
-                N = len(dates)
                 kwargs = {'date': start_date, 'n_days': N, 'zone': zone}
                 try:
                     AM_clearing_prices_up_full, AM_clearing_prices_down_full        = self.get_AM_clearing_prices(**kwargs)
@@ -778,6 +829,10 @@ class Market:
                     total_electricity_costs_AM      += energy_cost
                     total_electricity_costs_fixed   += np.sum(data["spot"][:16 * 4])/4
 
+                    nominal_costs_df.at[k, zone]   = np.sum(data["spot"][:16 * 4])/4
+                    mfrr_costs_df.at[k, zone]      = energy_cost - (AM_earnings_up + AM_earnings_down + CM_earnings_up + CM_earnings_down)
+
+
                 total_earnings_mFRR = total_earnings_AM + total_earnings_CM
 
                 results[zone] = {}
@@ -868,6 +923,58 @@ class Market:
         ax.set_xticks(x)
         ax.set_xticklabels(zones, rotation=0)
         ax.legend()
+
+        plt.show()
+
+
+        ####################################################
+                #   MARKET POTENCY BAR CHART
+
+        T = 7
+        def moving_average(data, window_size):
+            smoothed_data = data.copy()  # Copy to avoid modifying the original DataFrame
+            for col in smoothed_data.columns:
+                if col == 'Date': continue
+                smoothed_data[col] = np.convolve(smoothed_data[col], np.ones(window_size) / window_size, mode='same')
+            return smoothed_data  # Explicitly return the modified DataFrame
+
+        nominal_costs_df_smoothed = moving_average(nominal_costs_df, T)
+        mfrr_costs_df_smoothed = moving_average(mfrr_costs_df, T)
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12,6), sharex=False)
+
+        nominal_costs_df_smoothed.set_index('Date')[zones].plot(
+            ax          = ax1, 
+            # linewidth   = 2.5, 
+            linestyle   = '-',
+            figsize     = (10,2.5)
+        )
+
+        mfrr_costs_df_smoothed.set_index('Date')[zones].plot(
+            ax          = ax2, 
+            # linewidth   = 2.5, 
+            linestyle   = '-',
+            figsize     = (10,2.5)
+        )
+
+        # first_of_month_daily = mfrr_costs_df['Date'][mfrr_costs_df['Date'].dt.day == 1]
+
+        ax1.legend(zones, title='Zone')
+        # ax1.set_xticks(first_of_month_daily.index)
+        # ax1.set_xticklabels(first_of_month_daily.dt.strftime('%Y-%m-%d'), rotation=0)
+        ax1.set_xlabel('Date')
+        ax1.set_ylabel('Daily Cost (€)')
+        ax1.set_title(f'Nominal cost of operations')
+        
+        ax2.legend(zones, title='Zone')
+        # ax2.set_xticks(first_of_month_daily.index)
+        # ax2.set_xticklabels(first_of_month_daily.dt.strftime('%Y-%m-%d'), rotation=0)
+        ax2.set_ylabel('Daily Cost (€)')
+        ax2.set_title('Cost of operations after mfrr AM+CM participation')
+        # ax2.set_ylim([-1200, 600])
+
+        plt.suptitle(f'Daily Costs. Length {T} smoothing window')
+        # plt.tight_layout()
 
         plt.show()
 

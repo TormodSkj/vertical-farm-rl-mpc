@@ -177,7 +177,7 @@ class Controller():
         U = self.model.get_u(N, U_nom, B[:2,:], B[2:4,:], spot_prices, market)           # Express U in terms of bidding outcomes
 
         # Initialize cost function and constraints
-        J = self.model.bidding_obj_function(N, self.spot_prices, X, B_volumes = B[:2,:], B_prices = B[2:4,:], U_nom = U_nom, market = self.market)\
+        J = self.model.AM_bidding_obj_function(N, self.spot_prices, X, B_volumes = B[:2,:], B_prices = B[2:4,:], U_nom = U_nom, market = self.market)\
                        + self.model.terminal_cost(self, X, U, Eps)
 
 
@@ -213,8 +213,8 @@ class Controller():
         if self.warm_start: 
             z0[:nx*(N+1)]                   = refrun['timeseries']['x'].flatten()
             z0[nx*(N+1):nx*(N+1)+2*N]       = ub_B_volumes.reshape((2*N,1))             # Bid volumes
-            z0[nx*(N+1)+2*N:nx*(N+1)+3*N]   = self.market.expected_prices_up            # Bid prices up
-            z0[nx*(N+1)+3*N:nx*(N+1)+4*N]   = self.market.expected_prices_down          # Bid prices down
+            z0[nx*(N+1)+2*N:nx*(N+1)+3*N]   = self.market.expected_AM_prices_up            # Bid prices up
+            z0[nx*(N+1)+3*N:nx*(N+1)+4*N]   = self.market.expected_AM_prices_down          # Bid prices down
         
         sol = solver(x0=z0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
 
@@ -456,7 +456,7 @@ class Controller():
         end_time = time.time()
         sol = {}
         sol['eps'] = Eps
-        sol['f'] = self.model.bidding_obj_function(N, spot_prices, X, B[:2, :], B[2:4, :], U_nom, self.market)
+        sol['f'] = self.model.AM_bidding_obj_function(N, spot_prices, X, B[:2, :], B[2:4, :], U_nom, self.market)
         sol['elapsed_time'] = end_time - start_time
         
         self.store_run(run_id, dependencies, sol, np.array(X), np.array(U).reshape((1,-1)), B=np.array(B), U_nom=np.array(U_nom).reshape((1,-1)), refrun_id = target_run_id)
@@ -588,7 +588,7 @@ class Controller():
         [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
 
         U = self.model.get_u(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market)
-        J = self.model.bidding_obj_function(N_TH, spot_prices, X, B_volumes, B_prices, U_nom, self.market) + self.model.terminal_cost(self, X, U, Eps)
+        J = self.model.AM_bidding_obj_function(N_TH, spot_prices, X, B_volumes, B_prices, U_nom, self.market) + self.model.terminal_cost(self, X, U, Eps)
         
         # if (k + N_TH >= N): J += self.model.terminal_cost(self, X, U, Eps)
         # else:               J += self.model.running_cost(self.market, k, N, Eps)
@@ -676,9 +676,109 @@ class Controller():
 
         if not self.surpress_output: print(f'{run_id} | Generated fixed light schedule: {hours_on}h/{hours_off}h at {RIGID_INTY} PPFD')
         return 0
+    
 
 
+    def optimize_mfrr_CM(self, run_id, refrun_id = 'fixed'):
+        '''
+        Optimize for maximum CM participation while ensuring sufficient probability of feasible baseline
+        '''
 
+
+        start_time = time.time()
+
+        # dependencies = ('general', 'controller', 'plantmodel', 'market')
+
+        # if not self.load_from_json(run_id, dependencies): 
+        #     # Identical run located. Using its solution instead
+        #     return 0
+        
+        if not self.surpress_output: print(f'{run_id} | Generating CM bidding strategy')
+        
+
+        # Just check if there is a basline before proceeding
+        assert refrun_id in self.optimization_results['runs'], f"{run_id} | Error: {refrun_id} has not been generated"   
+        refrun = self.optimization_results['runs'][refrun_id]
+
+        N = self.N
+        T = self.T
+        dt = self.dt
+        spot_prices = self.spot_prices
+        market = self.market
+
+        U_nom = refrun['timeseries']['u'].reshape((1, N))
+
+        # State and control dimensions
+        nx = self.model.nx                      # Dimension of state x (x1, x2)
+        nu = self.model.nu                      # Dimension of control u (scalar)
+        neps = self.model.neps                  # DImension of slack variables
+
+        # Create decision variables for the optimization problem
+        X = ca.MX.sym('X', nx, N+1)             # States over time (2x(N+1) vector)
+        B = ca.MX.sym('B', 4, N/4)                # Bids over time (Vol_up, Vol_down, Price_up, Price_down) (4xN vector)
+        Eps = ca.MX.sym('Eps', neps, 1)            # Slack variable for feasibility
+
+        U = self.model.get_u(N, U_nom, B[:2,:], B[2:4,:], spot_prices, market)           # Express U in terms of bidding outcomes
+
+        # Initialize cost function and constraints
+        J = self.model.CM_bidding_obj_function(N, self.spot_prices, X, B_volumes = B[:2,:], B_prices = B[2:4,:], market = self.market)\
+                       + self.model.terminal_cost(self, X, U, Eps)
+
+        g_eq, g_ineq = [], []
+        g_eq, g_ineq = self.model.get_process_constraints(self, g_eq, g_ineq, X, U, Eps)
+        
+        # format constraints
+        n_eq    = ca.vertcat(*g_eq).size()[0]
+        n_ineq  = ca.vertcat(*g_ineq).size()[0]
+        g       = g_eq + g_ineq
+        lbg     = np.concatenate((np.zeros((1, n_eq + n_ineq))), axis=None)                         # \ Eq-constraints = 0
+        ubg     = np.concatenate((np.zeros((1, n_eq)), np.inf * np.ones((1, n_ineq))), axis=None)   # / Ineq-constraints >= 0
+
+
+        # Extract state and bidding bounds
+        lbx,    ubx     = self.model.get_state_bounds(self)
+        lb_B_volumes, ub_B_volumes, lb_B_prices, ub_B_prices = self.model.get_bidding_bounds(N, U_nom)
+        lb_eps, ub_eps  = np.zeros((neps, 1)), np.inf * np.ones((neps, 1))
+
+        # Flatten decision variables and bounds
+        Z   = ca.vertcat(ca.reshape(X,   -1, 1), ca.reshape(B,    -1, 1),                                           ca.reshape(Eps,    -1, 1))
+        lbz = ca.vertcat(ca.reshape(lbx, -1, 1), ca.reshape(ca.vertcat(lb_B_volumes, lb_B_prices), -1, 1),   ca.reshape(lb_eps, -1, 1))
+        ubz = ca.vertcat(ca.reshape(ubx, -1, 1), ca.reshape(ca.vertcat(ub_B_volumes, ub_B_prices), -1, 1),   ca.reshape(ub_eps, -1, 1))
+
+        # Nonlinear problem definition
+        nlp = {'x': Z, 'f': J, 'g': ca.vertcat(*g)}
+
+        # Create the solver
+        opts = {'ipopt.print_level': 0, 'print_time': 0}
+        solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
+
+        z0 = ca.DM.zeros((N + 1)*nx + N*4 + neps)  
+        if self.warm_start: 
+            z0[:nx*(N+1)]                   = refrun['timeseries']['x'].flatten()
+            z0[nx*(N+1):nx*(N+1)+2*N]       = ub_B_volumes.reshape((2*N,1))             # Bid volumes
+            z0[nx*(N+1)+2*N:nx*(N+1)+3*N]   = self.market.expected_AM_prices_up            # Bid prices up
+            z0[nx*(N+1)+3*N:nx*(N+1)+4*N]   = self.market.expected_AM_prices_down          # Bid prices down
+        
+        sol = solver(x0=z0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
+
+        # Extract solution
+
+        x = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
+        B = np.array(sol['x'][(nx*(N+1)):(nx*(N+1) + 4*N)].reshape((4, N)))
+        u = np.array(self.model.get_u(N, U_nom, B[:2,:], B[2:4,:], spot_prices, market)).reshape(1,-1)
+        eps   = float(sol['x'][-neps][0])
+
+        
+        end_time = time.time()
+        sol['elapsed_time'] = end_time - start_time
+        sol['eps'] = eps
+        
+        # self.store_run(run_id, dependencies, sol, x, u, B=B, U_nom=refrun['timeseries']['u'], refrun_id = refrun_id)
+
+        if not self.surpress_output: print(f'{run_id} | Optimized mFRR CM bidding strategy')
+        
+        # self.save_to_json()
+        return 0
 
 
     def store_run(self, run_id, dependencies, sol, x, u, A = None, B = None, U_nom = None, refrun_id = 'None'):
@@ -741,7 +841,7 @@ class Controller():
             timeseries_data['C_dn'] = bid_prices_down
 
 
-            expected_prices_up, expected_prices_down = self.market.expected_prices_up, self.market.expected_prices_down
+            expected_prices_up, expected_prices_down = self.market.expected_AM_prices_up, self.market.expected_AM_prices_down
             bidding_earnings_up     = 1/4 * np.multiply(np.multiply(bid_activations_up,     bid_volumes_up),    expected_prices_up)
             bidding_earnings_down   = 1/4 * np.multiply(np.multiply(bid_activations_down,   bid_volumes_down),  expected_prices_down)
             bidding_earnings    = np.sum(bidding_earnings_up) + np.sum(bidding_earnings_down)
@@ -858,7 +958,7 @@ class Controller():
             self.optimization_results['runs'][run_id] = conv_loaded_data['runs'][run_id]
             # if run_name == 'Bidding': self.runs['bidding result'] = conv_loaded_data['bidding result']
 
-            if not self.surpress_output: print(f"Loaded run {run_id} from simulation \'{loaded_data['name']}\' dated {loaded_data['timestamp']}")
+            if not self.surpress_output: print(f"{run_id} | Loaded run from simulation \'{loaded_data['name']}\' dated {loaded_data['timestamp']}")
             return 0
                 
         if not self.surpress_output: print(f'{run_id} | No matching run found')
@@ -948,25 +1048,28 @@ class Controller():
         activations_down    = activations_down
         bid_volumes_up      = B_volumes[0,:]
         bid_volumes_down    = B_volumes[1,:]
-        bid_prices_up       = clearing_prices_up
-        bid_prices_down     = clearing_prices_down
-
        
-        U = np.array([])
-        for k in range(N):
-            u_tilde = 1000*(bid_volumes_down[k]*activations_down[k]\
-                             - bid_volumes_up[k]*activations_up[k])/self.model.C_conv_PPFD
-            U = np.append(U, U_nom[:,k] + u_tilde)
+        def get_u(N, U_nom, B_volumes, Activations):
+            bid_volumes_up      = B_volumes[0,:]
+            bid_volumes_down    = B_volumes[1,:]
+            activations_up      = Activations[0,:]
+            activations_down    = Activations[1,:]
+       
+            U = np.array([])
+            for k in range(N):
+                u_tilde = 1000/self.model.C_conv_PPFD*(bid_volumes_down[k]*activations_down[k] - bid_volumes_up[k]*activations_up[k])
+                U = np.append(U, U_nom[:,k] + u_tilde)
 
-        U = ca.vertcat(*U)
-
-        expected_prices_up, expected_prices_down = self.market.expected_prices_up, self.market.expected_prices_down
+            return ca.vertcat(*U).reshape((1,-1))
+        
+        U = get_u(N, U_nom, B_volumes, np.vstack((activations_up, activations_down)))
+        # expected_prices_up, expected_prices_down = self.market.expected_AM_prices_up, self.market.expected_AM_prices_down
 
         L = 0
         for k in range(0, N): #from k = 2, to N-1. 
             L += spot_prices[k] * self.model.C_conv_PPFD/1000 * U_nom[:,k] \
-                  + (spot_prices[k] - expected_prices_down[:,k]) * bid_volumes_down[k] * activations_down[k]\
-                  - (spot_prices[k] + expected_prices_up[:,k]) * bid_volumes_up[k] * activations_up[k]
+                  + (spot_prices[k] - clearing_prices_down[k]) * bid_volumes_down[k] * activations_down[k]\
+                  - (spot_prices[k] + clearing_prices_up[k])   * bid_volumes_up[k]   * activations_up[k]
 
         J = L/4 + self.model.terminal_cost(self, X, U, Eps)
 
@@ -1012,18 +1115,20 @@ class Controller():
 
         x = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
         B_volumes = np.array(sol['x'][(nx*(N+1)):(nx*(N+1) + 2*N)].reshape((2, N)))
-        B = np.vstack((B_volumes, clearing_prices_up, clearing_prices_down))
-        u = np.array(self.model.get_u(N, U_nom.reshape(1,-1), B[:2,:], B[2:4,:], spot_prices, self.market)).reshape((1,-1))
-        eps   = float(sol['x'][-neps][0])
         A = np.vstack((activations_up, activations_down))
+        B = np.vstack((B_volumes, clearing_prices_up, clearing_prices_down))
+        u = np.array(get_u(N, U_nom.reshape(1,-1), B[:2,:], A)).reshape((1,-1))
+        eps   = float(sol['x'][-neps][0])
         
         end_time = time.time()
         sol['elapsed_time'] = end_time - start_time
         sol['eps'] = eps
         
-        self.store_run(run_id, dependencies, sol, x, u, B=B, U_nom=refrun['timeseries']['u'].reshape((1,-1)), refrun_id = refrun_id)
+        self.store_run(run_id, dependencies, sol, x, u, A=A, B=B, U_nom=refrun['timeseries']['u'].reshape((1,-1)), refrun_id = refrun_id)
 
         if not self.surpress_output: print(f'{run_id} | Generated theoretically optimal bid plan')
+
+        self.save_to_json()
         return 0
 
 
@@ -1102,11 +1207,11 @@ class Controller():
 
         # Print market metrics
         market_data = [
-            ['Mean Expected clearing price', np.mean(self.market.expected_prices_up), np.mean(self.market.expected_prices_down)],
+            ['Mean Expected clearing price', np.mean(self.market.expected_AM_prices_up), np.mean(self.market.expected_AM_prices_down)],
             ['Mean Recorded clearing price', np.mean(self.market.get_AM_clearing_prices()[0]), np.mean(self.market.get_AM_clearing_prices()[1])],
             ['Mean Recorded activated clearing price', np.mean(self.market.get_AM_clearing_prices()[0][np.where(self.market.mfrr_demands_up >0)]), np.mean(self.market.get_AM_clearing_prices()[1][np.where(self.market.mfrr_demands_down >0)])],
-            ['Mean Expected / Recorded clearing price delta',  np.mean(self.market.expected_prices_up - self.market.get_AM_clearing_prices()[0]), np.mean(self.market.expected_prices_down - self.market.get_AM_clearing_prices()[1])],
-            ['Clearing price standard deviation', self.market.sigma_up, self.market.sigma_down], 
+            ['Mean Expected / Recorded clearing price delta',  np.mean(self.market.expected_AM_prices_up - self.market.get_AM_clearing_prices()[0]), np.mean(self.market.expected_AM_prices_down - self.market.get_AM_clearing_prices()[1])],
+            ['Clearing price standard deviation', self.market.sigma_AM_up, self.market.sigma_AM_down], 
             ['Expected activation occurence rate', self.market.demand_prob_up(), self.market.demand_prob_down()],
             ['Recorded activation occurence rate', np.mean(self.market.mfrr_demands_up), np.mean(self.market.mfrr_demands_down)]
         ]

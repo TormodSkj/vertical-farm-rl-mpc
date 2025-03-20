@@ -199,19 +199,40 @@ class PlantModel:
     
     
 
-    def bidding_obj_function(self, N_TH, spot_prices, X, B_volumes, B_prices, U_nom, market:Market):
+    def AM_bidding_obj_function(self, N_TH, spot_prices, X, B_volumes, B_prices, U_nom, market:Market):
         
         bid_volumes_up      = B_volumes[0,:]
         bid_volumes_down    = B_volumes[1,:]
         bid_prices_up       = B_prices[0,:]
         bid_prices_down     = B_prices[1,:]
 
-        expected_prices_up, expected_prices_down = market.expected_prices_up.flatten(), market.expected_prices_down.flatten()
+        expected_prices_up, expected_prices_down = market.expected_AM_prices_up.flatten(), market.expected_AM_prices_down.flatten()
 
         L = 0
 
         for k in range(0, N_TH):
             L += spot_prices[k] * self.C_conv_PPFD/1000 * U_nom[:,k] \
+                  + (spot_prices[k] - expected_prices_down[k])   * bid_volumes_down[k]   * market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
+                  - (spot_prices[k] + expected_prices_up[k])     * bid_volumes_up[k]     * market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
+
+        L = L/4
+
+        return L
+    
+    
+    def CM_bidding_obj_function(self, N_TH, spot_prices, X, B_volumes, B_prices, market:Market):
+        
+        bid_volumes_up      = B_volumes[0,:]
+        bid_volumes_down    = B_volumes[1,:]
+        bid_prices_up       = B_prices[0,:]
+        bid_prices_down     = B_prices[1,:]
+
+        expected_prices_up, expected_prices_down = market.expected_CM_prices_up.flatten(), market.expected_CM_prices_down.flatten()
+
+        L = 0
+
+        for k in range(0, N_TH):
+            L += \
                   + (spot_prices[k] - expected_prices_down[k])   * bid_volumes_down[k]   * market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
                   - (spot_prices[k] + expected_prices_up[k])     * bid_volumes_up[k]     * market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
 

@@ -84,8 +84,8 @@ class Simulator():
             mu_up = conditional_expectation(controller.spot_prices, market.price_means, market.price_covs)[0]
             mu_dn = conditional_expectation(controller.spot_prices, market.price_means, market.price_covs)[1]
 
-            clearing_prices_up = np.random.normal(loc=mu_up, scale=market.sigma_up)
-            clearing_prices_dn = np.random.normal(loc=mu_dn, scale=market.sigma_down)
+            clearing_prices_up = np.random.normal(loc=mu_up, scale=market.sigma_AM_up)
+            clearing_prices_dn = np.random.normal(loc=mu_dn, scale=market.sigma_AM_down)
 
             u = u_nom + 1000*(np.where(np.logical_and(activation_demands == -1, bidding_price_dn < clearing_prices_dn), bidding_vol_dn, 0)\
                             - np.where(np.logical_and(activation_demands == 1, bidding_price_up < clearing_prices_up), bidding_vol_up, 0))/controller.model.C_conv_PPFD
@@ -154,9 +154,9 @@ class Simulator():
             X[:,k+1] = np.array(F(X[:,k], np.array([u[:,k]]))).flatten()
 
 
-        f = 0.25*(self.model.C_conv_PPFD * np.sum(np.multiply(spot_prices,U_nom)) \
-            + np.sum(np.where(activation_down == 1, np.multiply((1000*spot_prices - controller.market.C_eur2nok * clearing_prices_down),  bidding_vol_down), 0)) \
-            - np.sum(np.where(activation_up   == 1, np.multiply((1000*spot_prices + controller.market.C_eur2nok * clearing_prices_up),    bidding_vol_up), 0)))
+        f = 0.25*(self.model.C_conv_PPFD/1000 * np.sum(np.multiply(spot_prices, U_nom)) \
+            + np.sum(np.where(activation_down == 1, np.multiply((spot_prices - clearing_prices_down),  bidding_vol_down), 0)) \
+            - np.sum(np.where(activation_up   == 1, np.multiply((spot_prices + clearing_prices_up),    bidding_vol_up), 0)))
 
 
         Eps = max(0, controller.model.Final_fw_sht - self.model.freshweight(X[:,-1]))

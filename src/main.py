@@ -10,12 +10,12 @@ from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 from market_utils import fetch_CM_data_nucs
 
-SIM_NAME            = "se1_abs_test"
+SIM_NAME            = "financial_prognosis"
 SIMULATION_LENGTH   = 20
 FINAL_FRESHWEIGHT      = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [Directly from germination]
-SIMULATION_DATE = '2024-02-14'
-BIDDING_ZONE    = 'NO1'
+SIMULATION_DATE = '2024-10-20'
+BIDDING_ZONE    = 'SE4'
 OPTIMISTIC      = 1
 SEARCH_CACHE    = 1
 SEARCH_PLOT_CACHE = 1
@@ -46,6 +46,13 @@ def main():
     simulator   = Simulator(settings, plant, market, config, controller)
     plotter     = Plotter(settings, config, controller, simulator)
 
+    
+    
+    ''' ANALYSIS '''
+    # market.calculate_AM_upper_bound()
+
+
+
     ''' OPTIMIZAION '''
     # market.optimal_bidding_price_prediction(controller.spot_prices)
     
@@ -70,7 +77,7 @@ def main():
     # simulator.apply_mfrr_clearing_prices('mfrr_fixed_applied', 'mfrr_fixed')
     
     '''Status report'''
-    controller.status_report()
+    # controller.status_report()
     controller.save_to_json()
     ''''''
 
@@ -78,7 +85,6 @@ def main():
     # for run_id in run_ids: print(f"Upper CM participation earnings limit for {run_id}: {market.calculate_CM_earnings_upper_limit(controller, run_id)}")
           
     # market.estimate_prices(n_xlags=10, n_ylags=10)
-    # market.calculate_AM_upper_bound()
 
     
     #'''
