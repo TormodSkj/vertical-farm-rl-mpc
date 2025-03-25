@@ -679,108 +679,6 @@ class Controller():
     
 
 
-    def optimize_mfrr_CM(self, run_id, refrun_id = 'fixed'):
-        '''
-        Optimize for maximum CM participation while ensuring sufficient probability of feasible baseline
-        '''
-
-
-        start_time = time.time()
-
-        # dependencies = ('general', 'controller', 'plantmodel', 'market')
-
-        # if not self.load_from_json(run_id, dependencies): 
-        #     # Identical run located. Using its solution instead
-        #     return 0
-        
-        if not self.surpress_output: print(f'{run_id} | Generating CM bidding strategy')
-        
-
-        # Just check if there is a basline before proceeding
-        assert refrun_id in self.optimization_results['runs'], f"{run_id} | Error: {refrun_id} has not been generated"   
-        refrun = self.optimization_results['runs'][refrun_id]
-
-        N = self.N
-        T = self.T
-        dt = self.dt
-        spot_prices = self.spot_prices
-        market = self.market
-
-        U_nom = refrun['timeseries']['u'].reshape((1, N))
-
-        # State and control dimensions
-        nx = self.model.nx                      # Dimension of state x (x1, x2)
-        nu = self.model.nu                      # Dimension of control u (scalar)
-        neps = self.model.neps                  # DImension of slack variables
-
-        # Create decision variables for the optimization problem
-        X = ca.MX.sym('X', nx, N+1)             # States over time (2x(N+1) vector)
-        B = ca.MX.sym('B', 4, N/4)                # Bids over time (Vol_up, Vol_down, Price_up, Price_down) (4xN vector)
-        Eps = ca.MX.sym('Eps', neps, 1)            # Slack variable for feasibility
-
-        U = self.model.get_u(N, U_nom, B[:2,:], B[2:4,:], spot_prices, market)           # Express U in terms of bidding outcomes
-
-        # Initialize cost function and constraints
-        J = self.model.CM_bidding_obj_function(N, self.spot_prices, X, B_volumes = B[:2,:], B_prices = B[2:4,:], market = self.market)\
-                       + self.model.terminal_cost(self, X, U, Eps)
-
-        g_eq, g_ineq = [], []
-        g_eq, g_ineq = self.model.get_process_constraints(self, g_eq, g_ineq, X, U, Eps)
-        
-        # format constraints
-        n_eq    = ca.vertcat(*g_eq).size()[0]
-        n_ineq  = ca.vertcat(*g_ineq).size()[0]
-        g       = g_eq + g_ineq
-        lbg     = np.concatenate((np.zeros((1, n_eq + n_ineq))), axis=None)                         # \ Eq-constraints = 0
-        ubg     = np.concatenate((np.zeros((1, n_eq)), np.inf * np.ones((1, n_ineq))), axis=None)   # / Ineq-constraints >= 0
-
-
-        # Extract state and bidding bounds
-        lbx,    ubx     = self.model.get_state_bounds(self)
-        lb_B_volumes, ub_B_volumes, lb_B_prices, ub_B_prices = self.model.get_bidding_bounds(N, U_nom)
-        lb_eps, ub_eps  = np.zeros((neps, 1)), np.inf * np.ones((neps, 1))
-
-        # Flatten decision variables and bounds
-        Z   = ca.vertcat(ca.reshape(X,   -1, 1), ca.reshape(B,    -1, 1),                                           ca.reshape(Eps,    -1, 1))
-        lbz = ca.vertcat(ca.reshape(lbx, -1, 1), ca.reshape(ca.vertcat(lb_B_volumes, lb_B_prices), -1, 1),   ca.reshape(lb_eps, -1, 1))
-        ubz = ca.vertcat(ca.reshape(ubx, -1, 1), ca.reshape(ca.vertcat(ub_B_volumes, ub_B_prices), -1, 1),   ca.reshape(ub_eps, -1, 1))
-
-        # Nonlinear problem definition
-        nlp = {'x': Z, 'f': J, 'g': ca.vertcat(*g)}
-
-        # Create the solver
-        opts = {'ipopt.print_level': 0, 'print_time': 0}
-        solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
-
-        z0 = ca.DM.zeros((N + 1)*nx + N*4 + neps)  
-        if self.warm_start: 
-            z0[:nx*(N+1)]                   = refrun['timeseries']['x'].flatten()
-            z0[nx*(N+1):nx*(N+1)+2*N]       = ub_B_volumes.reshape((2*N,1))             # Bid volumes
-            z0[nx*(N+1)+2*N:nx*(N+1)+3*N]   = self.market.expected_AM_prices_up            # Bid prices up
-            z0[nx*(N+1)+3*N:nx*(N+1)+4*N]   = self.market.expected_AM_prices_down          # Bid prices down
-        
-        sol = solver(x0=z0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
-
-        # Extract solution
-
-        x = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
-        B = np.array(sol['x'][(nx*(N+1)):(nx*(N+1) + 4*N)].reshape((4, N)))
-        u = np.array(self.model.get_u(N, U_nom, B[:2,:], B[2:4,:], spot_prices, market)).reshape(1,-1)
-        eps   = float(sol['x'][-neps][0])
-
-        
-        end_time = time.time()
-        sol['elapsed_time'] = end_time - start_time
-        sol['eps'] = eps
-        
-        # self.store_run(run_id, dependencies, sol, x, u, B=B, U_nom=refrun['timeseries']['u'], refrun_id = refrun_id)
-
-        if not self.surpress_output: print(f'{run_id} | Optimized mFRR CM bidding strategy')
-        
-        # self.save_to_json()
-        return 0
-
-
     def store_run(self, run_id, dependencies, sol, x, u, A = None, B = None, U_nom = None, refrun_id = 'None'):
 
         if B is None:
@@ -1028,7 +926,145 @@ class Controller():
         return 0
 
 
-    def generate_optimal_bidding_strategy(self, run_id = 'optimal', refrun_id = 'fixed'):
+    def generate_true_optimum_CM(self, run_id = 'optimal_CM'):
+
+        start_time = time.time()
+
+        dependencies = ('general', 'controller', 'plantmodel', 'market')
+        if not (self.load_from_json(f"{run_id}_nom", None, dependencies) or self.load_from_json(f"{run_id}", f"{run_id}_nom", dependencies)) : 
+            # Identical run located. Using its solution instead
+            return 0
+        
+        if not self.surpress_output: print(f'{run_id} | Generating theoretically optimal Capacity Market bids')
+        
+        clearing_prices_up, clearing_prices_down = self.market.get_CM_clearing_prices()
+        reservations_up, reservations_down       = self.market.get_CM_reservations()
+        reservations = np.vstack((reservations_up,
+                                  reservations_down))
+
+        N = self.N
+        T = self.T
+        dt = self.dt
+        spot_prices = self.spot_prices
+
+        # State and control dimensions
+        nx = self.model.nx                      # Dimension of state x (x1, x2)
+        nu = self.model.nu                      # Dimension of control u (scalar)
+        neps = self.model.neps
+
+        # Create decision variables for the optimization problem
+        X_nom       = ca.MX.sym('X_nom', nx, N+1)         # States over time (2x(N+1) vector)
+        U_nom       = ca.MX.sym('U_nom', nu, N)
+        Eps_nom     = ca.MX.sym('Eps_nom', neps, 1)       # Slack variable for feasibility
+        
+        X           = ca.MX.sym('X', nx, N+1)             # States over time (2x(N+1) vector)
+        B_volumes   = ca.MX.sym('B_volumes', 2, N)        # Bids over time (Vol_up, Vol_down, Price_up, Price_down) (4xN vector)
+        Eps         = ca.MX.sym('Eps', neps, 1)           # Slack variable for feasibility
+        
+        reservations_up     = reservations_up
+        reservations_down   = reservations_down
+        bid_volumes_up      = B_volumes[0,:]
+        bid_volumes_down    = B_volumes[1,:]
+       
+        def get_u(N, U_nom, B_volumes, reservations):
+            bid_volumes_up      = B_volumes[0,:]
+            bid_volumes_down    = B_volumes[1,:]
+            reservations_up      = reservations[0,:]
+            reservations_down    = reservations[1,:]
+       
+            U = np.array([])
+            for k in range(N):
+                u_tilde = 1000/self.model.C_conv_PPFD*(bid_volumes_down[k]*reservations_down[k] - bid_volumes_up[k]*reservations_up[k])
+                U = np.append(U, U_nom[:,k] + u_tilde)
+
+            return ca.vertcat(*U).reshape((1,-1))
+        
+        U = get_u(N, U_nom, B_volumes, reservations)
+        # # expected_prices_up, expected_prices_down = self.market.expected_AM_prices_up, self.market.expected_AM_prices_down
+
+        L_nom, L = 0, 0
+        for k in range(0, N): #from k = 2, to N-1. 
+            L_nom += spot_prices[k] * self.model.C_conv_PPFD/1000 * U_nom[:,k]
+            L     += spot_prices[k] * self.model.C_conv_PPFD/1000 * U_nom[:,k] \
+                  + (spot_prices[k] - clearing_prices_down[k]) * bid_volumes_down[k] * reservations_down[k]\
+                  - (spot_prices[k] + clearing_prices_up[k])   * bid_volumes_up[k]   * reservations_up[k]
+
+        w1, w2 = 1, 1
+        J = w1 * (L_nom/4 ) + self.model.terminal_cost(self, X_nom, U_nom, Eps_nom) + \
+            w2 * (L/4)      + self.model.terminal_cost(self, X, U, Eps)
+
+        g_eq, g_ineq = [], []
+        g_eq, g_ineq = self.model.get_process_constraints(self, g_eq, g_ineq, X_nom, U_nom, Eps_nom)
+        g_eq, g_ineq = self.model.get_process_constraints(self, g_eq, g_ineq, X, U, Eps)
+        
+        # format constraints
+        n_eq    = ca.vertcat(*g_eq).size()[0]
+        n_ineq  = ca.vertcat(*g_ineq).size()[0]
+        g       = g_eq + g_ineq
+        lbg     = np.concatenate((np.zeros((1, n_eq + n_ineq))), axis=None)                         # \ Eq-constraints = 0
+        ubg     = np.concatenate((np.zeros((1, n_eq)), np.inf * np.ones((1, n_ineq))), axis=None)   # / Ineq-constraints >= 0
+
+
+        # Extract state and bidding bounds
+        lbx, ubx = self.model.get_state_bounds(self)
+        lbu, ubu = self.model.get_input_bounds(self)
+        lb_B = np.zeros((2, N))
+        ub_B = self.model.P_cap_max * np.ones((2, N))
+        lb_eps, ub_eps = np.zeros((neps,1)), np.inf * np.ones((neps,1))
+
+        # Flatten decision variables and bounds
+        Z   = ca.vertcat(ca.reshape(X,   -1, 1), ca.reshape(X_nom,  -1, 1), ca.reshape(U_nom,   -1, 1), ca.reshape(B_volumes, -1, 1), ca.reshape(Eps,    -1, 1), ca.reshape(Eps_nom, -1, 1))
+        lbz = ca.vertcat(ca.reshape(lbx, -1, 1), ca.reshape(lbx,    -1, 1), ca.reshape(lbu,     -1, 1), ca.reshape(lb_B,      -1, 1), ca.reshape(lb_eps, -1, 1), ca.reshape(lb_eps, -1, 1))
+        ubz = ca.vertcat(ca.reshape(ubx, -1, 1), ca.reshape(ubx,    -1, 1), ca.reshape(ubu,     -1, 1), ca.reshape(ub_B,      -1, 1), ca.reshape(ub_eps, -1, 1), ca.reshape(ub_eps, -1, 1))
+
+        # Nonlinear problem definition
+        nlp = {'x': Z, 'f': J, 'g': ca.vertcat(*g)}
+
+        # Create the solver
+        opts = {'ipopt.print_level': 0, 'print_time': 0}
+        solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
+
+        N_vars = (N+1)*nx*2 + N*nu + N*2 + neps*2
+        z0 = ca.DM.zeros(N_vars)  
+        # if self.warm_start: 
+        #     z0[:nx*(N+1)]                   = refrun['timeseries']['x'].flatten()
+        #     z0[nx*(N+1):nx*(N+1)+2*N]       = ub_B[:2,:].reshape(2*N,1)
+        
+        sol = solver(x0=z0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
+
+        # Extract solution
+
+
+        X_nom_idx   = nx*(N+1)
+        U_idx       = 2*X_nom_idx
+        B_idx       = U_idx + nu*N
+        eps_idx     = B_idx + 2*N
+        eps_nom_idx = eps_idx + neps
+
+        x           = np.array(sol['x'][:X_nom_idx].reshape((nx, N+1)))
+        x_nom       = np.array(sol['x'][X_nom_idx:U_idx].reshape((nx, N+1)))
+        u_nom       = np.array(sol['x'][U_idx:B_idx].reshape((nu, N)))
+        B_volumes   = np.array(sol['x'][B_idx:eps_idx].reshape((2, N)))
+        eps         = float(sol['x'][eps_idx:eps_nom_idx][0])
+        eps_nom     = float(sol['x'][eps_nom_idx:][0])
+        u           = np.array(get_u(N, u_nom, B_volumes, reservations)).reshape((1,-1))
+
+        A = np.vstack((reservations_up, reservations_down))
+        B = np.vstack((B_volumes, clearing_prices_up, clearing_prices_down))
+        
+        end_time = time.time()
+        sol['elapsed_time'] = end_time - start_time
+        sol['eps'] = eps
+        
+        self.store_run(f"{run_id}_nom", dependencies, sol, x_nom, u_nom, refrun_id = 'None')
+        self.store_run(run_id,          dependencies, sol, x, u, A=A, B=B, U_nom=u_nom, refrun_id = f"{run_id}_nom")
+
+        if not self.surpress_output: print(f'{run_id} | Generated theoretically optimal bid plan')
+
+        self.save_to_json()
+        return 0
+
+    def generate_true_optimum_AM(self, run_id = 'optimal', refrun_id = 'fixed'):
 
         start_time = time.time()
 

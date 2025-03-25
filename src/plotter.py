@@ -100,6 +100,7 @@ class Plotter():
         # INDIVIDUAL PLOTS
         run_groups = build_dependency_groups(self.controller.optimization_results)
         for run_group in run_groups:
+            # if run_group == ['fixed']: continue
             self.add_plot(self.plot_report, run_group = run_group)
         
         self.plot()
@@ -222,6 +223,7 @@ class Plotter():
         controller  = self.controller
         market      = controller.market
         t           = self.controller.t
+        N           = self.controller.N
         spot_prices = self.controller.spot_prices
         zone        = market.bidding_zone
 
@@ -241,11 +243,11 @@ class Plotter():
             else:
                 is_realized = False
 
-            u_nom            = bid_ts['u_nom'].flatten()
-            bid_volumes_up   = bid_ts['P_up'].flatten()    # Volume up
-            bid_volumes_down = bid_ts['P_dn'].flatten()    # Volume down
-            bid_prices_up    = bid_ts['C_up'].flatten()    # Price up
-            bid_prices_down  = bid_ts['C_dn'].flatten()    # Price down
+            u_nom            = bid_ts.get('u_nom', np.zeros(N)).flatten()
+            bid_volumes_up   = bid_ts.get('P_up',  np.zeros(N)).flatten()
+            bid_volumes_down = bid_ts.get('P_dn',  np.zeros(N)).flatten()
+            bid_prices_up    = bid_ts.get('C_up',  np.zeros(N)).flatten()
+            bid_prices_down  = bid_ts.get('C_dn',  np.zeros(N)).flatten()
 
             if is_realized:
                 bid_activation_up   = bid_ts['A_up'].flatten()

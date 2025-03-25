@@ -49,7 +49,7 @@ class PlantModel:
 
         self.C_conv      = 0.217                                            # W / PPFD
         self.C_conv_PPFD = self.C_conv*self.A_crop/(self.eta_light*1000)    # Conversion factor between PPFD and power. Expressed in kW
-        self.P_cap_max   = self.PPFD_max*self.C_conv_PPFD                   # Vertical farm power capacity [MW]
+        self.P_cap_max   = self.PPFD_max*self.C_conv_PPFD/1000              # Vertical farm power capacity [MW]
 
 
 

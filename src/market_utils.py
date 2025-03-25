@@ -970,12 +970,40 @@ def fetch_CM_data_nucs(target_file_path, start_date, end_date):
 
 
 
-def load_mfrr_CM_data(data_folder)->pd.DataFrame:
+# def load_mfrr_CM_data(data_folder)->pd.DataFrame:
 
-    """
+#     """
 
-    """
+#     """
 
+#     all_files = [f for f in os.listdir(data_folder) if f.endswith(".csv")]
+#     all_data = []
+
+#     for file in all_files:
+#         filepath = os.path.join(data_folder, file)
+
+#         # Load the mFRR data
+#         data = pd.read_csv(filepath, delimiter=";", encoding="utf-8")
+
+#         # data = data[['Date', 'Hour'] + [column for column in data.columns if bidding_zone in column]]
+
+#         data['Start Time'] = data['Date'] + " " + data['Hour']
+#         data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d.%m.%Y %H:%M', errors='coerce')
+
+#         data.drop(columns=['Date', 'Hour'],inplace=True)
+
+#         # Append processed data to the list
+#         all_data.append(data)
+
+#     assert len(all_data) > 0, 'Expected non-empty list of data. Verify correctly specified import path.'
+
+#     # Merge all data and sort by 'Start Time'
+#     merged_data = combine_dataframe_blocks(all_data)
+
+#     return merged_data
+
+
+def load_mfrr_CM_data(data_folder) -> pd.DataFrame:
     all_files = [f for f in os.listdir(data_folder) if f.endswith(".csv")]
     all_data = []
 
@@ -985,19 +1013,27 @@ def load_mfrr_CM_data(data_folder)->pd.DataFrame:
         # Load the mFRR data
         data = pd.read_csv(filepath, delimiter=";", encoding="utf-8")
 
-        # data = data[['Date', 'Hour'] + [column for column in data.columns if bidding_zone in column]]
-
+        # Create 'Start Time' column
         data['Start Time'] = data['Date'] + " " + data['Hour']
         data['Start Time'] = pd.to_datetime(data['Start Time'], format='%d.%m.%Y %H:%M', errors='coerce')
 
-        data.drop(columns=['Date', 'Hour'],inplace=True)
+        data.drop(columns=['Date', 'Hour'], inplace=True)
 
-        # Append processed data to the list
         all_data.append(data)
 
     assert len(all_data) > 0, 'Expected non-empty list of data. Verify correctly specified import path.'
 
     # Merge all data and sort by 'Start Time'
     merged_data = combine_dataframe_blocks(all_data)
+    
+    # Ensure all expected time slots are present
+    full_time_range = pd.date_range(start=merged_data['Start Time'].min(), 
+                                    end=merged_data['Start Time'].max(), 
+                                    freq='H')
+
+    full_df = pd.DataFrame({'Start Time': full_time_range})
+
+    # Merge with actual data, filling missing values with 0
+    merged_data = full_df.merge(merged_data, on='Start Time', how='left').fillna(0)
 
     return merged_data
