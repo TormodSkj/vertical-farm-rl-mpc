@@ -9,8 +9,9 @@ class Settings():
 
     def __init__(self, *groups, **kwargs):
 
-        self.add_setting('sim_name',
+        self.add_setting('options',
                          SIM_NAME           = "placeholder_name",  # Name of simulation used for plotting and archiving
+                         SURPRESS_OUTPUT    = False
                          )
 
 
@@ -52,19 +53,18 @@ class Settings():
 
         # Controller settings
         self.add_setting('controller', 
-                         SEARCH_SIM_CACHE = True,
-                         SURPRESS_OUTPUT  = False,
-                         WARM_START       = True,
-                         CALCULATE_FW     = True,
-                         IMPORT_FILE      = 'scaled_optimal_intensities.json',
-                         DISCRETIZATION   = 'fe'
+                         SEARCH_SIM_CACHE   = True,
+                         WARM_START         = True,
+                         CALCULATE_FW       = True,
+                         IMPORT_FILE        = 'scaled_optimal_intensities.json',
+                         DISCRETIZATION     = 'fe'
                          )
                         
         
         # MPC settings
         self.add_setting('mpc', 
-                         MPC_TIMEHORIZON = 1, 
-                         MPC_STEPLENGTH = 0.5
+                         MPC_TIMEHORIZON    = 1, 
+                         MPC_STEPLENGTH     = 0.5
                          )
 
         # Plotter settings

@@ -70,7 +70,7 @@ class Controller():
         '''
 
         self.settings = settings
-        self.controller_settings = settings.get_settings_group('sim_name', 'general', 'controller', 'market', 'plantmodel')
+        self.controller_settings = settings.get_settings_group('options', 'general', 'controller', 'market', 'plantmodel')
 
         self.sim_name           = self.controller_settings['SIM_NAME']
         self.surpress_output    = self.controller_settings['SURPRESS_OUTPUT']
@@ -145,7 +145,7 @@ class Controller():
 
         dependencies = ('general', 'controller', 'plantmodel', 'market')
 
-        if not self.load_from_json(run_id, dependencies): 
+        if not self.load_from_json(run_id, refrun_id, dependencies): 
             # Identical run located. Using its solution instead
             return 0
         
@@ -246,7 +246,7 @@ class Controller():
 
         dependencies = ('general', 'controller', 'plantmodel', 'market')
 
-        if not self.load_from_json(run_id, dependencies): 
+        if not self.load_from_json(run_id, refrun_id, dependencies): 
             # Identical run located. Using its solution instead
             return 0
         
@@ -335,7 +335,7 @@ class Controller():
         
         dependencies = ('general', 'controller', 'mpc', 'plantmodel', 'market')
 
-        if not self.load_from_json(run_id, dependencies): 
+        if not self.load_from_json(run_id, target_run_id, dependencies): 
             # Identical run located. Using its solution instead
             return 0
 
@@ -894,10 +894,17 @@ class Controller():
 
             run_data['bidding result'] = bidding_data 
 
+        settings_dict = self.settings.get_settings_group(*dependencies)
+        if refrun_id != 'None': 
+            settings_dict.update({'refrun': refrun_id, 
+                                  'refrun hash': self.optimization_results['runs'][refrun_id]['hash']})
+
+        run_hash = generate_hash(settings_dict)
+        # self.settings.add_setting('hash', {f'{run_id}_hash': run_hash})
 
         run_data['timeseries']      = timeseries_data
         run_data['dependencies']    = list(dependencies)
-        run_data['hash']            = generate_hash(self.settings.get_settings_group(*dependencies))
+        run_data['hash']            = run_hash
 
         # Storing runs in dictionaries
         self.optimization_results['runs'][run_id] = run_data 
@@ -926,7 +933,7 @@ class Controller():
             json.dump(runs_dict, json_file, indent=4)
 
 
-    def load_from_json(self, run_id, dependencies):
+    def load_from_json(self, run_id, refrun_id, dependencies):
         """
         Load completed runs from saved JSON files and populate `completed_runs`.
         Compares the settings_profile used previously in order to determine if old result is still valid
@@ -936,7 +943,12 @@ class Controller():
         """
         if not self.search_cache: return 1
 
-        hash = generate_hash(self.settings.get_settings_group(*dependencies))
+        settings_dict = self.settings.get_settings_group(*dependencies)
+        if refrun_id is not None: 
+            settings_dict.update({'refrun': refrun_id, 
+                                  'refrun hash': self.optimization_results['runs'][refrun_id]['hash']})
+ 
+        hash = generate_hash(settings_dict)
 
         for file_name in os.listdir(self.config.simulations_path):
             if not file_name.endswith(".json"): continue
@@ -1021,7 +1033,7 @@ class Controller():
         start_time = time.time()
 
         dependencies = ('general', 'controller', 'plantmodel', 'market')
-        if not self.load_from_json(run_id, dependencies): 
+        if not self.load_from_json(run_id, refrun_id, dependencies): 
             # Identical run located. Using its solution instead
             return 0
         

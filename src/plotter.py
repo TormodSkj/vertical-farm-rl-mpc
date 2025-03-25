@@ -39,7 +39,7 @@ class Plotter():
         self.controller = controller
         self.simulator = simulator
 
-        self.plotter_settings = settings.get_settings_group('sim_name', 'general', 'plotter')
+        self.plotter_settings = settings.get_settings_group('options', 'general', 'plotter')
 
         self.foldername     = self.plotter_settings['SIM_NAME']
         self.plot_file_type = self.plotter_settings['PLOT_EXPORT_TYPE']

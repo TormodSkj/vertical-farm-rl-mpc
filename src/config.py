@@ -20,7 +20,7 @@ class Config():
         self.path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..')) + "/"
 
     
-        self.config_settings    = settings.get_settings_group('sim_name', 'general', 'config')
+        self.config_settings    = settings.get_settings_group('options', 'general', 'config')
 
         self.sim_name           = self.config_settings['SIM_NAME']
 

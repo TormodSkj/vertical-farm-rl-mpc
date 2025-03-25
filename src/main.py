@@ -10,20 +10,20 @@ from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 from market_utils import fetch_CM_data_nucs
 
-SIM_NAME            = "mfrr_experiment_1"
-SIMULATION_LENGTH   = 18
+SIM_NAME            = "new_cache_test"
+SIMULATION_LENGTH   = 20
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
-SIMULATION_DATE = '2024-01-01'
-BIDDING_ZONE    = 'DK1'
-OPTIMISTIC      = 1
-SEARCH_CACHE    = 1
-SEARCH_PLOT_CACHE = 0
+SIMULATION_DATE     = '2024-01-01'
+BIDDING_ZONE        = 'DK1'
+OPTIMISTIC          = 1
+SEARCH_CACHE        = 1
+SEARCH_PLOT_CACHE   = 0
 
-MPC_TIMEHORIZON = 1
-MPC_STEPLENGTH = 0.25
+MPC_TIMEHORIZON     = 1
+MPC_STEPLENGTH      = 0.25
 
-DISCRETIZATION = 'rk4'
+DISCRETIZATION      = 'rk4'
 
 def main():
 
