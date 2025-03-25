@@ -93,7 +93,7 @@ class Market:
             'simdate'                       : self.date,
             'optimistic'                    : self.optimistic,
             'Avg activation price up'       : self.AM_price_stats[self.bidding_zone]['Up']['means'][1],
-            'Avg activation price down'     : self.AM_price_stats[self.bidding_zone]['Up']['means'][1],          
+            'Avg activation price down'     : self.AM_price_stats[self.bidding_zone]['Down']['means'][1],          
             'Cond covariance spot - up'     : conditional_variance_AM_up,
             'Cond covariance spot - Down'   : conditional_variance_AM_down,
             'Outlier max std-dev distance'  : self.outlier_max_dist
@@ -239,9 +239,9 @@ class Market:
                 activation_data = AM_data[[f'{zone} Spot Price', f'{zone} Activated {direction} Volume']]
 
                 price_statistics[zone][direction]['means']      = np.mean(np.array(price_data), axis=0)
-                price_statistics[zone][direction]['cov']        = np.cov(np.array(price_data).reshape((2,-1)))
+                price_statistics[zone][direction]['cov']        = np.cov(price_data.T)
                 activation_statistics[zone][direction]['means'] = np.mean(np.array(activation_data), axis=0)
-                activation_statistics[zone][direction]['cov']   = np.cov(np.array(activation_data).reshape((2,-1)))
+                activation_statistics[zone][direction]['cov']   = np.cov(activation_data.T)
 
         self.AM_price_stats = price_statistics
         self.AM_activation_stats = price_statistics
@@ -695,7 +695,7 @@ class Market:
         
 
 
-    def calculate_AM_upper_bound(self, zones = None, start_date='2024-02-15', end_date='2025-02-15'):
+    def calculate_AM_upper_bound(self, AM = True, CM = True, zones = None, start_date='2024-02-15', end_date='2025-02-15'):
         """
         Calculates the upper bound for earnings from the AM market by optimizing activation periods.
         
@@ -773,8 +773,12 @@ class Market:
 
                     # Calculate earnings from activations
                     # Counting savings or added spending from changes in spot market prices
-                    mfrr_earnings_up    = AM_earnings_up    + CM_earnings_up + (data['spot'] - np.mean(data['spot']))
-                    mfrr_earnings_down  = AM_earnings_down  + CM_earnings_down - (data['spot'] - np.mean(data['spot']))
+                    mfrr_earnings_up    = (data['spot'] - np.mean(data['spot']))
+                    mfrr_earnings_down  = (data['spot'] - np.mean(data['spot']))
+                    mfrr_earnings_up    = mfrr_earnings_up   + AM_earnings_up   if AM else mfrr_earnings_up
+                    mfrr_earnings_down  = mfrr_earnings_down + AM_earnings_down if AM else mfrr_earnings_down
+                    mfrr_earnings_up    = mfrr_earnings_up   + CM_earnings_up   if CM else mfrr_earnings_up
+                    mfrr_earnings_down  = mfrr_earnings_down + CM_earnings_down if CM else mfrr_earnings_down
 
 
                     # Indices of most profitable mtu's to have activated
@@ -818,10 +822,10 @@ class Market:
 
 
                     # Compute total earnings and costs
-                    AM_earnings_up      = np.sum(AM_earnings_up[up_activations])/4
-                    AM_earnings_down    = np.sum(AM_earnings_down[down_activations])/4
-                    CM_earnings_up      = np.sum(CM_earnings_up[up_activations])/4
-                    CM_earnings_down    = np.sum(CM_earnings_down[down_activations])/4
+                    AM_earnings_up      = np.sum(AM_earnings_up[up_activations])/4      if AM else 0
+                    AM_earnings_down    = np.sum(AM_earnings_down[down_activations])/4  if AM else 0
+                    CM_earnings_up      = np.sum(CM_earnings_up[up_activations])/4      if CM else 0
+                    CM_earnings_down    = np.sum(CM_earnings_down[down_activations])/4  if CM else 0
                     energy_cost         = np.sum(data["spot"][light_schedule == 1])/4
 
                     total_earnings_AM               += AM_earnings_up + AM_earnings_down
@@ -930,7 +934,7 @@ class Market:
         ####################################################
                 #   MARKET POTENCY BAR CHART
 
-        T = 7
+        T = 1
         def moving_average(data, window_size):
             smoothed_data = data.copy()  # Copy to avoid modifying the original DataFrame
             for col in smoothed_data.columns:

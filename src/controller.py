@@ -783,6 +783,18 @@ class Controller():
 
     def store_run(self, run_id, dependencies, sol, x, u, A = None, B = None, U_nom = None, refrun_id = 'None'):
 
+        if B is None:
+            Bids = np.zeros((4, self.N))
+        else:
+            Bids = B
+
+        if A is None:
+            Activations = np.vstack((self.market.activation_prob_up(self.spot_prices, Bids[2,:]),
+                                     self.market.activation_prob_up(self.spot_prices, Bids[3,:])))
+        else:
+            Activations = A
+        
+
         timeseries_data = {
             't'     : self.t,
             'x'     : x,
@@ -803,91 +815,85 @@ class Controller():
             'eps'           : eps
         }
 
-        metrics_data = self.model.get_metrics(self, run_id, metrics_data, x, u, B)
+        metrics_data = self.model.get_metrics(self, run_id, metrics_data, x, u, Bids)
 
         run_data = {
             'reference_run' : refrun_id,
             'metrics'       : metrics_data
             }
 
-        if B is None:
-            costs = float(self.model.spotopt_obj_function(self.N, self.spot_prices, x, u))
-            metrics_data['Costs'] = costs
-            metrics_data['Earnings'] = 0
-            metrics_data['Total'] = costs - 0
-        else:
 
-            bid_volumes_up      = B[0,:].reshape(1,-1)
-            bid_volumes_down    = B[1,:].reshape(1,-1)
-            bid_prices_up       = B[2,:].reshape(1,-1)
-            bid_prices_down     = B[3,:].reshape(1,-1)
+        bid_volumes_up          = Bids[0,:].reshape(1,-1)
+        bid_volumes_down        = Bids[1,:].reshape(1,-1)
+        bid_prices_up           = Bids[2,:].reshape(1,-1)
+        bid_prices_down         = Bids[3,:].reshape(1,-1)
 
-            if A is None:
-                prob_activations_up     = np.array(self.market.activation_prob_up(self.spot_prices, bid_prices_up)).reshape(1,-1)
-                prob_activations_down   = np.array(self.market.activation_prob_down(self.spot_prices, bid_prices_down)).reshape(1,-1)
-                bid_activations_up      = prob_activations_up
-                bid_activations_down    = prob_activations_down
-            else:
-                bid_activations_up      = A[0,:].reshape(1,-1)
-                bid_activations_down    = A[1,:].reshape(1,-1)
-                timeseries_data['A_up'] = bid_activations_up
-                timeseries_data['A_dn'] = bid_activations_down
-                prob_activations_up     = np.array(self.market.activation_prob_up(self.spot_prices, bid_prices_up)).reshape(1,-1)
-                prob_activations_down   = np.array(self.market.activation_prob_down(self.spot_prices, bid_prices_down)).reshape(1,-1)
+        bid_activations_up      = Activations[0,:].reshape(1,-1)
+        bid_activations_down    = Activations[1,:].reshape(1,-1)
+        prob_activations_up     = np.array(self.market.activation_prob_up(self.spot_prices, bid_prices_up)).reshape(1,-1)
+        prob_activations_down   = np.array(self.market.activation_prob_down(self.spot_prices, bid_prices_down)).reshape(1,-1)
 
+
+
+        # expected_prices_up, expected_prices_down = self.market.expected_AM_prices_up, self.market.expected_AM_prices_down
+        AM_clearing_prices_up, AM_clearing_prices_down = self.market.get_AM_clearing_prices()
+        
+        AM_earnings_up     = 1/4 * np.multiply(np.multiply(bid_activations_up,     bid_volumes_up),    AM_clearing_prices_up)
+        AM_earnings_down   = 1/4 * np.multiply(np.multiply(bid_activations_down,   bid_volumes_down),  AM_clearing_prices_down)
+        AM_earnings_total  = np.sum(AM_earnings_up) + np.sum(AM_earnings_down)
+
+        total_costs = self.model.spotopt_obj_function(self.N, self.spot_prices, x, u)
+        # bidding_total = bidding_costs - AM_earnings_total
+
+        metrics_data['Costs']       = float(total_costs)
+        metrics_data['Earnings']    = float(AM_earnings_total)
+        metrics_data['Total']       = metrics_data['Costs'] - metrics_data['Earnings']
+
+
+        activation_th   = 0.01
+        volume_th       = 0.001
+
+        up_bids = np.where(np.logical_and(prob_activations_up > activation_th, bid_volumes_up > volume_th))
+        down_bids = np.where(np.logical_and(prob_activations_down > activation_th, bid_volumes_down > volume_th))
+
+        filtered_bid_volumes_up         = bid_volumes_up[up_bids]
+        filtered_bid_volumes_down       = bid_volumes_down[down_bids]
+        filtered_bid_prices_up          = bid_prices_up[up_bids]
+        filtered_bid_prices_down        = bid_prices_down[down_bids]
+        filtered_bid_activations_up     = bid_activations_up[up_bids]
+        filtered_bid_activations_down   = bid_activations_down[down_bids]
+
+
+        bidding_data = {
+            'Up-regulation'     : {
+                'Bids submitted'            : len(filtered_bid_activations_up),
+                'Avg bid size'              : np.average(filtered_bid_volumes_up),
+                'Avg bid price'             : np.average(filtered_bid_prices_up),
+                'Avg activation rate'       : np.average(bid_activations_up)*100,
+                'Consumption impact'        : np.sum(np.multiply(bid_volumes_up, bid_activations_up))
+            },
+            'Down-regulation'   : {
+                'Bids submitted'            : len(filtered_bid_activations_down),
+                'Avg bid size'              : np.average(filtered_bid_volumes_down),
+                'Avg bid price'             : np.average(filtered_bid_prices_down),
+                'Avg activation rate'       : np.average(bid_activations_down)*100,
+                'Consumption impact'        : np.sum(np.multiply(bid_volumes_down, bid_activations_down))
+            }
+        }     
+
+        
+        if A is not None:
+            timeseries_data['A_up'] = bid_activations_up
+            timeseries_data['A_dn'] = bid_activations_down
+
+        if B is not None:
             timeseries_data['P_up'] = bid_volumes_up
             timeseries_data['P_dn'] = bid_volumes_down
             timeseries_data['C_up'] = bid_prices_up
             timeseries_data['C_dn'] = bid_prices_down
 
+            run_data['bidding result'] = bidding_data 
 
-            expected_prices_up, expected_prices_down = self.market.expected_AM_prices_up, self.market.expected_AM_prices_down
-            bidding_earnings_up     = 1/4 * np.multiply(np.multiply(bid_activations_up,     bid_volumes_up),    expected_prices_up)
-            bidding_earnings_down   = 1/4 * np.multiply(np.multiply(bid_activations_down,   bid_volumes_down),  expected_prices_down)
-            bidding_earnings    = np.sum(bidding_earnings_up) + np.sum(bidding_earnings_down)
-
-            bidding_costs = self.model.spotopt_obj_function(self.N, self.spot_prices, x, u)
-            bidding_total = bidding_costs - bidding_earnings
-
-            metrics_data['Costs']       = float(bidding_costs)
-            metrics_data['Earnings']    = float(bidding_earnings)
-            metrics_data['Total']       = float(bidding_total)
-
-            # b_a_up  = np.array(self.market.activation_prob_up(self.spot_prices, b_c_up))
-            # b_a_dn  = np.array(self.market.activation_prob_dn(self.spot_prices,b_c_dn))
-
-            activation_th   = 0.01
-            volume_th       = 0.001
-
-            up_bids = np.where(np.logical_and(prob_activations_up > activation_th, bid_volumes_up > volume_th))
-            down_bids = np.where(np.logical_and(prob_activations_down > activation_th, bid_volumes_down > volume_th))
-
-            filtered_bid_volumes_up         = bid_volumes_up[up_bids]
-            filtered_bid_volumes_down       = bid_volumes_down[down_bids]
-            filtered_bid_prices_up          = bid_prices_up[up_bids]
-            filtered_bid_prices_down        = bid_prices_down[down_bids]
-            filtered_bid_activations_up     = bid_activations_up[up_bids]
-            filtered_bid_activations_down   = bid_activations_down[down_bids]
-
-
-            bidding_data = {
-                'Up-regulation'     : {
-                    'Bids submitted'            : len(filtered_bid_activations_up),
-                    'Avg bid size'              : np.average(filtered_bid_volumes_up),
-                    'Avg bid price'             : np.average(filtered_bid_prices_up),
-                    'Avg activation rate'       : np.average(bid_activations_up)*100,
-                    'Consumption impact'        : np.sum(np.multiply(bid_volumes_up, bid_activations_up))
-                },
-                'Down-regulation'   : {
-                    'Bids submitted'            : len(filtered_bid_activations_down),
-                    'Avg bid size'              : np.average(filtered_bid_volumes_down),
-                    'Avg bid price'             : np.average(filtered_bid_prices_down),
-                    'Avg activation rate'       : np.average(bid_activations_down)*100,
-                    'Consumption impact'        : np.sum(np.multiply(bid_volumes_down, bid_activations_down))
-                }
-            }     
-
-            run_data['bidding result'] = bidding_data       
 
         run_data['timeseries']      = timeseries_data
         run_data['dependencies']    = list(dependencies)
@@ -1136,7 +1142,7 @@ class Controller():
 
     def export_intensity_to_json(self, run_id: str):
 
-        u = self.optimization_results['runs'][run_id]['timeseries']['u']
+        u = np.array(self.optimization_results['runs'][run_id]['timeseries']['u']).flatten()
 
         u_scaled = 100 * u / self.model.PPFD_max
 

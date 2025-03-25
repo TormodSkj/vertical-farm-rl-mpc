@@ -427,8 +427,8 @@ class Plotter():
                 AM_clearing_prices_up, AM_clearing_prices_down = market.get_AM_clearing_prices()
                 activations_up, activations_down = market.get_activation_demands()
 
-                expected_prices_up   = conditional_expectation(controller.spot_prices, market.AM_price_stats[zone]['Up']['means'],   market.AM_price_stats[zone]['Up']['cov'])
-                expected_prices_down = conditional_expectation(controller.spot_prices, market.AM_price_stats[zone]['Down']['means'], market.AM_price_stats[zone]['Down']['cov'])
+                expected_prices_up   = market.expected_AM_prices_up     #conditional_expectation(controller.spot_prices, market.AM_price_stats[zone]['Up']['means'],   market.AM_price_stats[zone]['Up']['cov'])
+                expected_prices_down = market.expected_AM_prices_down   #conditional_expectation(controller.spot_prices, market.AM_price_stats[zone]['Down']['means'], market.AM_price_stats[zone]['Down']['cov'])
 
                 linewidth = 0.4
 
@@ -545,7 +545,7 @@ class Plotter():
                 mu_up   = market.AM_price_stats[zone]['Up']['means'][1]
                 mu_down = market.AM_price_stats[zone]['Down']['means'][1]
 
-                sigma_up   = np.sqrt(market.AM_price_stats[zone]['Up']['cov'][1,1]), 
+                sigma_up   = np.sqrt(market.AM_price_stats[zone]['Up']['cov'][1,1])
                 sigma_down = np.sqrt(market.AM_price_stats[zone]['Down']['cov'][1,1])
                                 
                 x_up = np.linspace(mu_up -3*sigma_up,     mu_up +3*sigma_up,     1000)
@@ -766,53 +766,53 @@ class Plotter():
 
 
 
-    def plot_random_activations(self, m: int):
+    # def plot_random_activations(self, m: int):
 
-        simulator = self.simulator
-        controller = self.controller
-        market = controller.market
-        config = self.config
-        foldername = self.foldername
-
-
-        t = controller.t
-        freshwewights = simulator.simulate_random_activation(self.controller, m)
+    #     simulator = self.simulator
+    #     controller = self.controller
+    #     market = controller.market
+    #     config = self.config
+    #     foldername = self.foldername
 
 
-        ##################################################
-        plt.figure(figsize=self.aspect_ratio)
+    #     t = controller.t
+    #     freshwewights = simulator.simulate_random_activation(self.controller, m)
 
-        bidding_runs = [run for run in controller.optimization_results['runs'] if 'bidding result' in controller.optimization_results['runs'][run]]
 
-        for run_name in bidding_runs:
-            if 'Realized' in run_name:
-                continue 
-            bid_ts  = self.controller.optimization_results['runs'][run_name]['timeseries']
-            bid_volume_up   = bid_ts['P_up']    # Volume up
-            bid_volume_dn   = bid_ts['P_dn']    # Volume down
-            bid_price_up    = bid_ts['C_up']    # Price up
-            bid_price_dn    = bid_ts['C_dn']    # Price down
+    #     ##################################################
+    #     plt.figure(figsize=self.aspect_ratio)
 
-            u_nom = controller.optimization_results['runs'][run_name]['timeseries']['u_nom']
-            x_bid = controller.optimization_results['runs'][run_name]['timeseries']['x']
-            fw_variance = propagate_process_covariance(controller, x_bid, u_nom, bid_volume_up, bid_volume_dn, bid_price_up, bid_price_dn)
-            fw_sd = np.sqrt(fw_variance)
-            fw = np.array(controller.model.freshweight(x_bid[:,1:])).flatten()
+    #     bidding_runs = [run for run in controller.optimization_results['runs'] if 'bidding result' in controller.optimization_results['runs'][run]]
 
-            fw_ub = fw + 1.96*fw_sd
-            fw_lb = fw - 1.96*fw_sd
+    #     for run_name in bidding_runs:
+    #         if 'Realized' in run_name:
+    #             continue 
+    #         bid_ts  = self.controller.optimization_results['runs'][run_name]['timeseries']
+    #         bid_volume_up   = bid_ts['P_up']    # Volume up
+    #         bid_volume_dn   = bid_ts['P_dn']    # Volume down
+    #         bid_price_up    = bid_ts['C_up']    # Price up
+    #         bid_price_dn    = bid_ts['C_dn']    # Price down
 
-            plt.fill_between(t, fw_lb, fw_ub, color='green', alpha=0.4)
+    #         u_nom = controller.optimization_results['runs'][run_name]['timeseries']['u_nom']
+    #         x_bid = controller.optimization_results['runs'][run_name]['timeseries']['x']
+    #         fw_variance = propagate_process_covariance(controller, x_bid, u_nom, bid_volume_up, bid_volume_dn, bid_price_up, bid_price_dn)
+    #         fw_sd = np.sqrt(fw_variance)
+    #         fw = np.array(controller.model.freshweight(x_bid[:,1:])).flatten()
 
-        for case in range(freshwewights.shape[0]):
-            plt.plot(t, freshwewights[case,:], color='blue', alpha=0.2)
-        plt.axhline(y=controller.model.Final_fw_sht, color='gray', linestyle=':', label="Required Freshweight (g/plant)")
-        plt.ylabel("Fresh weight (g/plant)")
-        plt.xlabel("Time (days)")
-        plt.title(f'Simulated {m} different cases of plausible activations')
+    #         fw_ub = fw + 1.96*fw_sd
+    #         fw_lb = fw - 1.96*fw_sd
 
-        filename = "random_activations"
-        plt.savefig(config.plots_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
+    #         plt.fill_between(t, fw_lb, fw_ub, color='green', alpha=0.4)
+
+    #     for case in range(freshwewights.shape[0]):
+    #         plt.plot(t, freshwewights[case,:], color='blue', alpha=0.2)
+    #     plt.axhline(y=controller.model.Final_fw_sht, color='gray', linestyle=':', label="Required Freshweight (g/plant)")
+    #     plt.ylabel("Fresh weight (g/plant)")
+    #     plt.xlabel("Time (days)")
+    #     plt.title(f'Simulated {m} different cases of plausible activations')
+
+    #     filename = "random_activations"
+    #     plt.savefig(config.plots_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
 
 
 
@@ -905,7 +905,7 @@ class Plotter():
         mu_up   = market.AM_price_stats[zone]['Up']['means'][1]
         mu_down = market.AM_price_stats[zone]['Down']['means'][1]
                 
-        sigma_up   = np.sqrt(market.AM_price_stats[zone]['Up']['cov'][1,1]), 
+        sigma_up   = np.sqrt(market.AM_price_stats[zone]['Up']['cov'][1,1])
         sigma_down = np.sqrt(market.AM_price_stats[zone]['Down']['cov'][1,1])
 
         x_up = np.linspace(mu_up-3*sigma_up,mu_up+3*sigma_up, 1000)
@@ -1229,8 +1229,13 @@ class Plotter():
         zone = market.bidding_zone
 
         # Remove drastic outliers
-        price_data_raw = market.CM_prices_working_set
+        price_data_raw = market.CM_data_full_set
         price_data = price_data_raw.where(price_data_raw[f'{zone} Up Price']<500).where(price_data_raw[f'{zone} Down Price']>-500).fillna(0)
+
+        # if price_data_raw.empty: 
+        #     print(f'No Capacity Market data for date: {market.date}.\nCM data not plotted')
+        #     return
+
 
         timestamps          = price_data['Start Time']
         spot_prices         = np.array(price_data[f'{zone} Spot Price'])

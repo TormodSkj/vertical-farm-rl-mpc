@@ -66,7 +66,7 @@ def generate_table(table_data, header = None, sumrow=False, diffcol=False):
 
 
 
-def generate_hash(specs):
+def generate_hash(specs: dict):
 
     converted_specs = convert_np_arrays_to_lists(specs)
 
@@ -189,15 +189,7 @@ def calculate_covariance_matrix(data, columns):
 
 def conditional_expectation(y, means, cov_matrix):
     """
-    Calculate the expected Up and Down prices given a known Spot Price.
 
-    Args:
-        spot_price (float): Known Spot Price.
-        means (list): Mean values for Spot, Up, and Down prices [mean_spot, mean_up, mean_down].
-        cov_matrix (np.ndarray): Covariance matrix for Spot, Up, and Down prices.
-
-    Returns:
-        tuple: Expected Up Price and Down Price.
     """
     y = np.array(y)
 

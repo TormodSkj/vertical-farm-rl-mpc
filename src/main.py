@@ -10,15 +10,15 @@ from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
 from market_utils import fetch_CM_data_nucs
 
-SIM_NAME            = "financial_prognosis"
-SIMULATION_LENGTH   = 20
-FINAL_FRESHWEIGHT      = 136.7             # 20 Days 
-# FINAL_FRESHWEIGHT      = 2.05              # 20 Days [Directly from germination]
-SIMULATION_DATE = '2024-10-20'
-BIDDING_ZONE    = 'SE4'
+SIM_NAME            = "mfrr_experiment_1"
+SIMULATION_LENGTH   = 18
+FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
+# FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
+SIMULATION_DATE = '2024-01-01'
+BIDDING_ZONE    = 'DK1'
 OPTIMISTIC      = 1
 SEARCH_CACHE    = 1
-SEARCH_PLOT_CACHE = 1
+SEARCH_PLOT_CACHE = 0
 
 MPC_TIMEHORIZON = 1
 MPC_STEPLENGTH = 0.25
@@ -49,7 +49,7 @@ def main():
     
     
     ''' ANALYSIS '''
-    # market.calculate_AM_upper_bound()
+    # market.calculate_AM_upper_bound(AM=True, CM=False)
 
 
 
@@ -60,8 +60,8 @@ def main():
     # controller.import_baseline('imported')
 
     controller.optimize_spotprice('spot_opt')         #
-    # controller.optimize_mfrr('mfrr_opt', 'spot_opt')  #
-    # simulator.apply_mfrr_clearing_prices('mfrr_applied', 'mfrr_opt')
+    controller.optimize_mfrr('mfrr_opt', 'spot_opt')  #
+    simulator.apply_mfrr_clearing_prices('mfrr_applied', 'mfrr_opt')
     
     # controller.optimize_mfrr_mpc('mfrr_mpc')
     # simulator.apply_mfrr_clearing_prices('apply_prices_mpc', 'mfrr_mpc')
@@ -97,7 +97,7 @@ def main():
     # plotter.plot_CM_data() 
     ''''''
 
-    # controller.export_intensity_to_json('Baseline')
+    controller.export_intensity_to_json('abs_applied')
 
     # market.analyze_price_covariances()
 
