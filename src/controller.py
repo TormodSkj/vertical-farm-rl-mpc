@@ -790,7 +790,7 @@ class Controller():
 
         if A is None:
             Activations = np.vstack((self.market.activation_prob_up(self.spot_prices, Bids[2,:]),
-                                     self.market.activation_prob_up(self.spot_prices, Bids[3,:])))
+                                     self.market.activation_prob_down(self.spot_prices, Bids[3,:])))
         else:
             Activations = A
         
@@ -1191,7 +1191,7 @@ class Controller():
             ['Costs'] + costs,
             ['Earnings'] + earnings,
             ['Totals'] + totals,
-            ['Total percentage cost reduction'] + cost_reduction_percent,
+            ['Cost reduction (%)'] + cost_reduction_percent,
         ]
 
         cost_table = generate_table(cost_data, header=[run for run in self.optimization_results['runs']])

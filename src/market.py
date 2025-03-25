@@ -237,14 +237,15 @@ class Market:
                     price_data      = AM_data[[f'{zone} Spot Price', f'{zone} {direction} Price']]
                 
                 activation_data = AM_data[[f'{zone} Spot Price', f'{zone} Activated {direction} Volume']]
+                activation_data[f'{zone} Activated {direction} Volume'] = (activation_data[f"{zone} Activated {direction} Volume"] > 0).astype(int)
 
                 price_statistics[zone][direction]['means']      = np.mean(np.array(price_data), axis=0)
                 price_statistics[zone][direction]['cov']        = np.cov(price_data.T)
                 activation_statistics[zone][direction]['means'] = np.mean(np.array(activation_data), axis=0)
                 activation_statistics[zone][direction]['cov']   = np.cov(activation_data.T)
 
-        self.AM_price_stats = price_statistics
-        self.AM_activation_stats = price_statistics
+        self.AM_price_stats         = price_statistics
+        self.AM_activation_stats    = activation_statistics
 
         return 0
     
@@ -285,6 +286,7 @@ class Market:
                     price_data      = CM_data[[f'{zone} Spot Price', f'{zone} {direction} Price']]
                 
                 activation_data = CM_data[[f'{zone} Spot Price', f'{zone} {direction} Volume procured']]
+                activation_data[f'{zone} {direction} Volume procured'] = (activation_data[f'{zone} {direction} Volume procured'] > 0).astype(int)
                 
                 price_statistics[zone][direction]['means']      = np.mean(np.array(price_data), axis=0)
                 price_statistics[zone][direction]['cov']        = np.cov(np.array(price_data).reshape((2,-1)))
@@ -292,7 +294,7 @@ class Market:
                 reservation_statistics[zone][direction]['cov']   = np.cov(np.array(activation_data).reshape((2,-1)))
 
         self.CM_price_stats = price_statistics
-        self.CM_activation_stats = price_statistics
+        self.CM_activation_stats = reservation_statistics
 
         return 0
     
