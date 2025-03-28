@@ -79,7 +79,7 @@ class Simulator():
 
         for case in range(m):
 
-            activation_demands = controller.market.generate_activation_demands(N, seed)
+            activation_demands = controller.market.generate_activation_demands('Activation Market', N, seed)
 
             mu_up = conditional_expectation(controller.spot_prices, market.price_means, market.price_covs)[0]
             mu_dn = conditional_expectation(controller.spot_prices, market.price_means, market.price_covs)[1]
@@ -168,7 +168,7 @@ class Simulator():
     
         dependencies = ()
         refrun_dependencies = tuple(controller.optimization_results['runs'][refrun_id]['dependencies'])
-        controller.store_run(run_id, refrun_dependencies + dependencies, sol, X, u.reshape(1,-1), A, B, U_nom.reshape(1,-1), refrun_id=refrun_id)
+        controller.store_run(run_id, refrun_dependencies + dependencies, sol, X, u.reshape(1,-1), A, B, U_nom.reshape(1,-1), refrun_id=refrun_id, balancing_market=self.market.AM)
         
         return 0
 

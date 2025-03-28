@@ -281,7 +281,7 @@ class PlantModel:
         spot_prices_avg_curve = np.linspace(0, spot_prices_integral[-1], N)
         
         clearing_prices_up, clearing_prices_down = market.get_AM_clearing_prices()
-        activations_up, activations_down = market.get_activation_demands()
+        activations_up, activations_down = market.get_AM_activations()
         market_potencies_up         = np.multiply(clearing_prices_up, activations_up)
         market_potencies_down       = np.multiply(clearing_prices_down, activations_down)
         market_potencies_net      = market_potencies_down - market_potencies_up
@@ -316,9 +316,10 @@ class PlantModel:
         
         return g_eq, g_ineq
 
-    def get_bidding_constraints(self, g_eq, g_ineq, N, U_nom, B_volumes = None, B_prices=None):
+    def get_bidding_constraints(self, g_eq, g_ineq, N, U_nom, B_volumes = None, B_prices=None, B_volumes_lower_bound = None):
 
         lb_B_volumes, ub_B_volumes, lb_B_prices, ub_B_prices = self.get_bidding_bounds(N, U_nom)
+        lb_B_volumes = lb_B_volumes if B_volumes_lower_bound is None else B_volumes_lower_bound
 
         if B_volumes is not None:
             for k in range(N):

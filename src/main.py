@@ -7,15 +7,14 @@ from plotter import Plotter
 import numpy as np
 from globals import *
 from simulator import Simulator
-from utils import vertigrow_calculate_energy_consumption, strip_entsoe_activation_data
-from market_utils import fetch_CM_data_nucs
+from utils import vertigrow_calculate_energy_consumption
 
-SIM_NAME            = "CM_opt_test"
+SIM_NAME            = "CM_opt_SE1_greedy"
 SIMULATION_LENGTH   = 20
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
-SIMULATION_DATE     = '2024-12-01'
-BIDDING_ZONE        = 'DK1'
+SIMULATION_DATE     = '2024-10-01'
+BIDDING_ZONE        = 'SE1'
 OPTIMISTIC          = 1
 SEARCH_CACHE        = 0
 SEARCH_PLOT_CACHE   = 0
@@ -49,7 +48,7 @@ def main():
     
     
     ''' ANALYSIS '''
-    # market.calculate_AM_upper_bound(AM=True, CM=False)
+    # market.calculate_balancing_market_earnings_upper_bound(AM=True, CM=True)
 
 
 
@@ -72,11 +71,15 @@ def main():
     # controller.generate_true_optimum_AM('abs_opt', 'spot_opt')
     # simulator.apply_mfrr_clearing_prices('abs_applied', 'abs_opt')
 
+    # controller.generate_true_optimum_CM('optimal_CM')
+    # controller.generate_true_optimum_AM('optimal_AM', 'optimal_CM')
+    # simulator.apply_mfrr_clearing_prices('abs_applied', 'abs_opt')
+
+    controller.generate_true_optimum_CM_and_AM('co_opt')
 
     # controller.optimize_mfrr('mfrr_fixed', 'fixed')
     # simulator.apply_mfrr_clearing_prices('mfrr_fixed_applied', 'mfrr_fixed')
 
-    controller.generate_true_optimum_CM('optimal_CM')
     
     '''Status report'''
     controller.status_report()
@@ -100,18 +103,6 @@ def main():
     ''''''
 
     # controller.export_intensity_to_json('abs_applied')
-
-    # market.analyze_price_covariances()
-
-    # plotter.plot_price_prediction()
-
-    # simulator.Simulate_mpc()
-    # simulator.solve_mpc()
-    # simulator.simulate_random_activation(controller, 20)
-    # plotter.save_mpc_plots()
-
-    # plotter.plot_random_activations(30)
-
 
     # target_file = config.mfrr_CM_data_path + 'CM_data_NO_DK_SE_FI.csv'
     # fetch_CM_data_nucs(target_file, "01-10-2024", "02-10-2024")

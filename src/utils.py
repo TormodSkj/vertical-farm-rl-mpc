@@ -193,27 +193,30 @@ def conditional_expectation(y, means, cov_matrix):
     """
     y = np.array(y)
 
-    
+    epsilon = 1e-6
     # cov_spot_others = np.array(price_covs[0][1,1], price_covs[1][1,1])
 
+    Pxx         = cov_matrix[1,1]
     Pxy         = cov_matrix[0,1]
-    Pyy         = cov_matrix[0,0]
+    Pyy         = max(cov_matrix[0,0], epsilon)
 
     mean_y   = means[0]
     mean_x   = means[1]
 
     conditional_mean = np.repeat(mean_x, y.size) + (Pxy / Pyy) * (y - mean_y)
-    
-    return np.array([conditional_mean])
+    conditional_covariance = Pxx - Pxy / Pyy * Pxy
 
-def conditional_covariance(cov_matrix):
-    
-    Pxx = cov_matrix[1,1]
-    Pxy = cov_matrix[0,1]
-    Pyy = cov_matrix[0,0]
+    return np.array([conditional_mean]), conditional_covariance
 
-    cond_cov = Pxx - Pxy /Pyy* Pxy    
-    return cond_cov
+# def conditional_covariance(cov_matrix):
+#     epsilon = 1e-6
+    
+#     Pxx = cov_matrix[1,1]
+#     Pxy = cov_matrix[0,1]
+#     Pyy = max(cov_matrix[0,0], epsilon)
+
+#     cond_cov = Pxx - Pxy /Pyy* Pxy    
+#     return cond_cov
 
 
 
