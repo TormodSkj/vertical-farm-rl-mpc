@@ -637,8 +637,8 @@ class Plotter():
         config = self.config
         controller = self.controller
 
-        if run_id is None:
-            if self.find_existing_plot(plot_name, self.common_dependencies): return
+        # if run_id is None:
+        #     if self.find_existing_plot(plot_name, self.common_dependencies): return
 
         fig = plt.figure(figsize=self.aspect_ratio)
         
@@ -686,8 +686,8 @@ class Plotter():
         ######################################################
         #                   LIGHT SCHEDULE
         
-        if run_id is None:
-            if self.find_existing_plot(plot_name, self.common_dependencies): return
+        # if run_id is None:
+        #     if self.find_existing_plot(plot_name, self.common_dependencies): return
 
         controller  = self.controller
         config      = self.config
@@ -724,8 +724,8 @@ class Plotter():
         ######################################################
         #          DAILY LIGHT INTEGRALS OVER TIME
 
-        if run_id is None:
-            if self.find_existing_plot(plot_name, self.common_dependencies): return
+        # if run_id is None:
+        #     if self.find_existing_plot(plot_name, self.common_dependencies): return
 
         controller  = self.controller
         config      = self.config

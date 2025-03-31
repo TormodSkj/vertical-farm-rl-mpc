@@ -79,7 +79,6 @@ class Controller():
         self.T                  = self.controller_settings['SIMULATION_LENGTH'] 
         self.N                  = self.controller_settings['SIM_N_TIMESTEPS'] 
         self.dt                 = self.controller_settings['SIM_TIMEDELTA'] 
-        self.discretization     = self.controller_settings['DISCRETIZATION']
 
         self.search_cache       = self.controller_settings['SEARCH_SIM_CACHE']
         self.import_file        = self.controller_settings['IMPORT_FILE']
@@ -124,12 +123,7 @@ class Controller():
             self.A_down.append(0)
 
 
-        if  str(self.discretization).lower() == 'fe':
-            self.F = self.model.casadi_function_fe(self.dt)
-        elif str(self.discretization).lower() == 'rk4':
-            self.F = self.model.casadi_function_rk4(self.dt)
-        else:
-            assert False, "Invalid discretization method"
+        self.F = self.model.casadi_function(self.dt)
 
         # Set initial state
         self.x_init = self.model.x_init
@@ -1300,6 +1294,12 @@ class Controller():
         g_eq, g_ineq = self.model.get_bidding_constraints(g_eq, g_ineq, N, nom_U, CM_B_volumes)
         g_eq, g_ineq = self.model.get_bidding_constraints(g_eq, g_ineq, N, nom_U, AM_B_volumes, B_volumes_lower_bound=CM_B_volumes)
         
+        # Enforce hourly bid volumes in capacity market
+        for i in range(int(N/4)):
+            for j in range(3):
+                g_eq.append(CM_B_volumes[0, i+j] - CM_B_volumes[0, i+j+1])
+                g_eq.append(CM_B_volumes[1, i+j] - CM_B_volumes[1, i+j+1])
+
         # format constraints
         n_eq    = ca.vertcat(*g_eq).size()[0]
         n_ineq  = ca.vertcat(*g_ineq).size()[0]

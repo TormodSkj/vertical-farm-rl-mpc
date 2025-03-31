@@ -30,6 +30,9 @@ class PlantModel:
         self.Final_fw_sht   = self.model_settings['TARGET_FRESHWEIGHT'] # Target weight per plant
         self.x_init         = self.model_settings['INIT_STATE']         # Initial dry weights per m^2
         
+        self.discretization     = self.model_settings['DISCRETIZATION']
+
+        
         # Growth constraints
         self.PHOTOPERIOD    = self.model_settings['PHOTOPERIOD']        # Hours of light in a day
         self.LIGHT_INTY     = self.model_settings['LIGHT_INTENSITY']    # Light intensity for the photoactive hours
@@ -150,7 +153,20 @@ class PlantModel:
 
         return ca.vertcat(x_sdw_dot, x_nsdw_dot, x_LI_dot)
     
-    def casadi_function_rk4(self, ts=SECONDS_PER_QUARTER_HOUR):
+
+    def casadi_function(self, discretization=None, dt=SECONDS_PER_QUARTER_HOUR):
+        if discretization is None: discretization = self.discretization
+
+        if  str(self.discretization).lower() == 'fe':
+            F = self.casadi_function_fe(dt)
+        elif str(self.discretization).lower() == 'rk':
+            F = self.casadi_function_rk(dt)
+        else:
+            assert False, "Invalid discretization method"
+
+        return F
+    
+    def casadi_function_rk(self, dt=SECONDS_PER_QUARTER_HOUR):
         '''Repackages the system equations as a casadi function using Runge-Kutta method'''
 
         states = ca.MX.sym('X', self.nx)
@@ -163,14 +179,14 @@ class PlantModel:
             'p': controls,
             'ode': f(states,controls)
         }
-        intg = ca.integrator('intg', 'rk', ode, 0, ts, intg_options)
+        intg = ca.integrator('intg', 'rk', ode, 0, dt, intg_options)
         res = intg(x0=states, p=controls)
         x_next = res['xf']
         F = ca.Function('F', [states, controls], [x_next], ['x', 'u_control'], ['x_next'])
 
         return F
     
-    def casadi_function_fe(self, ts=SECONDS_PER_QUARTER_HOUR):
+    def casadi_function_fe(self, dt=SECONDS_PER_QUARTER_HOUR):
         '''Repackages the system equations as a casadi function using forward euler method'''
 
         states = ca.MX.sym('X', self.nx)
@@ -178,7 +194,7 @@ class PlantModel:
         state_time_derivatives = self.derivative(states, controls)
         f = ca.Function('f', [states, controls], [state_time_derivatives], ['x', 'u'], ['ode'])
         
-        x_next = states + ts*f(states, controls)
+        x_next = states + dt*f(states, controls)
         F = ca.Function('F', [states, controls], [x_next], ['x', 'u_control'], ['x_next'])
 
         return F
@@ -341,7 +357,7 @@ class PlantModel:
 
         N = controller.N
         dt = controller.dt
-        F = self.casadi_function_fe(ts=dt)
+        F = self.casadi_function(dt=dt)
         slack_freshweight = Eps[0]
         slack_max_DLI = Eps[1]
         slack_min_DLI = Eps[2]
@@ -384,7 +400,7 @@ class PlantModel:
         slack_min_DLI = Eps[2]
         U = U.reshape((1,-1))
 
-        F = self.casadi_function_fe(ts=dt)
+        F = self.casadi_function(dt=dt)
 
         # Define the dynamic and control constraints
         for k in range(0,N):

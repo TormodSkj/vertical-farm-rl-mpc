@@ -9,20 +9,20 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption
 
-SIM_NAME            = "CM_opt_SE1"
+SIM_NAME            = "sanity_check"
 SIMULATION_LENGTH   = 20
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
 SIMULATION_DATE     = '2024-10-01'
 BIDDING_ZONE        = 'SE1'
 OPTIMISTIC          = 1
-SEARCH_CACHE        = 1
-SEARCH_PLOT_CACHE   = 1
+SEARCH_CACHE        = 0
+SEARCH_PLOT_CACHE   = 0
 
 MPC_TIMEHORIZON     = 1
 MPC_STEPLENGTH      = 0.25
 
-DISCRETIZATION      = 'rk4'
+DISCRETIZATION      = 'fe'
 
 def main():
 
@@ -32,10 +32,10 @@ def main():
     ''' CREATING OBJECTS '''
     settings = Settings('general', SIMULATION_LENGTH = SIMULATION_LENGTH)
     settings.update_setting(SIM_NAME = SIM_NAME)
-    settings.add_setting('controller', SEARCH_SIM_CACHE = SEARCH_CACHE, DISCRETIZATION = DISCRETIZATION)
+    settings.add_setting('controller', SEARCH_SIM_CACHE = SEARCH_CACHE)
     settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH)
     settings.add_setting('market', SIMULATION_DATE = SIMULATION_DATE, OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE)
-    settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT, DLI_RESOLUTION = 2)
+    settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT, DLI_RESOLUTION = 2, DISCRETIZATION = DISCRETIZATION)
     settings.add_setting('plotter', SEARCH_PLOT_CACHE = SEARCH_PLOT_CACHE)
 
     config      = Config(settings)
@@ -75,7 +75,7 @@ def main():
     # controller.generate_true_optimum_AM('optimal_AM', 'optimal_CM')
     # simulator.apply_mfrr_clearing_prices('abs_applied', 'abs_opt')
 
-    controller.generate_true_optimum_CM_and_AM('co_opt')
+    # controller.generate_true_optimum_CM_and_AM('co_opt')
 
     # controller.optimize_mfrr('mfrr_fixed', 'fixed')
     # simulator.apply_mfrr_clearing_prices('mfrr_fixed_applied', 'mfrr_fixed')

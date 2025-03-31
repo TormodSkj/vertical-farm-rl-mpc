@@ -61,7 +61,7 @@ class Simulator():
         N = controller.N
         dt = controller.dt
         seed = None     # Set to None for new random outcome each time
-        F = controller.model.casadi_function_fe()
+        F = controller.model.casadi_function()
 
         
         assert refrun_id in controller.optimization_results['runs'], 'Unable to perform random bid activations due to lack of bidding data'

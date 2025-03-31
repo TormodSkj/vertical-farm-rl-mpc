@@ -47,7 +47,8 @@ class Settings():
                          DLI_RESOLUTION     = 2,
                          GROWTH_AREA        = 15000,
                          PPFD_MAX           = 230,
-                         LED_EFFICIENCY     = 0.8
+                         LED_EFFICIENCY     = 0.8,
+                         DISCRETIZATION     = 'fe'
                          )
 
 
@@ -56,8 +57,7 @@ class Settings():
                          SEARCH_SIM_CACHE   = True,
                          WARM_START         = True,
                          CALCULATE_FW       = True,
-                         IMPORT_FILE        = 'scaled_optimal_intensities.json',
-                         DISCRETIZATION     = 'fe'
+                         IMPORT_FILE        = 'scaled_optimal_intensities.json'
                          )
                         
         
