@@ -122,7 +122,7 @@ class Simulator():
         spot_prices = controller.spot_prices
         F = controller.F
 
-        clearing_prices_up, clearing_prices_down = market.get_AM_clearing_prices(date)
+        clearing_prices_up, clearing_prices_down = market.AM.get_clearing_prices(date)
         assert len(clearing_prices_up)==N and len(clearing_prices_down)==N, f'Clearing price arrays have inconsistent lengths with simulation duration. N = {self.N}, len(clearing prices up) = {len(clearing_prices_up)}, len(clearing prices down) = {len(clearing_prices_down)}'
         
         activation_demands_up, activation_demands_down = market.mfrr_demands_up, market.mfrr_demands_down

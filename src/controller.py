@@ -349,7 +349,7 @@ class Controller():
         market = self.market
         F = self.F
 
-        clearing_prices_up, clearing_prices_down = market.get_AM_clearing_prices(self.market.date)
+        clearing_prices_up, clearing_prices_down = market.AM.get_clearing_prices(self.market.date)
         assert len(clearing_prices_up)==N and len(clearing_prices_down)==N, f'Clearing price arrays have inconsistent lengths with simulation duration. N = {self.N}, len(clearing prices up) = {len(clearing_prices_up)}, len(clearing prices down) = {len(clearing_prices_down)}'
         
         activation_demands_up, activation_demands_down = market.mfrr_demands_up, market.mfrr_demands_down
@@ -964,8 +964,8 @@ class Controller():
         
         if not self.surpress_output: print(f'{run_id} | Generating theoretically optimal Capacity Market bids')
         
-        clearing_prices_up, clearing_prices_down = self.market.get_CM_clearing_prices()
-        reservations_up, reservations_down       = self.market.get_CM_activations()
+        clearing_prices_up, clearing_prices_down = self.market.CM.get_clearing_prices()
+        reservations_up, reservations_down       = self.market.CM.get_activations()
         reservations = np.vstack((reservations_up,
                                   reservations_down))
 
@@ -1107,8 +1107,8 @@ class Controller():
         assert refrun_id in self.optimization_results['runs'], f"{run_id} | Error: {refrun_id} has not been generated"   
         refrun = self.optimization_results['runs'][refrun_id]
 
-        activations_up, activations_down = self.market.get_AM_activations()
-        clearing_prices_up, clearing_prices_down = self.market.get_AM_clearing_prices()
+        activations_up, activations_down = self.market.AM.get_activations()
+        clearing_prices_up, clearing_prices_down = self.market.AM.get_clearing_prices()
         U_nom = refrun['timeseries']['u']
 
         N = self.N
@@ -1226,13 +1226,13 @@ class Controller():
         
         if not self.surpress_output: print(f'{run_id} | Generating theoretically optimal Capacity Market bids')
         
-        CM_clearing_prices_up, CM_clearing_prices_down  = self.market.get_CM_clearing_prices()
-        CM_activations_up, CM_activations_down          = self.market.get_CM_activations()
+        CM_clearing_prices_up, CM_clearing_prices_down  = self.market.CM.get_clearing_prices()
+        CM_activations_up, CM_activations_down          = self.market.CM.get_activations()
         CM_activations = np.vstack((CM_activations_up,
                                     CM_activations_down))
         
-        AM_clearing_prices_up, AM_clearing_prices_down  = self.market.get_AM_clearing_prices()
-        AM_activations_up,     AM_activations_down      = self.market.get_AM_activations()
+        AM_clearing_prices_up, AM_clearing_prices_down  = self.market.AM.get_clearing_prices()
+        AM_activations_up,     AM_activations_down      = self.market.AM.get_activations()
         AM_activations = np.vstack((AM_activations_up,
                                     AM_activations_down))
 
@@ -1290,8 +1290,8 @@ class Controller():
                  - (spot_prices[k] + AM_clearing_prices_up[k])   * AM_bid_volumes_up[k]   * AM_activations_up[k]
 
         J = L/4 + self.model.terminal_cost(self, nom_X, nom_U, nom_Eps) \
+                + self.model.terminal_cost(self, CM_X, CM_U, CM_Eps) \
                 + self.model.terminal_cost(self, AM_X, AM_U, AM_Eps)
-                # + self.model.terminal_cost(self, CM_X, CM_U, CM_Eps) \
 
         g_eq, g_ineq = [], []
         g_eq, g_ineq = self.model.get_process_constraints(self, g_eq, g_ineq, nom_X, nom_U, nom_Eps)
@@ -1460,7 +1460,7 @@ class Controller():
                 # ['Mean Expected clearing price', np.mean(self.market.expected_AM_prices_up), np.mean(self.market.expected_AM_prices_down)],
                 ['Mean Recorded clearing price', np.mean(balancing_market.clearing_prices_up), np.mean(balancing_market.clearing_prices_down)],
                 ['Mean Recorded activated clearing price', np.mean(balancing_market.clearing_prices_up[np.where(balancing_market.activations_up >0)]), np.mean(balancing_market.clearing_prices_down[np.where(balancing_market.activations_down >0)])],
-                # ['Mean Expected / Recorded clearing price delta',  np.mean(self.market.expected_AM_prices_up - self.market.get_AM_clearing_prices()[0]), np.mean(self.market.expected_AM_prices_down - self.market.get_AM_clearing_prices()[1])],
+                # ['Mean Expected / Recorded clearing price delta',  np.mean(self.market.expected_AM_prices_up - balancing_market.get_clearing_prices()[0]), np.mean(self.market.expected_AM_prices_down - balancing_market.get_clearing_prices()[1])],
                 # ['Clearing price standard deviation', self.market.sigma_AM_up, self.market.sigma_AM_down], 
                 ['Expected activation occurence rate', balancing_market.demand_prob_up(), balancing_market.demand_prob_down()],
                 ['Recorded activation occurence rate', np.mean(balancing_market.activations_up), np.mean(balancing_market.activations_down)]

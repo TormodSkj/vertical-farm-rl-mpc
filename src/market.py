@@ -70,9 +70,9 @@ class Market:
 
         self.import_market_data()
 
-        self.CM = BalancingMarket('Capacity Market',   self.bidding_zone, self.CM_data_working_set)
-        self.AM = BalancingMarket('Activation Market', self.bidding_zone, self.AM_data_working_set)
-        self.balancing_markets['Capacity Market'] = self.CM
+        self.CM = BalancingMarket(settings, 'Capacity Market', self.CM_data_working_set)
+        self.AM = BalancingMarket(settings, 'Activation Market', self.AM_data_working_set)
+        self.balancing_markets['Capacity Market']   = self.CM
         self.balancing_markets['Activation Market'] = self.AM
 
         self.spot_prices = self.get_spotprice() 
@@ -106,7 +106,7 @@ class Market:
             }
             
         self.mfrr_activation_data_analysis()
-        self.mfrr_demands_up, self.mfrr_demands_down = self.get_AM_activations(self.date)
+        self.mfrr_demands_up, self.mfrr_demands_down = self.AM.get_activations(self.date)
         self.analyze_market_potency(T = self.T)
 
 
@@ -226,8 +226,6 @@ class Market:
 
         return activation_demands
 
-    
-
     def mfrr_activation_data_analysis(self):
         
         activation_df = self.AM_data_working_set
@@ -272,117 +270,6 @@ class Market:
         spot_prices = np.repeat(spot_prices_hours, QUARTER_HOURS_PER_HOUR)
         return spot_prices
     
-    # TODO route through balancingmarket objects
-    def get_AM_clearing_prices(self, date=None, n_days = None, zone = None):
-
-        if date     == None: date   = self.date
-        if n_days   == None: n_days = self.T
-        if zone     == None: zone   = self.bidding_zone
-
-        start_date = pd.to_datetime(date, format='%Y-%m-%d')
-        end_date = start_date + pd.DateOffset(n_days)
-
-        clearing_prices_df = self.AM_data_full_set.copy()
-
-        # Remove dates before simdate
-        clearing_prices_df = clearing_prices_df[
-            (clearing_prices_df['Start Time']   >= start_date)    &
-            (clearing_prices_df['Start Time']   <  end_date) 
-            ]
-        
-        clearing_prices_df.fillna(clearing_prices_df.mean(), inplace=True)
-
-        clearing_prices_up = np.array(clearing_prices_df[f'{zone} Up Price']).repeat(QUARTER_HOURS_PER_HOUR)
-        clearing_prices_down = np.array(clearing_prices_df[f'{zone} Down Price']).repeat(QUARTER_HOURS_PER_HOUR)
-
-        return clearing_prices_up, clearing_prices_down
-    
-    # TODO route through balancingmarket objects
-    def get_CM_clearing_prices(self, date=None, n_days = None, zone = None):
-
-        if date     == None: date   = self.date
-        if n_days   == None: n_days = self.T
-        if zone     == None: zone   = self.bidding_zone
-
-        start_date = pd.to_datetime(date, format='%Y-%m-%d')
-        end_date = start_date + pd.DateOffset(n_days)
-
-        clearing_prices_df = self.CM_data_full_set.copy()
-
-        # Remove dates before simdate
-        clearing_prices_df = clearing_prices_df[
-            (clearing_prices_df['Start Time']   >= start_date)    &
-            (clearing_prices_df['Start Time']   <  end_date) 
-            ]
-        
-        clearing_prices_df.fillna(self.CM_data_full_set.mean(), inplace=True)
-
-        clearing_prices_up = np.array(clearing_prices_df[f'{zone} Up Price']).repeat(QUARTER_HOURS_PER_HOUR)
-        clearing_prices_down = np.array(clearing_prices_df[f'{zone} Down Price']).repeat(QUARTER_HOURS_PER_HOUR)
-
-        return clearing_prices_up, clearing_prices_down
-    
-    # TODO route through balancingmarket objects
-    def get_AM_activations(self, date = None, n_days = None, zone = None):
-        '''
-        Returns numpy arrays of length N with balancing demands during each quarter hour from the start time.
-        For every MTU, a 1 indicates that an activation was made and a 0 indicates that no activation was made.
-        Start time is always assumed at 00:00 at the given start date.
-        '''
-
-        if date     == None: date   = self.date
-        if n_days   == None: n_days = self.T
-        if zone     == None: zone   = self.bidding_zone
-
-        start_date = pd.to_datetime(date, format='%Y-%m-%d')
-        end_date = start_date + pd.DateOffset(n_days)
-
-        activations_df = self.AM_data_full_set
-
-        # Remove dates before simdate
-        activations_df = activations_df[
-            (activations_df['Start Time']   >= start_date)    &
-            (activations_df['Start Time']   <  end_date) 
-            ].fillna(0)
-
-        demands_up = np.array(activations_df[zone + ' Activated Up Volume']).repeat(QUARTER_HOURS_PER_HOUR)
-        demands_dn = np.array(activations_df[zone + ' Activated Down Volume']).repeat(QUARTER_HOURS_PER_HOUR)
-
-        return np.where(demands_up > 0, 1, 0), np.where(demands_dn > 0, 1, 0)
-    
-    # TODO route through balancingmarket objects
-    def get_CM_activations(self, date = None, n_days = None, zone = None):
-        '''
-        Returns numpy arrays of length N with Capacity market reservations during each quarter hour from the start time.
-        For every MTU, a 1 indicates that a reservation was made and a 0 indicates that no reservation was made.
-        Start time is always assumed at 00:00 at the given start date.
-        '''
-
-        if date     == None: date   = self.date
-        if n_days   == None: n_days = self.T
-        if zone     == None: zone   = self.bidding_zone
-
-        start_date = pd.to_datetime(date, format='%Y-%m-%d')
-        end_date = start_date + pd.DateOffset(n_days)
-
-        reservations_df = self.CM_data_full_set
-
-        # Remove dates before simdate
-        reservations_df = reservations_df[
-            (reservations_df['Start Time']   >= start_date)    &
-            (reservations_df['Start Time']   <  end_date) 
-            ].fillna(0)
-
-        reservations_up     = np.array(reservations_df[f'{zone} Up Volume procured']).repeat(QUARTER_HOURS_PER_HOUR)
-        reservations_down   = np.array(reservations_df[f'{zone} Down Volume procured']).repeat(QUARTER_HOURS_PER_HOUR)
-
-        binary_reservations_up   = np.where(np.logical_and(reservations_up > 0,   reservations_up > reservations_down), 1, 0)
-        binary_reservations_down = np.where(np.logical_and(reservations_down > 0, reservations_up < reservations_down), 1, 0)
-        # binary_reservations_down = np.where(reservations_down > 0, 1, 0)
-
-        return binary_reservations_up, binary_reservations_down
-    
-
     def analyze_market_potency(self, T=20):
         '''
         Comb through clearing prices and activations to find the timespan of length `T`
@@ -465,7 +352,7 @@ class Market:
         if 'bidding result' not in run:
             return 0
         
-        CM_clearing_prices_up, CM_clearing_prices_down = self.get_CM_clearing_prices()
+        CM_clearing_prices_up, CM_clearing_prices_down = self.CM.get_clearing_prices()
 
         bid_volumes_up      = run['timeseries']["P_up"]
         bid_volumes_down    = run['timeseries']["P_dn"]
@@ -486,13 +373,7 @@ class Market:
 
 
         # spot_prices = 
-        
-
-
-        # AM_clearing_prices_up, AM_clearing_prices_down = self.get_AM_clearing_prices()
-        # CM_clearing_prices_up, CM_clearing_prices_down = self.get_CM_clearing_prices()
-        # spot_prices = self.spot_prices.reshape((1,-1))[:,0::4]
-        
+                
         AM_prices_labels_up     = [col for col in price_data if 'AM' in col and 'Price' in col and 'Up' in col]
         AM_prices_labels_down   = [col for col in price_data if 'AM' in col and 'Price' in col and 'Down' in col]
         CM_prices_labels_up     = [col for col in price_data if 'CM' in col and 'Price' in col and 'Up' in col]
@@ -602,12 +483,12 @@ class Market:
 
                 kwargs = {'date': start_date, 'n_days': N, 'zone': zone}
                 try:
-                    AM_clearing_prices_up_full, AM_clearing_prices_down_full        = self.get_AM_clearing_prices(**kwargs)
-                    AM_activation_demands_up_full, AM_activation_demands_down_full  = self.get_AM_activations(**kwargs)
+                    AM_clearing_prices_up_full, AM_clearing_prices_down_full        = self.AM.get_clearing_prices(**kwargs)
+                    AM_activation_demands_up_full, AM_activation_demands_down_full  = self.AM.get_activations(**kwargs)
                     spot_prices_full                                                = self.get_spotprice(**kwargs)
 
-                    CM_clearing_prices_up_full, CM_clearing_prices_down_full        = self.get_CM_clearing_prices(**kwargs)
-                    CM_reservations_up_full, CM_reservations_down_full              = self.get_CM_activations(**kwargs)
+                    CM_clearing_prices_up_full, CM_clearing_prices_down_full        = self.CM.get_clearing_prices(**kwargs)
+                    CM_reservations_up_full, CM_reservations_down_full              = self.CM.get_activations(**kwargs)
                 except:
                     pbar.update(1)
                     continue
@@ -698,10 +579,11 @@ class Market:
                     total_earnings_AM               += AM_earnings_up + AM_earnings_down
                     total_earnings_CM               += CM_earnings_up + CM_earnings_down
                     total_electricity_costs_AM      += energy_cost
-                    total_electricity_costs_fixed   += np.sum(data["spot"][:16 * 4])/4
+                    # total_electricity_costs_fixed   += np.sum(data["spot"][:16 * 4])/4
                     total_electricity_costs_spot    += np.sum(np.sort(data["spot"])[:16 * 4])/4
 
-                    nominal_costs_df.at[k, zone]   = np.sum(data["spot"][:16 * 4])/4
+                    # nominal_costs_df.at[k, zone]   = np.sum(data["spot"][:16 * 4])/4
+                    nominal_costs_df.at[k, zone]   = np.sum(np.sort(data["spot"])[:16 * 4])/4
                     mfrr_costs_df.at[k, zone]      = energy_cost - (AM_earnings_up + AM_earnings_down + CM_earnings_up + CM_earnings_down)
 
 
@@ -711,7 +593,8 @@ class Market:
                 results[zone]['AM_earnings'] = total_earnings_AM
                 results[zone]['CM_earnings'] = total_earnings_CM
                 results[zone]['mFRR_earnings'] = total_earnings_mFRR
-                results[zone]['nom_cost'] = total_electricity_costs_fixed
+                # results[zone]['nom_cost'] = total_electricity_costs_fixed
+                results[zone]['nom_cost'] = total_electricity_costs_spot
                 results[zone]['new_cost'] = total_electricity_costs_AM
                 results[zone]['mFRR_cost'] = total_electricity_costs_AM - total_earnings_mFRR
                 results[zone]['spot_cost'] = total_electricity_costs_spot
@@ -720,12 +603,13 @@ class Market:
                 CM_earnings_perc    = 100 * total_earnings_CM / (total_earnings_AM + total_earnings_CM)
                 mFRR_cost           = total_electricity_costs_AM - total_earnings_mFRR
 
-                spot_reduction = (total_electricity_costs_fixed - total_electricity_costs_spot)/total_electricity_costs_fixed * 100
+                # spot_reduction = (total_electricity_costs_fixed - total_electricity_costs_spot)/total_electricity_costs_fixed * 100
 
-                cost_reduction = (total_electricity_costs_fixed - mFRR_cost)/total_electricity_costs_fixed * 100
+                # cost_reduction = (total_electricity_costs_fixed - mFRR_cost)/total_electricity_costs_fixed * 100
+                cost_reduction = (total_electricity_costs_spot - mFRR_cost)/total_electricity_costs_spot * 100
                 results[zone]['cost_reduction'] = cost_reduction
-                results[zone]['spot_reduction'] = spot_reduction
-                results[zone]['mfrr_reduction'] = cost_reduction - spot_reduction
+                # results[zone]['spot_reduction'] = spot_reduction
+                # results[zone]['mfrr_reduction'] = cost_reduction - spot_reduction
                 results[zone]['message'] = f"Net cost reduction in percentage for {zone}: \t{cost_reduction:.2f}, AM: {AM_earnings_perc:.2f}, CM: {CM_earnings_perc:.2f}, \tNominal cost: {total_electricity_costs_fixed:.2f}, mFRR cost: {mFRR_cost:.2f}"
                 pbar.update(1)
 
@@ -743,9 +627,9 @@ class Market:
         zones = list(results.keys())
         # fixed_cost      = np.array([results[zone]['nom_cost'] for zone in zones])  
         # spot_cost       = np.array([results[zone]['spot_cost'] for zone in zones])
-        spot_reduction = np.array([results[zone]['spot_reduction'] for zone in zones])
-        mfrr_reduction = np.array([results[zone]['mfrr_reduction'] for zone in zones])
-        # cost_reduction = np.array([results[zone]['cost_reduction'] for zone in zones])  # Total cost reduction per zone
+        # spot_reduction = np.array([results[zone]['spot_reduction'] for zone in zones])
+        # mfrr_reduction = np.array([results[zone]['mfrr_reduction'] for zone in zones])
+        cost_reduction = np.array([results[zone]['cost_reduction'] for zone in zones])  # Total cost reduction per zone
         AM_earnings = np.array([results[zone]['AM_earnings'] for zone in zones])  # Absolute AM earnings
         CM_earnings = np.array([results[zone]['CM_earnings'] for zone in zones])  # Absolute CM earnings
 
@@ -755,17 +639,20 @@ class Market:
         CM_earnings_perc = CM_earnings / total_earnings  # Fraction of total earnings from CM
 
         # Compute actual bar heights for stacked representation
-        AM_reduction = mfrr_reduction * AM_earnings_perc
-        CM_reduction = mfrr_reduction * CM_earnings_perc
+        # AM_reduction = mfrr_reduction * AM_earnings_perc
+        # CM_reduction = mfrr_reduction * CM_earnings_perc
+        AM_reduction = cost_reduction * AM_earnings_perc
+        CM_reduction = cost_reduction * CM_earnings_perc
 
         ####################################################
                 #   FRACTIONAL COST REDUCTION BAR CHART. Zone-wise
 
         fig, ax = plt.subplots(figsize=(3, 3.5))  # Adjusted for a narrow format
 
-        ax.barh(zones,  spot_reduction, color='lightgrey', label="Spot Market")
-        ax.barh(zones, CM_reduction, left=spot_reduction , color=colors['CM'], label="Capacity Market")
-        ax.barh(zones, AM_reduction, left=CM_reduction+spot_reduction, color=colors['AM'], label="Activation Market")
+        # ax.barh(zones,  spot_reduction, color='lightgrey', label="Spot Market")
+        ax.axvline(x=100, color='black', linestyle='dotted', linewidth=1, label="Break-even Point")
+        ax.barh(zones, CM_reduction, color=colors['CM'], label="Capacity Market")
+        ax.barh(zones, AM_reduction, left=CM_reduction, color=colors['AM'], label="Activation Market")
 
         # Labels and Title
         ax.set_ylabel("Bidding Zones")

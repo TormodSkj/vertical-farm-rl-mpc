@@ -9,15 +9,15 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption
 
-SIM_NAME            = "CM_opt_SE1_greedy"
+SIM_NAME            = "CM_opt_SE1"
 SIMULATION_LENGTH   = 20
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
 SIMULATION_DATE     = '2024-10-01'
 BIDDING_ZONE        = 'SE1'
 OPTIMISTIC          = 1
-SEARCH_CACHE        = 0
-SEARCH_PLOT_CACHE   = 0
+SEARCH_CACHE        = 1
+SEARCH_PLOT_CACHE   = 1
 
 MPC_TIMEHORIZON     = 1
 MPC_STEPLENGTH      = 0.25

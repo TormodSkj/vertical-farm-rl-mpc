@@ -280,8 +280,8 @@ class PlantModel:
         spot_prices_integral = np.array([sum(spot_prices[:k]) for k in range(len(spot_prices))])
         spot_prices_avg_curve = np.linspace(0, spot_prices_integral[-1], N)
         
-        clearing_prices_up, clearing_prices_down = market.get_AM_clearing_prices()
-        activations_up, activations_down = market.get_AM_activations()
+        clearing_prices_up, clearing_prices_down = market.AM.get_clearing_prices()
+        activations_up, activations_down = market.AM.get_activations()
         market_potencies_up         = np.multiply(clearing_prices_up, activations_up)
         market_potencies_down       = np.multiply(clearing_prices_down, activations_down)
         market_potencies_net      = market_potencies_down - market_potencies_up

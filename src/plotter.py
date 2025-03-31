@@ -1578,7 +1578,7 @@ class Plotter():
         ax1.set_xticklabels(header, rotation=15)
         ax1.set_ylabel("Amount (€)")
         ax1.legend(loc='lower left')
-        ax1.set_title("Financial Overview of Optimization Methods")
+        ax1.set_title(f"Financial Overview of Optimization Methods (Date: {market.date}, Bidding Zone: {market.bidding_zone}) ")
 
         # Table
         metrics_table = [[''] + header] + get_metrics_table_raw(controller.optimization_results['runs'])

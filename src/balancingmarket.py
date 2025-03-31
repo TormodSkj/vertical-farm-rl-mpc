@@ -5,11 +5,18 @@ import scipy as sp
 from globals import *
 from utils import *
 from estimator import Estimator
+from market_utils import *
+from config import Config
+from settings import Settings
 
 class BalancingMarket:
     '''
 
     '''
+
+    market_data_working_set: pd.DataFrame
+    market_data_full_set:    pd.DataFrame
+
     market_type:            str
     clearing_prices_up:     np.array
     clearing_prices_down:   np.array
@@ -21,19 +28,28 @@ class BalancingMarket:
     price_stats:        dict
     activation_stats:   dict
 
-    def __init__(self, market_type, bidding_zone, market_data):
+    def __init__(self, settings: Settings, market_type, market_data):
         
-        self.market_type    = market_type
-        self.bidding_zone   = bidding_zone
-        # self.date           = date
-        # self.T              = T
-        self.market_data    = self.standardize_market_data(market_data)
+        self.settings       = settings
 
-        self.spot_prices             = np.array(self.market_data[f'{self.bidding_zone} Spot Price'])
-        self.clearing_prices_up      = np.array(self.market_data[f'{self.bidding_zone} Up Price'])
-        self.clearing_prices_down    = np.array(self.market_data[f'{self.bidding_zone} Down Price'])
-        self.volume_up               = np.array(self.market_data[f'{self.bidding_zone} Up Volume'])
-        self.volume_down             = np.array(self.market_data[f'{self.bidding_zone} Down Volume'])
+        self.market_settings = settings.get_settings_group('general', 'market')
+
+        self.T                  = self.market_settings['SIMULATION_LENGTH']
+        self.bidding_zone       = self.market_settings['BIDDING_ZONE']
+        self.date               = self.market_settings['SIMULATION_DATE']
+        self.optimistic         = self.market_settings['OPTIMISTIC']
+        self.N = self.T * QUARTER_HOURS_PER_DAY
+
+        self.market_type    = market_type
+
+        self.market_data_full_set       = self.standardize_market_data(market_data)
+        self.market_data_working_set    = self.get_market_data()
+
+        self.spot_prices             = np.array(self.market_data_working_set[f'{self.bidding_zone} Spot Price'])
+        self.clearing_prices_up      = np.array(self.market_data_working_set[f'{self.bidding_zone} Up Price'])
+        self.clearing_prices_down    = np.array(self.market_data_working_set[f'{self.bidding_zone} Down Price'])
+        self.volume_up               = np.array(self.market_data_working_set[f'{self.bidding_zone} Up Volume'])
+        self.volume_down             = np.array(self.market_data_working_set[f'{self.bidding_zone} Down Volume'])
         self.activations_up          = np.where(np.logical_and(self.volume_up > 0,   self.volume_up >= self.volume_down), 1, 0)
         self.activations_down        = np.where(np.logical_and(self.volume_down > 0, self.volume_up < self.volume_down),  1, 0)
 
@@ -54,7 +70,7 @@ class BalancingMarket:
         basically cherrypicking the analysis for the planned usecase, which is to estimate good clearing prices.
         """
             
-        market_data   = self.market_data.copy()
+        market_data   = self.market_data_working_set.copy()
 
         price_statistics = {}
         activation_statistics = {}
@@ -128,13 +144,75 @@ class BalancingMarket:
         expected_activation_up = ca.horzcat(*expected_activation_up).reshape((1,-1))
                 
         return casadi_saturate(expected_activation_up, 0, 1)
+    
+
+    def get_clearing_prices(self, date=None, n_days = None, zone = None):
+        if zone     == None: zone   = self.bidding_zone
+
+        data = self.get_market_data(date=date, n_days=n_days, zone=zone, 
+                                       spot_prices=False, clearing_prices=True, volumes=False)
+        
+        return np.array(data[f'{zone} Up Price']), np.array(data[f'{zone} Down Price'])
+
+
+    def get_activations(self, date = None, n_days = None, zone = None):
+        '''
+        Returns numpy arrays of length N with Capacity market reservations during each quarter hour from the start time.
+        For every MTU, a 1 indicates that a reservation was made and a 0 indicates that no reservation was made.
+        Start time is always assumed at 00:00 at the given start date.
+        '''
+
+        if zone     == None: zone   = self.bidding_zone
+
+        data = self.get_market_data(date=date, n_days=n_days, zone=zone, 
+                                       spot_prices=False, clearing_prices=False, volumes=True)
+        
+        volumes_up, volumes_down = np.array(data[f'{zone} Up Volume']), np.array(data[f'{zone} Down Volume'])
+
+        activations_up   = np.where(np.logical_and(volumes_up     > 0, volumes_up > volumes_down), 1, 0)
+        activations_down = np.where(np.logical_and(volumes_down   > 0, volumes_up < volumes_down), 1, 0)
+
+        return activations_up, activations_down
 
 
     def perform_price_estimation(self):
         self.expected_prices_up, _   = conditional_expectation(self.spot_prices, self.price_stats[self.bidding_zone]['Up']['means'],    self.price_stats[self.bidding_zone]['Up']['cov'])
         self.expected_prices_down, _ = conditional_expectation(self.spot_prices, self.price_stats[self.bidding_zone]['Down']['means'],  self.price_stats[self.bidding_zone]['Down']['cov'])
 
-    
+
+    def get_market_data(self, date=None, n_days = None, zone = None, spot_prices=True, clearing_prices=True, volumes=True):
+        '''
+        Fetch a slice form the full data set containing specified data types.
+        
+        returns a dataframe containing fetched data. 
+        '''
+
+        if date     == None: date   = self.date
+        if n_days   == None: n_days = self.T
+        if zone     == None: zone   = self.bidding_zone
+
+        start_date = pd.to_datetime(date, format='%Y-%m-%d')
+        end_date = start_date + pd.DateOffset(n_days)
+
+        # Remove dates before simdate
+        market_data_full_set = self.market_data_full_set.copy()
+
+        market_data_working_set = market_data_full_set[
+            (market_data_full_set['Start Time']   >= start_date)    &
+            (market_data_full_set['Start Time']   <  end_date) 
+            ]
+        
+        keywords = []
+        if spot_prices:     keywords.append('spot')
+        if clearing_prices: keywords += ['up price', 'down price']
+        if volumes:         keywords.append('volume')
+        columns = ['Start Time'] + [col for col in market_data_working_set.columns if any([keyword in col.lower() for keyword in keywords])]
+
+        market_data_working_set = market_data_working_set[columns].copy()
+        market_data_working_set.fillna(market_data_working_set.mean(), inplace=True)
+
+        return market_data_working_set
+
     def standardize_market_data(self, raw_data):
         data = raw_data.copy()
         
