@@ -822,9 +822,8 @@ class Controller():
     
 
 
-    def store_run(self, run_id, dependencies, sol, x, u, A = None, B = None, 
-                  U_nom = None, refrun_id = 'None', balancing_market: BalancingMarket = None,
-                  plot_run = False):
+    def store_run(self, run_id, dependencies, sol, x, u, market_data: dict = {}, 
+                  U_nom = None, refrun_id = 'None', plot_run = False):
         '''
         Takes in run specifics and stores them as well as metrics in the `optimization_results` dictionary.
         If bids are specified, a balancingmarket must be given as well.
@@ -833,35 +832,36 @@ class Controller():
 
         run_id:
             - reference run: 
-            - attributes:
-                ...
-            - metrics:
-                ...
-            - bidding result:
-                ...
+            - Markets:
+                - [CM/AM]:
+                    - Bids:
+                        - [Up/Down]:
+                            - Volume:
+                            - Price:
+                    - Activations:
+                        - [Up/Down]:
             - timeseries:
-                ...
+                - t
+                - x
+                - u
+                - u_nom
             - dependencies:
             - hash:
 
         '''
 
-        assert not (B is not None and balancing_market is None), 'Must specify a balancing market'
+        # assert not (B is not None and balancing_market is None), 'Must specify a balancing market'
+        if U_nom is None: U_nom = np.zeros((1,self.N))
         
-
         timeseries_data = {
             't'     : self.t,
             'x'     : x,
-            'u'     : u
+            'u'     : u,
+            'u_nom' : U_nom
         }
-
-        if U_nom is not None:
-            timeseries_data['u_nom'] = U_nom
-
         
         f       = float(sol['f'])
         eps     = float(sol['eps'])
-
 
         metrics_data = {
             'elapsed_time'  : sol['elapsed_time'],
@@ -869,52 +869,45 @@ class Controller():
             'eps'           : eps
         }
         
+        metrics_data = self.model.get_metrics(metrics_data, self, run_id, x, u)
 
+        metrics_data['Costs'] = float(self.model.spotopt_obj_function(self.N, self.spot_prices, u))
+        total = metrics_data['Costs']
 
-        metrics_data = self.model.get_metrics(self, run_id, metrics_data, x, u, B)
+        for market_type in market_data:
 
-        run_data = {
-            'reference_run' : refrun_id,
-            'plot_run'      : plot_run,
-            'metrics'       : metrics_data
-            }
+            balancing_market = self.market.get_balancing_market(market_type)
 
-        metrics_data['Costs']       = float(self.model.spotopt_obj_function(self.N, self.spot_prices, u))
-
-        attributes = {
-            'Balancing_market'  : balancing_market.market_type if balancing_market else 'None',
-            'Bids'              : B is not None,
-            'Activations'       : A is not None
-        }
-        run_data['Attributes'] = attributes
-
-        if attributes['Bids']:
-            bid_volumes_up          = B[0,:].reshape(1,-1)
-            bid_volumes_down        = B[1,:].reshape(1,-1)
-            bid_prices_up           = B[2,:].reshape(1,-1)
-            bid_prices_down         = B[3,:].reshape(1,-1)
-
+            bid_volumes_up    = market_data[market_type]['Bids']['Up']['Volume'].reshape(1,-1)
+            bid_volumes_down  = market_data[market_type]['Bids']['Down']['Volume'].reshape(1,-1)
+            bid_prices_up     = market_data[market_type]['Bids']['Up']['Price'].reshape(1,-1)
+            bid_prices_down   = market_data[market_type]['Bids']['Down']['Volume'].reshape(1,-1)
             
-            if A is None:
-                A = np.vstack((balancing_market.activation_prob_up(self.spot_prices,    B[2,:]),
-                               balancing_market.activation_prob_down(self.spot_prices,  B[3,:])))
-            bid_activations_up      = A[0,:].reshape(1,-1)
-            bid_activations_down    = A[1,:].reshape(1,-1)
+            if  market_data[market_type]['Activations'] is None:
+                bid_activations_up   = balancing_market.activation_prob_up(self.spot_prices,   bid_prices_up)
+                bid_activations_down = balancing_market.activation_prob_down(self.spot_prices, bid_prices_down)
+            else:
+                bid_activations_up   =  market_data[market_type]['Activations']['Up'].reshape(1,-1)
+                bid_activations_down =  market_data[market_type]['Activations']['Down'].reshape(1,-1)
 
 
             clearing_prices_up      = balancing_market.clearing_prices_up
             clearing_prices_down    = balancing_market.clearing_prices_down
         
-            AM_earnings_total   = 1/4 * np.sum(np.multiply(clearing_prices_up,    np.where(bid_activations_up,   bid_volumes_up,   0))) \
-                                + 1/4 * np.sum(np.multiply(clearing_prices_down,  np.where(bid_activations_down, bid_volumes_down, 0)))
+            total_earnings   = 1/4 * np.sum(np.multiply(clearing_prices_up,    np.where(bid_activations_up,   bid_volumes_up,   0))) \
+                             + 1/4 * np.sum(np.multiply(clearing_prices_down,  np.where(bid_activations_down, bid_volumes_down, 0)))
             
-            metrics_data['Earnings']    = float(AM_earnings_total)
+            metrics_data[f'{market_type} Earnings'] = float(total_earnings)
 
+            #TODO REMOVE
             timeseries_data['P_up'] = bid_volumes_up
             timeseries_data['P_dn'] = bid_volumes_down
             timeseries_data['C_up'] = bid_prices_up
             timeseries_data['C_dn'] = bid_prices_down
-
+            
+            if market_data[market_type]['Activations'] is not None:
+                timeseries_data['A_up'] = bid_activations_up
+                timeseries_data['A_dn'] = bid_activations_down
 
 
             activation_th   = 0.01
@@ -951,24 +944,14 @@ class Controller():
                 }
             }     
 
-            run_data['bidding result'] = bidding_data 
+            market_data[market_type]['Earnings']        = total_earnings
+            total                                       -= total_earnings
+            market_data[market_type]['bidding result']  = bidding_data 
 
-        else:
-            metrics_data['Earnings']   = 0
-
-        if refrun_id != 'None' and 'Previous Earnings' in self.optimization_results['runs'][refrun_id]['metrics']:
-            metrics_data['Previous Earnings']  = self.optimization_results['runs'][refrun_id]['metrics']['Earnings'] + self.optimization_results['runs'][refrun_id]['metrics']['Previous Earnings']
-        else:
-            metrics_data['Previous Earnings']  = 0
-
-        metrics_data['Total'] = metrics_data['Costs'] - (metrics_data['Earnings'] + metrics_data['Previous Earnings'])
-
-
-        if attributes['Activations']:
-            timeseries_data['A_up'] = bid_activations_up
-            timeseries_data['A_dn'] = bid_activations_down
-
-            
+        metrics_data['Total'] = total
+        fixed_schedule_cost = self.optimization_results['runs'].get('fixed', {}).get('metrics',{}).get('Costs',total)
+        metrics_data['Cost Reduction'] = f"{100 * (fixed_schedule_cost - total)/fixed_schedule_cost:.2f}%"
+        
         settings_dict = self.settings.get_settings_group(*dependencies)
         if refrun_id != 'None': 
             settings_dict.update({'refrun': refrun_id, 
@@ -977,9 +960,15 @@ class Controller():
         run_hash = generate_hash(settings_dict)
         # self.settings.add_setting('hash', {f'{run_id}_hash': run_hash})
 
-        run_data['timeseries']      = timeseries_data
-        run_data['dependencies']    = list(dependencies)
-        run_data['hash']            = run_hash
+        run_data = {
+            'reference_run' : refrun_id,
+            'plot_run'      : plot_run,
+            'metrics'       : metrics_data,
+            'markets'       : market_data,
+            'timeseries'    : timeseries_data,
+            'dependencies'  : list(dependencies),
+            'hash'          : run_hash
+            }
 
         # Storing runs in dictionaries
         self.optimization_results['runs'][run_id] = run_data 
@@ -1234,8 +1223,12 @@ class Controller():
         sol['elapsed_time'] = end_time - start_time
         sol['eps'] = eps
         
-        self.store_run(f"{run_id}_nom", dependencies, sol, x_nom, u_nom, refrun_id = 'None', plot_run=plot_run)
-        self.store_run(run_id,          dependencies, sol, x, u, A=A, B=B, U_nom=u_nom, refrun_id = f"{run_id}_nom", balancing_market=self.market.CM, plot_run=plot_run)
+        market_data = {
+            'CM': build_market_participation(B_volumes, np.vstack((clearing_prices_up, clearing_prices_down)), reservations)
+        }
+        
+        # self.store_run(f"{run_id}_nom", dependencies, sol, x_nom, u_nom, refrun_id = 'None', plot_run=plot_run)
+        self.store_run(run_id, dependencies, sol, x, u, refrun_id = f"None", market_data=market_data, plot_run=plot_run)
 
         if not self.surpress_output: print(f'{run_id} | Generated theoretically optimal bid plan')
 
@@ -1524,10 +1517,14 @@ class Controller():
         CM_sol['eps']   = CM_eps
         AM_sol['eps']   = AM_eps
         
-        self.store_run(f"{run_id}_nom", dependencies, nom_sol, nom_x, nom_u, refrun_id = 'None', plot_run = plot_run)
-        self.store_run(f"{run_id}_CM",  dependencies, CM_sol,  CM_x, CM_u, A=CM_A, B=CM_B, U_nom=nom_u, refrun_id = f"{run_id}_nom", balancing_market=self.market.CM, plot_run = plot_run)
-        self.store_run(f"{run_id}_CM_copy",  dependencies, CM_sol,  CM_x, CM_u, A=CM_A, B=CM_B, U_nom=nom_u, refrun_id = f"{run_id}_nom", balancing_market=self.market.CM, plot_run = plot_run)
-        self.store_run(f"{run_id}_AM",  dependencies, AM_sol,  AM_x, AM_u, A=AM_A, B=AM_B, U_nom=nom_u, refrun_id = f"{run_id}_CM",  balancing_market=self.market.AM, plot_run = plot_run)
+        market_participation = {
+            'CM'    : build_market_participation(CM_B_vols, np.vstack((CM_clearing_prices_up, CM_clearing_prices_down)), CM_A),
+            'AM'    : build_market_participation(AM_B_vols, np.vstack((AM_clearing_prices_up, AM_clearing_prices_down)), AM_A)
+        }
+
+        # self.store_run(f"{run_id}_nom", dependencies, nom_sol, nom_x, nom_u, refrun_id = 'None', plot_run = plot_run)
+        # self.store_run(f"{run_id}_CM",  dependencies, CM_sol,  CM_x, CM_u, U_nom=nom_u, market_participation = market_participation, refrun_id = f"{run_id}_nom", plot_run = plot_run)
+        self.store_run(f"{run_id}", dependencies, AM_sol, AM_x, AM_u, U_nom=nom_u, market_data = market_participation, refrun_id = f"None", plot_run = plot_run)
 
         if not self.surpress_output: print(f'{run_id} | Generated theoretically optimal bid plan')
 

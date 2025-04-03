@@ -540,7 +540,7 @@ class PlantModel:
         return lbu, ubu
     
 
-    def get_metrics(self, controller, run_id, metrics_data, x, u, B):
+    def get_metrics(self, metrics_data, controller, run_id, x, u):
 
         # DLI = [np.sum(u[int(k):int(k)+QUARTER_HOURS_PER_DAY])*1e-6*SECONDS_PER_QUARTER_HOUR for k in np.linspace(0, controller.N - QUARTER_HOURS_PER_DAY, controller.T*self.DLI_res)]
 

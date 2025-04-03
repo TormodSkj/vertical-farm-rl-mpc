@@ -10,7 +10,7 @@ from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption
 
 SIM_NAME            = "plot_test"
-SIMULATION_LENGTH   = 2
+SIMULATION_LENGTH   = 20
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
 SIMULATION_DATE     = '2024-10-01'
@@ -36,7 +36,7 @@ def main():
     settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH)
     settings.add_setting('market', SIMULATION_DATE = SIMULATION_DATE, OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE)
     settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT, DLI_RESOLUTION = 2, DISCRETIZATION = DISCRETIZATION)
-    settings.add_setting('plotter', SEARCH_PLOT_CACHE = SEARCH_PLOT_CACHE)
+    settings.add_setting('plotter', SEARCH_PLOT_CACHE = SEARCH_PLOT_CACHE, PLOT_EXPORT_TYPE='png')
 
     config      = Config(settings)
     plant       = PlantModel(settings)
@@ -60,8 +60,8 @@ def main():
     # controller.import_baseline('imported')
 
     controller.optimize_spotprice('spot_opt')         #
-    controller.optimize_mfrr('mfrr_opt', 'spot_opt', plot_run=True)  #
-    simulator.apply_mfrr_clearing_prices('mfrr_applied', 'mfrr_opt', plot_run=True)
+    # controller.optimize_mfrr('mfrr_opt', 'spot_opt', plot_run=True)  #
+    # simulator.apply_mfrr_clearing_prices('mfrr_applied', 'mfrr_opt', plot_run=True)
     
     # controller.optimize_mfrr_mpc('mfrr_mpc')
     # simulator.apply_mfrr_clearing_prices('apply_prices_mpc', 'mfrr_mpc')
@@ -72,11 +72,11 @@ def main():
     # controller.generate_true_optimum_AM('abs_opt', 'spot_opt')
     # simulator.apply_mfrr_clearing_prices('abs_applied', 'abs_opt')
 
-    # controller.generate_true_optimum_CM('optimal_CM')
-    # controller.generate_true_optimum_AM('optimal_AM', 'optimal_CM')
+    # controller.generate_true_optimum_CM('optimal_CM', plot_run=True)
+    # controller.generate_true_optimum_AM('optimal_AM', 'optimal_CM', plot_run = True)
     # simulator.apply_mfrr_clearing_prices('abs_applied', 'abs_opt')
 
-    # controller.generate_true_optimum_CM_and_AM('co_opt')
+    controller.generate_true_optimum_CM_and_AM('MARI_opt', plot_run = True)
 
     # controller.co_optimize_CM_AM('co_opt_1')
     # simulator.apply_mfrr_clearing_prices('co_opt_1_applied', 'co_opt_1_CM')
@@ -89,7 +89,7 @@ def main():
     
     '''Status report'''
     # controller.status_report()
-    # controller.save_to_json()
+    controller.save_to_json()
     ''''''
 
     # run_ids = ['mfrr_opt', 'abs_opt']

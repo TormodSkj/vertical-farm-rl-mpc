@@ -110,12 +110,10 @@ class Market:
         self.analyze_market_potency(T = self.T)
 
 
-    
-
-    def get_balancing_market(self, market_type):
-        if market_type == 'Capacity Market': return self.CM
-        if market_type == 'Activation Market': return self.AM
-        return None
+    def get_balancing_market(self, key) -> BalancingMarket:
+        if key == 'CM': key = 'Capacity Market'     
+        if key == 'AM': key = 'Activation Market'   
+        return self.balancing_markets.get(key, None)
 
 
     def import_market_data(self):

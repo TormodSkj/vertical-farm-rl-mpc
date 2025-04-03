@@ -133,23 +133,32 @@ def get_metrics_table(runs):
 def get_metrics_table_raw(runs):
     '''
     Takes in a dict of runs containing metrics dicts. 
-    Each run has its own metrics dict, which will be unraveled and displayed here
+    Each run has its own metrics dict, which will be unraveled and displayed here.
+    Ensures every unique metric is included, prioritizing the order from the run with the most metrics.
     '''
     
-    any_run = next(iter(runs.values()))
-    any_metrics = any_run['metrics']
-    n_metrics = len(any_metrics)
+    # Find the run with the most metrics (assuming it has the full set)
+    max_metrics_run = max(runs.values(), key=lambda r: len(r['metrics']))
+    ordered_metrics = list(max_metrics_run['metrics'].keys())  # Preserve the order
+
+    # Collect all unique metrics while preserving the order from max_metrics_run
+    all_metrics = set(ordered_metrics)
+    for run in runs.values():
+        for metric in run['metrics']:
+            if metric not in all_metrics:
+                ordered_metrics.append(metric)
+                all_metrics.add(metric)
 
     metrics_table = []
 
-    for metric in any_metrics:      # Keys are the same for all metrics dicts regardless of run
-
+    for metric in ordered_metrics:  # Use ordered list from max-metrics run
         metrics_row = [metric]
-        for run in runs:
 
-            data = runs[run]['metrics'][metric]
-            if type(data) == float or type(data) == np.float64:
-                data = f"{data:.2f}"
+        for run in runs:
+            data = runs[run]['metrics'].get(metric, 0)  # Default to 0 if missing
+            if isinstance(data, (float, np.float64)):
+                data = f"{data:.2f}"  # Format floats to 2 decimal places
+
             metrics_row.append(data)
 
         metrics_table.append(metrics_row)
@@ -708,6 +717,55 @@ def get_DLI(X):
         DLI[:,k-QUARTER_HOURS_PER_DAY] = LI
             
     return DLI
+
+
+
+def build_market_participation(B_volumes = None, B_prices = None, Activations = None):
+
+    market_participation = {}
+
+    market_participation['Bids'] = {
+        'Up': {
+            'Volume' : B_volumes[0,:],
+            'Price'  : B_prices[0,:]
+        },
+        'Down': {
+            'Volume' : B_volumes[1,:],
+            'Price'  : B_prices[1,:]
+        }
+    }
+
+    market_participation['Activations'] = None if Activations is None else {
+        'Up'    : Activations[0,:],
+        'Down'  : Activations[1,:]
+    }
+
+    # if B_volumes is not None or B_prices is not None:
+    #     market_participation['Bids'] = {
+    #         'Up'    : {},
+    #         'Down'  : {}
+    #     }
+
+    # if B_volumes is not None:
+    #     market_participation['Bids']['Up']['Volume']    = B_volumes[0,:]
+    #     market_participation['Bids']['Down']['Volume']  = B_volumes[1,:]
+        
+    
+    # if B_prices is not None:
+    #     market_participation['Bids']['Up']['Price']    = B_prices[0,:]
+    #     market_participation['Bids']['Down']['Price']  = B_prices[1,:]
+        
+    # if Activations is not None:
+    #     market_participation['Activations'] = {
+    #         'Up'    : Activations[0,:],
+    #         'Down'  : Activations[1,:]
+    #     }
+    
+
+    return market_participation
+
+
+
 
 
 
