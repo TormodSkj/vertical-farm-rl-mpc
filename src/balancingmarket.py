@@ -56,6 +56,9 @@ class BalancingMarket:
         self.perform_statistical_analysis()
         self.perform_price_estimation()
 
+        self.expected_clearing_prices_up  , conditional_price_variance_up   = conditional_expectation(self.spot_prices, self.price_stats[self.bidding_zone]['Up']['means'],    self.price_stats[self.bidding_zone]['Up']['cov'])
+        self.expected_clearing_prices_down, conditional_price_variance_down = conditional_expectation(self.spot_prices, self.price_stats[self.bidding_zone]['Down']['means'],  self.price_stats[self.bidding_zone]['Down']['cov'])
+
 
     def perform_statistical_analysis(self):
         """

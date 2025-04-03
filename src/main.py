@@ -9,8 +9,8 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption
 
-SIM_NAME            = "sanity_check"
-SIMULATION_LENGTH   = 20
+SIM_NAME            = "plot_test"
+SIMULATION_LENGTH   = 2
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
 SIMULATION_DATE     = '2024-10-01'
@@ -49,6 +49,7 @@ def main():
     
     ''' ANALYSIS '''
     # market.calculate_balancing_market_earnings_upper_bound(AM=True, CM=True)
+    # market.nordic_markets_overview(output=True)
 
 
 
@@ -59,8 +60,8 @@ def main():
     # controller.import_baseline('imported')
 
     controller.optimize_spotprice('spot_opt')         #
-    # controller.optimize_mfrr('mfrr_opt', 'spot_opt')  #
-    # simulator.apply_mfrr_clearing_prices('mfrr_applied', 'mfrr_opt')
+    controller.optimize_mfrr('mfrr_opt', 'spot_opt', plot_run=True)  #
+    simulator.apply_mfrr_clearing_prices('mfrr_applied', 'mfrr_opt', plot_run=True)
     
     # controller.optimize_mfrr_mpc('mfrr_mpc')
     # simulator.apply_mfrr_clearing_prices('apply_prices_mpc', 'mfrr_mpc')
@@ -77,13 +78,18 @@ def main():
 
     # controller.generate_true_optimum_CM_and_AM('co_opt')
 
+    # controller.co_optimize_CM_AM('co_opt_1')
+    # simulator.apply_mfrr_clearing_prices('co_opt_1_applied', 'co_opt_1_CM')
+    # controller.optimize_mfrr('co_opt_2', 'co_opt_1_nom')  #
+    # simulator.apply_mfrr_clearing_prices('co_opt_2_applied', 'co_opt_2')
+
     # controller.optimize_mfrr('mfrr_fixed', 'fixed')
     # simulator.apply_mfrr_clearing_prices('mfrr_fixed_applied', 'mfrr_fixed')
 
     
     '''Status report'''
-    controller.status_report()
-    controller.save_to_json()
+    # controller.status_report()
+    # controller.save_to_json()
     ''''''
 
     # run_ids = ['mfrr_opt', 'abs_opt']

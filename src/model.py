@@ -4,6 +4,8 @@ from market import Market
 from bid import Bid
 from globals import *
 from settings import Settings
+from balancingmarket import BalancingMarket
+from utils import *
 
 class PlantModel:
 
@@ -215,48 +217,48 @@ class PlantModel:
     
     
 
-    def AM_bidding_obj_function(self, N_TH, spot_prices, X, B_volumes, B_prices, U_nom, market:Market):
+    def AM_bidding_obj_function(self, N_TH, spot_prices, B_volumes, B_prices, U_nom, balancing_market: BalancingMarket):
         
         bid_volumes_up      = B_volumes[0,:]
         bid_volumes_down    = B_volumes[1,:]
         bid_prices_up       = B_prices[0,:]
         bid_prices_down     = B_prices[1,:]
 
-        expected_prices_up, expected_prices_down = market.expected_AM_prices_up.flatten(), market.expected_AM_prices_down.flatten()
+        expected_prices_up, expected_prices_down = balancing_market.expected_clearing_prices_up.flatten(), balancing_market.expected_clearing_prices_down.flatten()
 
         L = 0
 
         for k in range(0, N_TH):
             L += spot_prices[k] * self.C_conv_PPFD/1000 * U_nom[:,k] \
-                  + (spot_prices[k] - expected_prices_down[k])   * bid_volumes_down[k]   * market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
-                  - (spot_prices[k] + expected_prices_up[k])     * bid_volumes_up[k]     * market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
+                  + (spot_prices[k] - expected_prices_down[k])   * bid_volumes_down[k]   * balancing_market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
+                  - (spot_prices[k] + expected_prices_up[k])     * bid_volumes_up[k]     * balancing_market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
 
         L = L/4
 
         return L
     
     
-    def CM_bidding_obj_function(self, N_TH, spot_prices, X, B_volumes, B_prices, market:Market):
+    def CM_bidding_obj_function(self, N_TH, spot_prices, B_volumes, B_prices, balancing_market: BalancingMarket):
         
         bid_volumes_up      = B_volumes[0,:]
         bid_volumes_down    = B_volumes[1,:]
         bid_prices_up       = B_prices[0,:]
         bid_prices_down     = B_prices[1,:]
 
-        expected_prices_up, expected_prices_down = market.expected_CM_prices_up.flatten(), market.expected_CM_prices_down.flatten()
+        expected_prices_up, expected_prices_down = balancing_market.expected_clearing_prices_up.flatten(), balancing_market.expected_clearing_prices_down.flatten()
 
         L = 0
 
         for k in range(0, N_TH):
             L += \
-                  + (spot_prices[k] - expected_prices_down[k])   * bid_volumes_down[k]   * market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
-                  - (spot_prices[k] + expected_prices_up[k])     * bid_volumes_up[k]     * market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
+                  + (spot_prices[k] - expected_prices_down[k])   * bid_volumes_down[k]   * balancing_market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
+                  - (spot_prices[k] + expected_prices_up[k])     * bid_volumes_up[k]     * balancing_market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
 
         L = L/4
 
         return L
 
-    def spotopt_obj_function(self, N, spot_prices, X, U):
+    def spotopt_obj_function(self, N, spot_prices, U):
 
         L = 0
         for k in range(N):
@@ -454,7 +456,7 @@ class PlantModel:
 
         return g_eq, g_ineq
     
-    def get_u(self, N, U_nom, B_volumes, B_prices, spot_prices, market: Market):
+    def get_u(self, N, U_nom, B_volumes, B_prices, spot_prices, balancing_market: BalancingMarket):
 
         U = np.array([])
     
@@ -462,11 +464,45 @@ class PlantModel:
             # if(k<controller.market.n_given_activations):
             #     u_tilde = 1000*(B[1,k]*controller.A_down[k] - B[0,k]*controller.A_up[k])/self.C_conv_PPFD
             # else:
-            u_tilde = 1000*(B_volumes[1,k]*market.activation_prob_down(spot_prices[k], B_prices[1,k]) - B_volumes[0,k]*market.activation_prob_up(spot_prices[k], B_prices[0,k]))/self.C_conv_PPFD
+            u_tilde = 1000*(B_volumes[1,k]*balancing_market.activation_prob_down(spot_prices[k], B_prices[1,k]) - B_volumes[0,k]*balancing_market.activation_prob_up(spot_prices[k], B_prices[0,k]))/self.C_conv_PPFD
 
             U = np.append(U, U_nom[:,k] + u_tilde)
 
         return ca.vertcat(*U).reshape((1,-1))
+    
+
+    def get_u_CM(self, N, U_nom, CM_B_volumes, CM_B_prices, AM_B_volumes, AM_B_prices, spot_prices, CM: BalancingMarket, AM: BalancingMarket):
+
+        U = np.array([])
+
+        
+    
+        for k in range(N):
+            # if(k<controller.market.n_given_activations):
+            #     u_tilde = 1000*(B[1,k]*controller.A_down[k] - B[0,k]*controller.A_up[k])/self.C_conv_PPFD
+            # else:
+            
+            CM_A_up     = CM.activation_prob_up(spot_prices[k], CM_B_prices[0,k])
+            CM_A_down   = CM.activation_prob_down(spot_prices[k], CM_B_prices[1,k])
+            CM_Volume_up     = CM_B_volumes[0,k]
+            CM_Volume_down   = CM_B_volumes[1,k]
+
+            AM_A_up     = AM.activation_prob_up(spot_prices[k], AM_B_prices[0,k])
+            AM_A_down   = AM.activation_prob_down(spot_prices[k], AM_B_prices[1,k])
+            AM_Volume_up     = AM_B_volumes[0,k]
+            AM_Volume_down   = AM_B_volumes[1,k]
+            
+            P_tilde = AM_A_down*(CM_A_down * casadi_max(CM_Volume_down, AM_Volume_down) + (1-CM_A_down)*AM_Volume_down) \
+                    - AM_A_up*(CM_A_up * casadi_max(CM_Volume_up, AM_Volume_up) + (1-CM_A_up)*AM_Volume_up)
+            
+            # (B_volumes[1,k]*balancing_market.activation_prob_down(spot_prices[k], B_prices[1,k]) - B_volumes[0,k]*balancing_market.activation_prob_up(spot_prices[k], B_prices[0,k]))
+
+            u_tilde = 1000*P_tilde/self.C_conv_PPFD
+
+            U = np.append(U, U_nom[:,k] + u_tilde)
+
+        return ca.vertcat(*U).reshape((1,-1))
+
 
     def get_bidding_bounds(self, N, U_nom):
 
@@ -731,7 +767,7 @@ class Photosynthesis:
     
     
 
-    def bidding_objective_function(self, controller, X, U, B):
+    def bidding_objective_function(self, controller, X, U, B, balancing_market: BalancingMarket):
         
         N = controller.N
         spot_prices = controller.spot_prices
@@ -742,15 +778,11 @@ class Photosynthesis:
         Bc_dn = B[3,:]
 
         L = 0
-
-        # for k in range(0, N): #from k = 2, to N-1. 
-        #     L += 1000 * (spot_prices[k] - Bc_dn[k]) * Bp_dn[k] * self.market.activation_prob_dn(Bc_dn[k])\
-        #           - 1000 * (spot_prices[k] + Bc_up[k]) * Bp_up[k] * self.market.activation_prob_up(Bc_up[k])
         
         for k in range(0, N): #from k = 2, to N-1. 
             L += spot_prices[k] * self.C_conv_PPFD * controller.u_base[k] \
-                  + 1000 * (spot_prices[k] - Bc_dn[k]) * Bp_dn[k] * controller.market.activation_prob_dn(spot_prices[k], Bc_dn[k])\
-                  - 1000 * (spot_prices[k] + Bc_up[k]) * Bp_up[k] * controller.market.activation_prob_up(spot_prices[k], Bc_up[k])
+                  + 1000 * (spot_prices[k] - Bc_dn[k]) * Bp_dn[k] * balancing_market.activation_prob_down(spot_prices[k], Bc_dn[k])\
+                  - 1000 * (spot_prices[k] + Bc_up[k]) * Bp_up[k] * balancing_market.activation_prob_up(spot_prices[k], Bc_up[k])
 
         L = L/4
 

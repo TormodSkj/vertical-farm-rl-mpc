@@ -68,17 +68,16 @@ class Plotter():
 
         
 
-    def create_folder_environment(self):
+    def create_folder_environment(self, plot_runs):
         controller  = self.controller
         config      = self.config
 
         
         run_groups = build_dependency_groups(controller.optimization_results)
 
-        for run_group in run_groups:
-            top_level_run_id = run_group[0]
-            
-            plot_folder = os.path.join(config.plots_path, config.sim_name+'/'+ top_level_run_id+'/')
+        for run_id in plot_runs:
+      
+            plot_folder = os.path.join(config.plots_path, f"{config.sim_name}/{run_id}/")
             
             os.makedirs(plot_folder, exist_ok=True)
 
@@ -88,7 +87,6 @@ class Plotter():
 
         start_time = time.time()
 
-        self.create_folder_environment()
 
         # COMMON PLOTS
         runs = self.controller.optimization_results['runs']
@@ -97,11 +95,17 @@ class Plotter():
         self.add_plot(self.plot_DLI,                runs = runs)
 
 
+        plot_runs = [run for run in runs if runs[run]['plot_run'] == True]
+        self.create_folder_environment(plot_runs)
+
         # INDIVIDUAL PLOTS
         run_groups = build_dependency_groups(self.controller.optimization_results)
         for run_group in run_groups:
-            # if run_group == ['fixed']: continue
-            self.add_plot(self.plot_report, run_group = run_group)
+            for i, run in enumerate(run_group):
+                if run in plot_runs:
+                    self.add_plot(self.plot_report, run_id = run, run_group = run_group[i:])
+            
+            
         
         self.plot()
 
@@ -218,7 +222,7 @@ class Plotter():
 
         return 0  # No matching plot found
 
-    def plot_report(self, run_group):
+    def plot_report(self, run_id, run_group):
         config      = self.config
         controller  = self.controller
         market      = controller.market
@@ -227,7 +231,7 @@ class Plotter():
         spot_prices = self.controller.spot_prices
         zone        = market.bidding_zone
 
-        run_id = run_group[0]
+        # run_id = run_group[0]
 
         if not controller.optimization_results['runs'][run_id]['Attributes']['Bids']: return
         if controller.optimization_results['runs'][run_id]['Attributes']['Balancing_market'] == 'None': return

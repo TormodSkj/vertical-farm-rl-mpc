@@ -103,7 +103,7 @@ class Simulator():
         return freshweights
 
 
-    def apply_mfrr_clearing_prices(self, run_id, refrun_id):
+    def apply_mfrr_clearing_prices(self, run_id, refrun_id, plot_run=False):
         '''
         '''
         # Generate activation demands
@@ -168,7 +168,7 @@ class Simulator():
     
         dependencies = ()
         refrun_dependencies = tuple(controller.optimization_results['runs'][refrun_id]['dependencies'])
-        controller.store_run(run_id, refrun_dependencies + dependencies, sol, X, u.reshape(1,-1), A, B, U_nom.reshape(1,-1), refrun_id=refrun_id, balancing_market=self.market.AM)
+        controller.store_run(run_id, refrun_dependencies + dependencies, sol, X, u.reshape(1,-1), A, B, U_nom.reshape(1,-1), refrun_id=refrun_id, balancing_market=self.market.AM, plot_run=plot_run)
         
         return 0
 

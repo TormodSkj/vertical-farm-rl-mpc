@@ -499,9 +499,18 @@ def propagate_process_covariance(controller, x_bid, u_bid, bidding_volumes_up, b
 
 
 def casadi_saturate(x, min, max):
-    # Custom function which bounds activation chance between 0 and 1. (1 + abs(x) - abs(x-1))/2 with abs(x) = sqrt(x^2)
+    # Custom function which bounds activation chance between 0 and 1. (1 + abs(x) - abs(x-1))/2
     
-    return (max + min + ca.sqrt(ca.power(x-min, 2)) - ca.sqrt(ca.power(x-max, 2))) / 2
+    return (max + min +  casadi_abs(x-min) - casadi_abs(x-max)) / 2
+
+def casadi_max(x, y):
+    # Custom function which returns the maximum of two values
+    
+    return (casadi_abs(x-y) + x-y) / 2 + y
+
+def casadi_abs(x):
+    return ca.sqrt(ca.power(x, 2))
+
 
 
 def vertigrow_calculate_energy_consumption(controller):

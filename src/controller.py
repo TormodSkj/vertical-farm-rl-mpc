@@ -133,7 +133,7 @@ class Controller():
         
 
 
-    def optimize_mfrr(self, run_id, refrun_id = 'fixed'):
+    def optimize_mfrr(self, run_id, refrun_id = 'fixed', plot_run = False):
 
         start_time = time.time()
 
@@ -168,10 +168,10 @@ class Controller():
         B = ca.MX.sym('B', 4, N)                # Bids over time (Vol_up, Vol_down, Price_up, Price_down) (4xN vector)
         Eps = ca.MX.sym('Eps', neps, 1)            # Slack variable for feasibility
 
-        U = self.model.get_u(N, U_nom, B[:2,:], B[2:4,:], spot_prices, market)           # Express U in terms of bidding outcomes
+        U = self.model.get_u(N, U_nom, B[:2,:], B[2:4,:], spot_prices, market.AM)           # Express U in terms of bidding outcomes
 
         # Initialize cost function and constraints
-        J = self.model.AM_bidding_obj_function(N, self.spot_prices, X, B_volumes = B[:2,:], B_prices = B[2:4,:], U_nom = U_nom, market = self.market)\
+        J = self.model.AM_bidding_obj_function(N, self.spot_prices, B_volumes = B[:2,:], B_prices = B[2:4,:], U_nom = U_nom, balancing_market = self.market.AM)\
                        + self.model.terminal_cost(self, X, U, Eps)
 
 
@@ -207,8 +207,8 @@ class Controller():
         if self.warm_start: 
             z0[:nx*(N+1)]                   = refrun['timeseries']['x'].flatten()
             z0[nx*(N+1):nx*(N+1)+2*N]       = ub_B_volumes.reshape((2*N,1))             # Bid volumes
-            z0[nx*(N+1)+2*N:nx*(N+1)+3*N]   = self.market.expected_AM_prices_up            # Bid prices up
-            z0[nx*(N+1)+3*N:nx*(N+1)+4*N]   = self.market.expected_AM_prices_down          # Bid prices down
+            z0[nx*(N+1)+2*N:nx*(N+1)+3*N]   = self.market.AM.expected_clearing_prices_up            # Bid prices up
+            z0[nx*(N+1)+3*N:nx*(N+1)+4*N]   = self.market.AM.expected_clearing_prices_down          # Bid prices down
         
         sol = solver(x0=z0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
 
@@ -216,7 +216,7 @@ class Controller():
 
         x = np.array(sol['x'][:(nx*(N+1))].reshape((nx, N+1)))
         B = np.array(sol['x'][(nx*(N+1)):(nx*(N+1) + 4*N)].reshape((4, N)))
-        u = np.array(self.model.get_u(N, U_nom, B[:2,:], B[2:4,:], spot_prices, market)).reshape(1,-1)
+        u = np.array(self.model.get_u(N, U_nom, B[:2,:], B[2:4,:], spot_prices, market.AM)).reshape(1,-1)
         eps   = float(sol['x'][-neps][0])
 
         
@@ -224,7 +224,7 @@ class Controller():
         sol['elapsed_time'] = end_time - start_time
         sol['eps'] = eps
         
-        self.store_run(run_id, dependencies, sol, x, u, B=B, U_nom=refrun['timeseries']['u'], refrun_id = refrun_id, balancing_market=self.market.AM)
+        self.store_run(run_id, dependencies, sol, x, u, B=B, U_nom=refrun['timeseries']['u'], refrun_id = refrun_id, balancing_market=self.market.AM, plot_run=plot_run)
 
         if not self.surpress_output: print(f'{run_id} | Optimized mFRR bidding strategy')
         
@@ -232,7 +232,156 @@ class Controller():
         return 0
         
 
-    def optimize_spotprice(self, run_id: str, refrun_id = 'fixed'):
+    def co_optimize_CM_AM(self, run_id = 'probabilistic_co_opt_CM_AM', plot_run = False):
+        start_time = time.time()
+
+        dependencies = ('general', 'controller', 'plantmodel', 'market')
+        if not (self.load_from_json(f"{run_id}_nom", None, dependencies) or self.load_from_json(f"{run_id}", f"{run_id}_nom", dependencies)) : 
+            # Identical run located. Using its solution instead
+            return 0
+        
+        if not self.surpress_output: print(f'{run_id} | Generating theoretically optimal Capacity Market bids')
+        
+        AM = self.market.AM
+        CM = self.market.CM
+
+        N = self.N
+        T = self.T
+        dt = self.dt
+        spot_prices = self.spot_prices
+
+        # State and control dimensions
+        nx = self.model.nx                      # Dimension of state x (x1, x2)
+        nu = self.model.nu                      # Dimension of control u (scalar)
+        neps = self.model.neps
+
+        # Create decision variables for the optimization problem
+        nom_X       = ca.MX.sym('nom_X', nx, N+1)         # States over time (2x(N+1) vector)
+        nom_U       = ca.MX.sym('nom_U', nu, N)
+        nom_Eps     = ca.MX.sym('nom_Eps', neps, 1)       # Slack variable for feasibility
+        
+        CM_X           = ca.MX.sym('CM_X', nx, N+1)             # States over time (2x(N+1) vector)
+        CM_B_volumes   = ca.MX.sym('CM_B_volumes', 2, N)        # Bids over time (Vol_up, Vol_down, Price_up, Price_down) (4xN vector)
+        CM_B_prices    = ca.MX.sym('CM_B_volumes', 2, N)        # Bids over time (Vol_up, Vol_down, Price_up, Price_down) (4xN vector)
+        CM_Eps         = ca.MX.sym('CM_Eps', neps, 1)           # Slack variable for feasibility
+
+        AM_X           = ca.MX.sym('AM_X', nx, N+1)             # States over time (2x(N+1) vector)
+        AM_B_volumes   = ca.MX.sym('AM_B_volumes', 2, N)        # Bids over time (Vol_up, Vol_down, Price_up, Price_down) (4xN vector)
+        AM_B_prices    = ca.MX.sym('AM_B_volumes', 2, N)        # Bids over time (Vol_up, Vol_down, Price_up, Price_down) (4xN vector)
+        AM_Eps         = ca.MX.sym('AM_Eps', neps, 1)           # Slack variable for feasibility
+        
+        CM_U = self.model.get_u_CM(N, nom_U, CM_B_volumes, CM_B_prices, AM_B_volumes, AM_B_prices, spot_prices, CM, AM)
+        AM_U = self.model.get_u(N, nom_U, AM_B_volumes, AM_B_prices, spot_prices, AM)
+        
+
+        J = 0
+        J += self.model.spotopt_obj_function(N, spot_prices, AM_U)
+        J += self.model.CM_bidding_obj_function(N, spot_prices, CM_B_volumes, CM_B_prices, CM)
+        J += self.model.AM_bidding_obj_function(N, spot_prices, AM_B_volumes, AM_B_prices, nom_U, AM)
+        J += self.model.terminal_cost(self, nom_X, nom_U, nom_Eps) \
+            + self.model.terminal_cost(self, CM_X, CM_U, CM_Eps) \
+            + self.model.terminal_cost(self, AM_X, AM_U, AM_Eps)
+
+        g_eq, g_ineq = [], []
+        g_eq, g_ineq = self.model.get_process_constraints(self, g_eq, g_ineq, nom_X, nom_U, nom_Eps)
+        g_eq, g_ineq = self.model.get_process_constraints(self, g_eq, g_ineq, CM_X, CM_U, CM_Eps)
+        g_eq, g_ineq = self.model.get_process_constraints(self, g_eq, g_ineq, AM_X, AM_U, AM_Eps)
+        g_eq, g_ineq = self.model.get_bidding_constraints(g_eq, g_ineq, N, nom_U, CM_B_volumes)
+        g_eq, g_ineq = self.model.get_bidding_constraints(g_eq, g_ineq, N, nom_U, AM_B_volumes, B_volumes_lower_bound=CM_B_volumes)
+        
+        # Enforce hourly bid volumes and prices in capacity market
+        for i in range(int(N/4)):
+            for j in range(3):
+                g_eq.append(CM_B_volumes[0, i+j] - CM_B_volumes[0, i+j+1])
+                g_eq.append(CM_B_volumes[1, i+j] - CM_B_volumes[1, i+j+1])
+                g_eq.append(CM_B_prices[0, i+j]  - CM_B_prices[0, i+j+1])
+                g_eq.append(CM_B_prices[1, i+j]  - CM_B_prices[1, i+j+1])
+
+        # format constraints
+        n_eq    = ca.vertcat(*g_eq).size()[0]
+        n_ineq  = ca.vertcat(*g_ineq).size()[0]
+        g       = g_eq + g_ineq
+        lbg     = np.concatenate((np.zeros((1, n_eq + n_ineq))), axis=None)                         # \ Eq-constraints = 0
+        ubg     = np.concatenate((np.zeros((1, n_eq)), np.inf * np.ones((1, n_ineq))), axis=None)   # / Ineq-constraints >= 0
+
+
+        # Extract state and bidding bounds
+        lbx, ubx = self.model.get_state_bounds(self)
+        lbu, ubu = self.model.get_input_bounds(self)
+        lb_B_volumes = np.zeros((2, N))
+        ub_B_volumes = self.model.P_cap_max * np.ones((2, N))
+        lb_B_prices = np.zeros((2, N))
+        ub_B_prices = 1000 * np.ones((2, N))
+        lb_eps, ub_eps = np.zeros((neps,1)), np.inf * np.ones((neps,1))
+
+        # Flatten decision variables and bounds
+        Z   = ca.vertcat(ca.reshape(nom_X, -1, 1), ca.reshape(CM_X, -1, 1), ca.reshape(AM_X, -1, 1), ca.reshape(nom_U, -1, 1), ca.reshape(CM_B_volumes, -1, 1), ca.reshape(CM_B_prices, -1, 1), ca.reshape(AM_B_volumes, -1, 1), ca.reshape(AM_B_prices, -1, 1), ca.reshape(nom_Eps, -1, 1), ca.reshape(CM_Eps, -1, 1), ca.reshape(AM_Eps, -1, 1))
+        lbz = ca.vertcat(ca.reshape(lbx,   -1, 1), ca.reshape(lbx,  -1, 1), ca.reshape(lbx,  -1, 1), ca.reshape(lbu,   -1, 1), ca.reshape(lb_B_volumes, -1, 1), ca.reshape(lb_B_prices, -1, 1), ca.reshape(lb_B_volumes, -1, 1), ca.reshape(lb_B_prices, -1, 1), ca.reshape(lb_eps,  -1, 1), ca.reshape(lb_eps, -1, 1), ca.reshape(lb_eps, -1, 1))
+        ubz = ca.vertcat(ca.reshape(ubx,   -1, 1), ca.reshape(ubx,  -1, 1), ca.reshape(ubx,  -1, 1), ca.reshape(ubu,   -1, 1), ca.reshape(ub_B_volumes, -1, 1), ca.reshape(ub_B_prices, -1, 1), ca.reshape(ub_B_volumes, -1, 1), ca.reshape(ub_B_prices, -1, 1), ca.reshape(ub_eps,  -1, 1), ca.reshape(ub_eps, -1, 1), ca.reshape(ub_eps, -1, 1))
+
+        # Nonlinear problem definition
+        nlp = {'x': Z, 'f': J, 'g': ca.vertcat(*g)}
+
+        # Create the solver
+        opts = {'ipopt.print_level': 0, 'print_time': 0}
+        solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
+
+        N_vars = (N+1)*nx*3 + N*nu + N*4*2 + neps*3
+        z0 = ca.DM.zeros(N_vars)
+        sol = solver(x0=z0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
+
+        # Extract solution
+
+        nom_X_idx       = 0
+        CM_X_idx        = nom_X_idx         + nx*(N+1)
+        AM_X_idx        = CM_X_idx          + nx*(N+1)
+        nom_U_idx       = AM_X_idx          + nx*(N+1)
+        CM_B_vols_idx   = nom_U_idx         + nu*N
+        CM_B_prices_idx = CM_B_vols_idx     + 2*N
+        AM_B_vols_idx   = CM_B_prices_idx   + 2*N
+        AM_B_prices_idx = AM_B_vols_idx     + 2*N
+        nom_eps_idx     = AM_B_prices_idx   + 2*N
+        CM_eps_idx      = nom_eps_idx       + neps
+        AM_eps_idx      = CM_eps_idx        + neps
+
+        nom_x       = np.array(sol['x'][:CM_X_idx].reshape((nx, N+1)))
+        CM_x        = np.array(sol['x'][CM_X_idx:AM_X_idx].reshape((nx, N+1)))
+        AM_x        = np.array(sol['x'][AM_X_idx:nom_U_idx].reshape((nx, N+1)))
+        nom_u       = np.array(sol['x'][nom_U_idx:CM_B_vols_idx].reshape((nu, N)))
+        CM_B_vols   = np.array(sol['x'][CM_B_vols_idx:CM_B_prices_idx].reshape((2, N)))
+        CM_B_prices = np.array(sol['x'][CM_B_prices_idx:AM_B_vols_idx].reshape((2, N)))
+        AM_B_vols   = np.array(sol['x'][AM_B_vols_idx:AM_B_prices_idx].reshape((2, N)))
+        AM_B_prices = np.array(sol['x'][AM_B_prices_idx:nom_eps_idx].reshape((2, N)))
+        nom_eps     = float(sol['x'][nom_eps_idx:CM_eps_idx][0])
+        CM_eps      = float(sol['x'][CM_eps_idx:AM_eps_idx][0])
+        AM_eps      = float(sol['x'][AM_eps_idx:][0])
+
+        
+        CM_u        = np.array(self.model.get_u_CM(N, nom_u, CM_B_vols, CM_B_prices, AM_B_vols, AM_B_prices, spot_prices, CM, AM)).reshape((1,-1))
+        AM_u        = np.array(self.model.get_u(N, nom_u, AM_B_vols, AM_B_prices, spot_prices, AM)).reshape((1,-1))
+
+        CM_B = np.vstack((CM_B_vols, CM_B_prices))
+        AM_B = np.vstack((AM_B_vols, AM_B_prices))
+        
+        end_time = time.time()
+        sol['elapsed_time'] = end_time - start_time
+        
+        nom_sol, CM_sol, AM_sol = sol.copy(), sol.copy(), sol.copy()
+        nom_sol['eps']  = nom_eps
+        CM_sol['eps']   = CM_eps
+        AM_sol['eps']   = AM_eps
+        
+        self.store_run(f"{run_id}_nom", dependencies, nom_sol, nom_x, nom_u, refrun_id = 'None', plot_run = plot_run)
+        self.store_run(f"{run_id}_CM",  dependencies, CM_sol,  CM_x, CM_u, B=CM_B, U_nom=nom_u, refrun_id = f"{run_id}_nom", balancing_market=self.market.CM, plot_run = plot_run)
+        self.store_run(f"{run_id}_AM",  dependencies, AM_sol,  AM_x, AM_u, B=AM_B, U_nom=nom_u, refrun_id = f"{run_id}_CM",  balancing_market=self.market.AM, plot_run = plot_run)
+
+        if not self.surpress_output: print(f'{run_id} | Generated theoretically optimal bid plan')
+
+        self.save_to_json()
+        return 0
+    
+
+    def optimize_spotprice(self, run_id: str, refrun_id = 'fixed', plot_run = False):
         '''
         Optimizes the light schedule based on spot price. Used as reference for mFRR optimization (Called baseline in MARI terms)
         '''
@@ -262,7 +411,7 @@ class Controller():
         U = ca.MX.sym('U', nu, N)                       # Controls over time (Nx1 vector)
         Eps = ca.MX.sym('Eps', neps, 1)                    # Slack variable for feasibility
 
-        J = self.model.spotopt_obj_function(N, self.spot_prices, X, U)\
+        J = self.model.spotopt_obj_function(N, self.spot_prices, U)\
                      + self.model.terminal_cost(self, X, U, Eps)#\
                     # + self.model.fluctuating_light_cost(self, U)         # Cost function
 
@@ -314,7 +463,7 @@ class Controller():
         sol['elapsed_time'] = elapsed_time
         sol['eps'] = eps
 
-        self.store_run(run_id, dependencies, sol, x, u, refrun_id = refrun_id)
+        self.store_run(run_id, dependencies, sol, x, u, refrun_id = refrun_id, plot_run = plot_run)
 
         if not self.surpress_output: print(f'{run_id} | Optimized light schedule for spot price')
         
@@ -323,7 +472,7 @@ class Controller():
 
 
 
-    def optimize_mfrr_mpc(self, run_id, target_run_id = 'fixed'):
+    def optimize_mfrr_mpc(self, run_id, target_run_id = 'fixed', plot_run = False):
 
         start_time = time.time()
         
@@ -450,10 +599,10 @@ class Controller():
         end_time = time.time()
         sol = {}
         sol['eps'] = Eps
-        sol['f'] = self.model.AM_bidding_obj_function(N, spot_prices, X, B[:2, :], B[2:4, :], U_nom, self.market)
+        sol['f'] = self.model.AM_bidding_obj_function(N, spot_prices, B[:2, :], B[2:4, :], U_nom, self.market)
         sol['elapsed_time'] = end_time - start_time
         
-        self.store_run(run_id, dependencies, sol, np.array(X), np.array(U).reshape((1,-1)), B=np.array(B), U_nom=np.array(U_nom).reshape((1,-1)), refrun_id = target_run_id, balancing_market=self.market.AM)
+        self.store_run(run_id, dependencies, sol, np.array(X), np.array(U).reshape((1,-1)), B=np.array(B), U_nom=np.array(U_nom).reshape((1,-1)), refrun_id = target_run_id, balancing_market=self.market.AM, plot_run=plot_run)
 
         if not self.surpress_output: print(f'{run_id} | Optimized mFRR bidding strategy using MPC')
         self.save_to_json()
@@ -520,7 +669,7 @@ class Controller():
         if 'B_prices' in opt_vars and 'U_nom' in opt_vars and 'U' not in opt_vars:
             B_prices, B_volumes, U_nom = [opt_vars[key] for key in ['B_prices', 'B_volumes', 'U_nom']]
 
-            U = self.model.get_u(N_TH, U_nom=U_nom, B_volumes=B_volumes, B_prices=B_prices, spot_prices=spot_prices, market=self.market).reshape((1,-1))
+            U = self.model.get_u(N_TH, U_nom=U_nom, B_volumes=B_volumes, B_prices=B_prices, spot_prices=spot_prices, balancing_market=self.market.AM).reshape((1,-1))
             g_eq, g_ineq = self.model.get_bidding_constraints(g_eq, g_ineq, N_TH, U_nom, B_prices = B_prices, B_volumes = B_volumes)
 
         elif 'B' not in opt_vars and 'U_nom' not in opt_vars and 'U' in opt_vars:
@@ -556,7 +705,7 @@ class Controller():
         [opti.subject_to(equality_constraint    == 0) for equality_constraint   in g_eq]
         [opti.subject_to(inequality_constraint  >= 0) for inequality_constraint in g_ineq]
 
-        J = self.model.spotopt_obj_function(N_TH, spot_prices, X, U) + self.model.terminal_cost(self, X, U, Eps)
+        J = self.model.spotopt_obj_function(N_TH, spot_prices, U) + self.model.terminal_cost(self, X, U, Eps)
 
         # if (k + N_TH >= N): J += self.model.terminal_cost(self, X, U, Eps)
         # else:               J += self.model.running_cost(self.market, k, N, Eps)
@@ -581,8 +730,8 @@ class Controller():
         [opti.subject_to(equality_constraint == 0)   for equality_constraint in g_eq]
         [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
 
-        U = self.model.get_u(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market)
-        J = self.model.AM_bidding_obj_function(N_TH, spot_prices, X, B_volumes, B_prices, U_nom, self.market) + self.model.terminal_cost(self, X, U, Eps)
+        U = self.model.get_u(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market.AM)
+        J = self.model.AM_bidding_obj_function(N_TH, spot_prices, B_volumes, B_prices, U_nom, self.market) + self.model.terminal_cost(self, X, U, Eps)
         
         # if (k + N_TH >= N): J += self.model.terminal_cost(self, X, U, Eps)
         # else:               J += self.model.running_cost(self.market, k, N, Eps)
@@ -611,7 +760,7 @@ class Controller():
 
         # Set initial optimal bidding guess to be maximum possible volume and exactly at clearing price
         B_prices_initial_guess = np.vstack((clearing_price_mu_up, clearing_price_mu_down))
-        U_initial_guess = np.array(self.model.get_u(N_TH, U_nom, B_prices_initial_guess, B_max_volumes, spot_prices, self.market)).flatten()
+        U_initial_guess = np.array(self.model.get_u(N_TH, U_nom, B_prices_initial_guess, B_max_volumes, spot_prices, self.market.AM)).flatten()
         X_initial_guess = ca.DM.zeros(self.model.nx, N_TH+1)
         X_initial_guess[:,0] = x0
         F = self.F
@@ -660,12 +809,12 @@ class Controller():
 
         sol ={}
         sol['elapsed_time'] = elapsed_time
-        sol['f'] = self.model.spotopt_obj_function(N, self.spot_prices, X, u)
+        sol['f'] = self.model.spotopt_obj_function(N, self.spot_prices, u)
         sol['eps'] = 0
         
         
         dependencies = ('general', 'controller', 'plantmodel', 'market')
-        self.store_run(run_id, dependencies, sol, X, u, refrun_id = 'None')
+        self.store_run(run_id, dependencies, sol, X, u, refrun_id = 'None', plot_run=False)
         if self.calculate_fw: self.model.Final_fw_sht = float(self.model.freshweight(X[:,-1]))
 
         if not self.surpress_output: print(f'{run_id} | Generated fixed light schedule: {hours_on}h/{hours_off}h at {RIGID_INTY} PPFD')
@@ -673,7 +822,9 @@ class Controller():
     
 
 
-    def store_run(self, run_id, dependencies, sol, x, u, A = None, B = None, U_nom = None, refrun_id = 'None', balancing_market: BalancingMarket = None):
+    def store_run(self, run_id, dependencies, sol, x, u, A = None, B = None, 
+                  U_nom = None, refrun_id = 'None', balancing_market: BalancingMarket = None,
+                  plot_run = False):
         '''
         Takes in run specifics and stores them as well as metrics in the `optimization_results` dictionary.
         If bids are specified, a balancingmarket must be given as well.
@@ -724,10 +875,11 @@ class Controller():
 
         run_data = {
             'reference_run' : refrun_id,
+            'plot_run'      : plot_run,
             'metrics'       : metrics_data
             }
 
-        metrics_data['Costs']       = float(self.model.spotopt_obj_function(self.N, self.spot_prices, x, u))
+        metrics_data['Costs']       = float(self.model.spotopt_obj_function(self.N, self.spot_prices, u))
 
         attributes = {
             'Balancing_market'  : balancing_market.market_type if balancing_market else 'None',
@@ -742,6 +894,10 @@ class Controller():
             bid_prices_up           = B[2,:].reshape(1,-1)
             bid_prices_down         = B[3,:].reshape(1,-1)
 
+            
+            if A is None:
+                A = np.vstack((balancing_market.activation_prob_up(self.spot_prices,    B[2,:]),
+                               balancing_market.activation_prob_down(self.spot_prices,  B[3,:])))
             bid_activations_up      = A[0,:].reshape(1,-1)
             bid_activations_down    = A[1,:].reshape(1,-1)
 
@@ -936,7 +1092,7 @@ class Controller():
         elapsed_time = end_time - start_time
 
         sol['elapsed_time'] = elapsed_time
-        sol['f'] = self.model.spotopt_obj_function(N, self.spot_prices, x, u)
+        sol['f'] = self.model.spotopt_obj_function(N, self.spot_prices, u)
         sol['x'] = np.hstack((x.flatten(), u, 0))
         sol['eps'] = 0
         
@@ -947,7 +1103,7 @@ class Controller():
         return 0
 
 
-    def generate_true_optimum_CM(self, run_id = 'optimal_CM'):
+    def generate_true_optimum_CM(self, run_id = 'optimal_CM', plot_run = False):
 
         start_time = time.time()
 
@@ -1078,15 +1234,15 @@ class Controller():
         sol['elapsed_time'] = end_time - start_time
         sol['eps'] = eps
         
-        self.store_run(f"{run_id}_nom", dependencies, sol, x_nom, u_nom, refrun_id = 'None')
-        self.store_run(run_id,          dependencies, sol, x, u, A=A, B=B, U_nom=u_nom, refrun_id = f"{run_id}_nom", balancing_market=self.market.CM)
+        self.store_run(f"{run_id}_nom", dependencies, sol, x_nom, u_nom, refrun_id = 'None', plot_run=plot_run)
+        self.store_run(run_id,          dependencies, sol, x, u, A=A, B=B, U_nom=u_nom, refrun_id = f"{run_id}_nom", balancing_market=self.market.CM, plot_run=plot_run)
 
         if not self.surpress_output: print(f'{run_id} | Generated theoretically optimal bid plan')
 
         self.save_to_json()
         return 0
 
-    def generate_true_optimum_AM(self, run_id = 'optimal', refrun_id = 'fixed'):
+    def generate_true_optimum_AM(self, run_id = 'optimal', refrun_id = 'fixed', plot_run=False):
 
         start_time = time.time()
 
@@ -1200,7 +1356,7 @@ class Controller():
         sol['elapsed_time'] = end_time - start_time
         sol['eps'] = eps
         
-        self.store_run(run_id, dependencies, sol, x, u, A=A, B=B, U_nom=refrun['timeseries']['u'].reshape((1,-1)), refrun_id = refrun_id, balancing_market=self.market.AM)
+        self.store_run(run_id, dependencies, sol, x, u, A=A, B=B, U_nom=refrun['timeseries']['u'].reshape((1,-1)), refrun_id = refrun_id, balancing_market=self.market.AM, plot_run=plot_run)
 
         if not self.surpress_output: print(f'{run_id} | Generated theoretically optimal bid plan')
 
@@ -1209,7 +1365,7 @@ class Controller():
 
 
 
-    def generate_true_optimum_CM_and_AM(self, run_id = 'co_opt_CM_AM'):
+    def generate_true_optimum_CM_and_AM(self, run_id = 'co_opt_CM_AM', plot_run = False):
 
         start_time = time.time()
 
@@ -1368,10 +1524,10 @@ class Controller():
         CM_sol['eps']   = CM_eps
         AM_sol['eps']   = AM_eps
         
-        self.store_run(f"{run_id}_nom", dependencies, nom_sol, nom_x, nom_u, refrun_id = 'None')
-        self.store_run(f"{run_id}_CM",  dependencies, CM_sol,  CM_x, CM_u, A=CM_A, B=CM_B, U_nom=nom_u, refrun_id = f"{run_id}_nom", balancing_market=self.market.CM)
-        self.store_run(f"{run_id}_CM_copy",  dependencies, CM_sol,  CM_x, CM_u, A=CM_A, B=CM_B, U_nom=nom_u, refrun_id = f"{run_id}_nom", balancing_market=self.market.CM)
-        self.store_run(f"{run_id}_AM",  dependencies, AM_sol,  AM_x, AM_u, A=AM_A, B=AM_B, U_nom=nom_u, refrun_id = f"{run_id}_CM",  balancing_market=self.market.AM)
+        self.store_run(f"{run_id}_nom", dependencies, nom_sol, nom_x, nom_u, refrun_id = 'None', plot_run = plot_run)
+        self.store_run(f"{run_id}_CM",  dependencies, CM_sol,  CM_x, CM_u, A=CM_A, B=CM_B, U_nom=nom_u, refrun_id = f"{run_id}_nom", balancing_market=self.market.CM, plot_run = plot_run)
+        self.store_run(f"{run_id}_CM_copy",  dependencies, CM_sol,  CM_x, CM_u, A=CM_A, B=CM_B, U_nom=nom_u, refrun_id = f"{run_id}_nom", balancing_market=self.market.CM, plot_run = plot_run)
+        self.store_run(f"{run_id}_AM",  dependencies, AM_sol,  AM_x, AM_u, A=AM_A, B=AM_B, U_nom=nom_u, refrun_id = f"{run_id}_CM",  balancing_market=self.market.AM, plot_run = plot_run)
 
         if not self.surpress_output: print(f'{run_id} | Generated theoretically optimal bid plan')
 

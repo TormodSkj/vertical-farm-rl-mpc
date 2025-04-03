@@ -70,8 +70,8 @@ class Market:
 
         self.import_market_data()
 
-        self.CM = BalancingMarket(settings, 'Capacity Market', self.CM_data_working_set)
-        self.AM = BalancingMarket(settings, 'Activation Market', self.AM_data_working_set)
+        self.CM = BalancingMarket(settings, 'Capacity Market',   self.CM_data_full_set)
+        self.AM = BalancingMarket(settings, 'Activation Market', self.AM_data_full_set)
         self.balancing_markets['Capacity Market']   = self.CM
         self.balancing_markets['Activation Market'] = self.AM
 
@@ -493,6 +493,27 @@ class Market:
                     pbar.update(1)
                     continue
 
+
+                # Calculate reference fixed schedule cost:
+
+                offset_qh = 0
+                lowest_fixed_price = np.inf
+                for QH in range(96):
+                    light_schedule = np.ones(96)
+                    light_schedule[64-QH:96-QH]
+                    np.put(light_schedule, range(64-QH,96-QH), np.zeros(32)) 
+
+                    light_schedule_tiled = np.tile(light_schedule, len(dates)+1)[:len(spot_prices_full)]
+
+                    fixed_price = np.sum(np.multiply(spot_prices_full,light_schedule_tiled))/4
+                    
+                    if fixed_price < lowest_fixed_price:
+                        lowest_fixed_price = fixed_price
+                        offset_qh = QH
+
+                total_electricity_costs_fixed_shifted = lowest_fixed_price
+
+
                 for k, date in enumerate(dates):
                     # Precompute slice index
                     daily_slice = slice(k * QUARTER_HOURS_PER_DAY, (k + 1) * QUARTER_HOURS_PER_DAY)
@@ -579,7 +600,7 @@ class Market:
                     total_earnings_AM               += AM_earnings_up + AM_earnings_down
                     total_earnings_CM               += CM_earnings_up + CM_earnings_down
                     total_electricity_costs_AM      += energy_cost
-                    # total_electricity_costs_fixed   += np.sum(data["spot"][:16 * 4])/4
+                    total_electricity_costs_fixed   += np.sum(data["spot"][:16 * 4])/4
                     total_electricity_costs_spot    += np.sum(np.sort(data["spot"])[:16 * 4])/4
 
                     # nominal_costs_df.at[k, zone]   = np.sum(data["spot"][:16 * 4])/4
@@ -588,29 +609,27 @@ class Market:
 
 
                 total_earnings_mFRR = total_earnings_AM + total_earnings_CM
+                total_cost_mFRR           = total_electricity_costs_AM - total_earnings_mFRR
 
                 results[zone] = {}
-                results[zone]['AM_earnings'] = total_earnings_AM
-                results[zone]['CM_earnings'] = total_earnings_CM
-                results[zone]['mFRR_earnings'] = total_earnings_mFRR
-                # results[zone]['nom_cost'] = total_electricity_costs_fixed
-                results[zone]['nom_cost'] = total_electricity_costs_spot
-                results[zone]['new_cost'] = total_electricity_costs_AM
-                results[zone]['mFRR_cost'] = total_electricity_costs_AM - total_earnings_mFRR
-                results[zone]['spot_cost'] = total_electricity_costs_spot
+                results[zone]['fixed_shifted_cost'] = total_electricity_costs_fixed_shifted
+                results[zone]['spot_cost']          = total_electricity_costs_spot
+                results[zone]['mFRR_cost']          = total_cost_mFRR
+                results[zone]['AM_earnings']    = total_earnings_AM
+                results[zone]['CM_earnings']    = total_earnings_CM
+                results[zone]['mFRR_earnings']  = total_earnings_mFRR
 
                 AM_earnings_perc    = 100 * total_earnings_AM / (total_earnings_AM + total_earnings_CM)
                 CM_earnings_perc    = 100 * total_earnings_CM / (total_earnings_AM + total_earnings_CM)
-                mFRR_cost           = total_electricity_costs_AM - total_earnings_mFRR
 
-                # spot_reduction = (total_electricity_costs_fixed - total_electricity_costs_spot)/total_electricity_costs_fixed * 100
+                spot_cost_reduction = (total_electricity_costs_fixed_shifted - total_electricity_costs_spot)/total_electricity_costs_fixed_shifted * 100
+                mFRR_cost_reduction = (total_electricity_costs_fixed_shifted - total_cost_mFRR)/total_electricity_costs_fixed_shifted * 100 - spot_cost_reduction
+                results[zone]['spot_cost_reduction'] = spot_cost_reduction
+                results[zone]['mFRR_cost_reduction'] = mFRR_cost_reduction
+                results[zone]['AM_cost_reduction']   = AM_earnings_perc/100*mFRR_cost_reduction
+                results[zone]['CM_cost_reduction']   = CM_earnings_perc/100*mFRR_cost_reduction
 
-                # cost_reduction = (total_electricity_costs_fixed - mFRR_cost)/total_electricity_costs_fixed * 100
-                cost_reduction = (total_electricity_costs_spot - mFRR_cost)/total_electricity_costs_spot * 100
-                results[zone]['cost_reduction'] = cost_reduction
-                # results[zone]['spot_reduction'] = spot_reduction
-                # results[zone]['mfrr_reduction'] = cost_reduction - spot_reduction
-                results[zone]['message'] = f"Net cost reduction in percentage for {zone}: \t{cost_reduction:.2f}, AM: {AM_earnings_perc:.2f}, CM: {CM_earnings_perc:.2f}, \tNominal cost: {total_electricity_costs_fixed:.2f}, mFRR cost: {mFRR_cost:.2f}"
+                results[zone]['message'] = f"Net cost reduction in percentage for {zone}: \t{spot_cost_reduction:.2f}, AM: {AM_earnings_perc:.2f}, CM: {CM_earnings_perc:.2f}, \tNominal cost: {total_electricity_costs_fixed:.2f}, mFRR cost: {total_cost_mFRR:.2f}"
                 pbar.update(1)
 
         for zone in results: print(results[zone]['message'])
@@ -621,28 +640,20 @@ class Market:
             "nominal": cmap(8),   # Gray 
             "AM": cmap(3),        # Red
             "CM": cmap(0),        # Blue
-            "mFRR_cost": cmap(6)  # Green
+            "mFRR_cost": cmap(6), # Green
+            "spot" : cmap(4)
         }
 
         zones = list(results.keys())
-        # fixed_cost      = np.array([results[zone]['nom_cost'] for zone in zones])  
-        # spot_cost       = np.array([results[zone]['spot_cost'] for zone in zones])
-        # spot_reduction = np.array([results[zone]['spot_reduction'] for zone in zones])
-        # mfrr_reduction = np.array([results[zone]['mfrr_reduction'] for zone in zones])
-        cost_reduction = np.array([results[zone]['cost_reduction'] for zone in zones])  # Total cost reduction per zone
-        AM_earnings = np.array([results[zone]['AM_earnings'] for zone in zones])  # Absolute AM earnings
-        CM_earnings = np.array([results[zone]['CM_earnings'] for zone in zones])  # Absolute CM earnings
+        fixed_shifted_cost      = np.array([results[zone]['fixed_shifted_cost'] for zone in zones])  
+        spot_cost               = np.array([results[zone]['spot_cost'] for zone in zones])
+        mFRR_cost               = np.array([results[zone]['mFRR_cost'] for zone in zones])
 
-        # Convert AM and CM earnings to their proportional contributions
-        total_earnings = AM_earnings + CM_earnings
-        AM_earnings_perc = AM_earnings / total_earnings  # Fraction of total earnings from AM
-        CM_earnings_perc = CM_earnings / total_earnings  # Fraction of total earnings from CM
-
-        # Compute actual bar heights for stacked representation
-        # AM_reduction = mfrr_reduction * AM_earnings_perc
-        # CM_reduction = mfrr_reduction * CM_earnings_perc
-        AM_reduction = cost_reduction * AM_earnings_perc
-        CM_reduction = cost_reduction * CM_earnings_perc
+        spot_reduction = np.array([results[zone]['spot_cost_reduction'] for zone in zones])
+        AM_earnings = np.array([results[zone]['AM_earnings'] for zone in zones])            # Absolute AM earnings
+        CM_earnings = np.array([results[zone]['CM_earnings'] for zone in zones])            # Absolute CM earnings
+        AM_reduction = np.array([results[zone]['AM_cost_reduction'] for zone in zones])     # Cost reduction from AM (%)
+        CM_reduction = np.array([results[zone]['CM_cost_reduction'] for zone in zones])     # Cost reduction from CM (%)
 
         ####################################################
                 #   FRACTIONAL COST REDUCTION BAR CHART. Zone-wise
@@ -651,14 +662,17 @@ class Market:
 
         # ax.barh(zones,  spot_reduction, color='lightgrey', label="Spot Market")
         ax.axvline(x=100, color='black', linestyle='dotted', linewidth=1, label="Break-even Point")
-        ax.barh(zones, CM_reduction, color=colors['CM'], label="Capacity Market")
-        ax.barh(zones, AM_reduction, left=CM_reduction, color=colors['AM'], label="Activation Market")
+        ax.barh(zones, spot_reduction, color='lightgrey', label="Spot Market")
+        ax.barh(zones, CM_reduction, left=spot_reduction, color=colors['CM'], label="Capacity Market")
+        ax.barh(zones, AM_reduction, left=spot_reduction + CM_reduction, color=colors['AM'], label="Activation Market")
 
         # Labels and Title
         ax.set_ylabel("Bidding Zones")
         ax.set_xlabel("Cost Reduction (%)")
         # ax.set_title("Upper Estimate of Cost Reduction for a VF in Nordic Bidding Zones")
         ax.legend(prop={'size': 6})
+        ax.grid(axis='x', linestyle='-', alpha=0.6)
+
 
         plt.gca().invert_yaxis()  # Ensures zones are listed top-to-bottom
         plt.tight_layout()  # Optimizes spacing for a research paper
@@ -668,28 +682,16 @@ class Market:
         ####################################################
                 #   COST OVERVIEW BAR CHART. Zone-wise
 
-
-        zones = list(results.keys())  
-        nominal_cost = np.array([results[zone]['nom_cost'] for zone in zones])  # Total electricity cost without mFRR
-        new_cost = np.array([results[zone]['new_cost'] for zone in zones])  # Total electricity cost with mFRR
-        mfrr_cost = np.array([results[zone]['mFRR_cost'] for zone in zones])  # Remaining cost after mFRR earnings
-        mfrr_earnings = np.array([results[zone]['mFRR_earnings'] for zone in zones])  # Total mfrr earnings
-        AM_earnings = np.array([results[zone]['AM_earnings'] for zone in zones])  # Absolute AM earnings
-        CM_earnings = np.array([results[zone]['CM_earnings'] for zone in zones])  # Absolute CM earnings
-        mfrr_cost = nominal_cost - mfrr_earnings  # Remaining cost after mFRR earnings
-
         # Bar positions
         x = np.arange(len(zones))  # X-axis positions
         bar_width = 0.3  # Width of each bar
 
-        fig, ax = plt.subplots(figsize=(12, 6))
+        fig, ax = plt.subplots(figsize=(6, 3))
 
-        ax.bar(x - bar_width, nominal_cost, width=bar_width, color=colors["nominal"], label="Nominal Cost")
+        ax.bar(x - bar_width, fixed_shifted_cost, width=bar_width, color=colors["nominal"], label="Nominal Cost")
+        ax.bar(x, spot_cost, width=bar_width, color=colors["spot"], label="Cost after Spot optimizing")
 
-        ax.bar(x, CM_earnings, width=bar_width, color=colors["CM"], label="Earnings from Capacity Market")
-        ax.bar(x, AM_earnings, width=bar_width, bottom=CM_earnings, color=colors["AM"], label="Earnings from Activation Market")
-
-        ax.bar(x + bar_width, mfrr_cost, width=bar_width, color=colors["mFRR_cost"], label="Cost after mFRR participation")
+        ax.bar(x + bar_width, mFRR_cost, width=bar_width, color=colors["mFRR_cost"], label="Cost after mFRR participation")
 
 
         # Labels and Title
@@ -755,3 +757,133 @@ class Market:
         plt.show()
 
         return
+
+
+    def nordic_markets_overview(self, output=False):
+
+        AM_data_raw = self.AM.get_market_data('2024-01-01', n_days=365)
+        CM_data_raw = self.CM.get_market_data('2024-01-01', n_days=365)
+        
+
+        zones = ['DK1', 'DK2', 'FI', 'NO1', 'NO2', 'NO3', 'NO4', 'NO5', 'SE1', 'SE2', 'SE3', 'SE4']
+        directions = ['Up', 'Down']
+
+        AM_total_traded_volume = {zone: {} for zone in zones}
+        AM_total_market_value = {zone: {} for zone in zones}
+        AM_mean_activated_prices = {zone: {} for zone in zones}
+        CM_total_traded_volume = {zone: {} for zone in zones}
+        CM_total_market_value = {zone: {} for zone in zones}
+        CM_mean_activated_prices = {zone: {} for zone in zones}
+        
+        for zone in zones:
+            for direction in directions:
+
+                AM_data = AM_data_raw.copy().dropna()
+                CM_data = CM_data_raw.copy().dropna()
+
+                AM_total_traded_volume[zone][direction] = np.sum(np.array(AM_data[[f"{zone} {direction} Volume"]]))/4
+                CM_total_traded_volume[zone][direction] = np.sum(np.array(CM_data[[f"{zone} {direction} Volume"]]))/4
+                
+                AM_volume        = np.array(AM_data[f"{zone} {direction} Volume"])
+                AM_prices        = np.array(AM_data[f"{zone} {direction} Price"])
+                AM_market_value  = np.sum(np.where(AM_volume > 0, np.multiply(AM_volume, AM_prices), 0))/4
+                AM_total_market_value[zone][direction] = AM_market_value
+            
+                CM_volume        = np.array(CM_data[f"{zone} {direction} Volume"])
+                CM_prices        = np.array(CM_data[f"{zone} {direction} Price"])
+                CM_market_value  = np.sum(np.where(CM_volume > 0, np.multiply(CM_volume, CM_prices), 0))/4
+                CM_total_market_value[zone][direction] = CM_market_value
+            
+                AM_activated_prices = np.mean(AM_prices[np.where(AM_volume>0)])
+                AM_mean_activated_prices[zone][direction] = AM_activated_prices
+
+                CM_activated_prices = np.mean(CM_prices[np.where(CM_volume>0)])
+                CM_mean_activated_prices[zone][direction] = CM_activated_prices
+
+
+            
+
+        AM_total_volume_up = np.array([AM_total_traded_volume[zone]['Up'] for zone in zones])
+        AM_total_value_up  = np.array([AM_total_market_value[zone]['Up'] for zone in zones])  
+        CM_total_volume_up = np.array([CM_total_traded_volume[zone]['Up'] for zone in zones])  
+        CM_total_value_up  = np.array([CM_total_market_value[zone]['Up'] for zone in zones])  
+
+        AM_total_volume_down = np.array([AM_total_traded_volume[zone]['Down'] for zone in zones])
+        AM_total_value_down  = np.array([AM_total_market_value[zone]['Down'] for zone in zones])  
+        CM_total_volume_down = np.array([CM_total_traded_volume[zone]['Down'] for zone in zones])  
+        CM_total_value_down  = np.array([CM_total_market_value[zone]['Down'] for zone in zones])  
+
+        AM_mean_price_up    = np.array([AM_mean_activated_prices[zone]['Up'] for zone in zones])
+        AM_mean_price_down  = np.array([AM_mean_activated_prices[zone]['Down'] for zone in zones])  
+        CM_mean_price_up    = np.array([CM_mean_activated_prices[zone]['Up'] for zone in zones])  
+        CM_mean_price_down  = np.array([CM_mean_activated_prices[zone]['Down'] for zone in zones])  
+
+        fig, ((ax1, ax2, ax5), (ax3, ax4, ax6)) = plt.subplots(2, 3, figsize=(16,9), sharex=False)
+        axes = ax1, ax2, ax3, ax4, ax5, ax6
+        
+        x = np.arange(len(zones))
+        bar_width = 0.9
+
+        # ax.bar(x - bar_width, nominal_cost, width=bar_width, color=colors["nominal"], label="Nominal Cost"
+
+        # bar_colors_down = ['lightgreen']*2  + ['skyblue']*1  + ['salmon']*5      + ['gold']*4
+        # bar_colors_up   = ['green']*2       + ['blue']*1     + ['tomato']*5      + ['darkgoldenrod']*4
+
+        bar_colors_up     = 'skyblue'
+        bar_colors_down   = 'lightcoral'
+
+
+        ax1.set_title(f'Energy Activation Market: Total activated volume')
+        ax1.bar(x, AM_total_volume_up/1e3,                                  width=bar_width, color=bar_colors_up,     label="Up")
+        ax1.bar(x, AM_total_volume_down/1e3, bottom=AM_total_volume_up/1e3, width=bar_width, color=bar_colors_down,   label="Down")
+        ax1.set_ylabel(f'Volume (GWh)')
+
+        ax2.set_title(f'Energy Activation Market: Total traded value')
+        ax2.bar(x, AM_total_value_up/1e6,                                   width=bar_width, color=bar_colors_up,     label="Up")
+        ax2.bar(x, AM_total_value_down/1e6, bottom=AM_total_value_up/1e6,   width=bar_width, color=bar_colors_down,   label="Down")
+        ax2.set_ylabel(f'Total Market Value (M€)')
+
+        ax3.set_title(f'Capacity Market: Total volume procured')
+        ax3.bar(x, CM_total_volume_up/1e3,                                  width=bar_width, color=bar_colors_up,     label="Up")
+        ax3.bar(x, CM_total_volume_down/1e3, bottom=CM_total_volume_up/1e3, width=bar_width, color=bar_colors_down,   label="Down")
+        ax3.set_ylabel(f'Volume (GWh)')
+
+        ax4.set_title(f'Capacity Market: Total traded value')
+        ax4.bar(x, CM_total_value_up/1e6,                                   width=bar_width, color=bar_colors_up,     label="Up")
+        ax4.bar(x, CM_total_value_down/1e6, bottom=CM_total_value_up/1e6,   width=bar_width, color=bar_colors_down,   label="Down")
+        ax4.set_ylabel(f'Total Market Value (M€)')
+
+        half_bar_width = bar_width/2
+        shift = half_bar_width/2
+
+        ax5.set_title(f'Energy Activation Market: Mean clearing price')
+        ax5.bar(x-shift, AM_mean_price_up,   width=half_bar_width, color=bar_colors_up,     label="Up")
+        ax5.bar(x+shift, AM_mean_price_down, width=half_bar_width, color=bar_colors_down,   label="Down")
+        ax5.set_ylabel(f'Clearing Price (€)')
+
+        ax6.set_title(f'Capacity Market: Mean clearing price')
+        ax6.bar(x-shift, CM_mean_price_up,   width=half_bar_width, color=bar_colors_up,     label="Up")
+        ax6.bar(x+shift, CM_mean_price_down, width=half_bar_width, color=bar_colors_down,   label="Down")
+        ax6.set_ylabel(f'Clearing Price (€)')
+
+
+        for ax in axes:
+            ax.legend(title='Direction')
+            ax.set_xticks(range(len(zones)))
+            ax.set_xticklabels(zones)
+            ax.grid(axis='y', linestyle='-', alpha=0.7)
+
+
+        plt.suptitle(f'Market overview of Nordic balancing markets 2024')
+        plt.tight_layout()
+
+        plot_file_type = 'png'
+
+        if output:
+            # Save each subplot individually
+            for i, ax in enumerate(axes):  
+                extent = ax.get_tightbbox(fig.canvas.get_renderer()).transformed(fig.dpi_scale_trans.inverted())
+                fig.savefig(self.config.output_path + f'market_overview_{i+1}.' + plot_file_type, format=plot_file_type, bbox_inches=extent, dpi=300)
+
+
+        plt.show()
