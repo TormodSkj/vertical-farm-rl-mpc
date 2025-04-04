@@ -10,7 +10,7 @@ from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption
 
 SIM_NAME            = "plot_test"
-SIMULATION_LENGTH   = 20
+SIMULATION_LENGTH   = 2
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
 SIMULATION_DATE     = '2024-10-01'

@@ -899,16 +899,6 @@ class Controller():
             
             metrics_data[f'{market_type} Earnings'] = float(total_earnings)
 
-            #TODO REMOVE
-            timeseries_data['P_up'] = bid_volumes_up
-            timeseries_data['P_dn'] = bid_volumes_down
-            timeseries_data['C_up'] = bid_prices_up
-            timeseries_data['C_dn'] = bid_prices_down
-            
-            if market_data[market_type]['Activations'] is not None:
-                timeseries_data['A_up'] = bid_activations_up
-                timeseries_data['A_dn'] = bid_activations_down
-
 
             activation_th   = 0.01
             volume_th       = 0.001 * self.model.P_cap_max
@@ -1522,8 +1512,6 @@ class Controller():
             'AM'    : build_market_participation(AM_B_vols, np.vstack((AM_clearing_prices_up, AM_clearing_prices_down)), AM_A)
         }
 
-        # self.store_run(f"{run_id}_nom", dependencies, nom_sol, nom_x, nom_u, refrun_id = 'None', plot_run = plot_run)
-        # self.store_run(f"{run_id}_CM",  dependencies, CM_sol,  CM_x, CM_u, U_nom=nom_u, market_participation = market_participation, refrun_id = f"{run_id}_nom", plot_run = plot_run)
         self.store_run(f"{run_id}", dependencies, AM_sol, AM_x, AM_u, U_nom=nom_u, market_data = market_participation, refrun_id = f"None", plot_run = plot_run)
 
         if not self.surpress_output: print(f'{run_id} | Generated theoretically optimal bid plan')

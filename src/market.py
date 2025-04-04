@@ -352,8 +352,8 @@ class Market:
         
         CM_clearing_prices_up, CM_clearing_prices_down = self.CM.get_clearing_prices()
 
-        bid_volumes_up      = run['timeseries']["P_up"]
-        bid_volumes_down    = run['timeseries']["P_dn"]
+        bid_volumes_up      = run['markets']['CM']['Bids']["Up"]['Volume']
+        bid_volumes_down    = run['markets']['CM']['Bids']["Down"]['Volume']
 
         return np.sum(np.multiply(CM_clearing_prices_up, bid_volumes_up) + np.multiply(CM_clearing_prices_down, bid_volumes_down))
         
