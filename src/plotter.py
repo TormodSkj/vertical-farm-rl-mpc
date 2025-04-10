@@ -15,6 +15,8 @@ import shutil
 import time
 
 
+import geopandas as gpd
+
 
 class Plotter():
 
@@ -621,9 +623,10 @@ class Plotter():
             if market_data['Activations'] is None: continue
 
             balancing_market = self.controller.market.get_balancing_market(market_type)
-            # bid_ts = self.controller.optimization_results['runs'][run_id]['timeseries']
+            bid_ts = self.controller.optimization_results['runs'][run_id]['timeseries']
 
-            # u_nom               = bid_ts.get('u_nom', np.zeros(N)).flatten()
+            u                   = bid_ts.get('u', np.zeros(N)).flatten()
+            u_nom               = bid_ts.get('u_nom', np.zeros(N)).flatten()
             bid_volumes_up      = market_data['Bids']['Up']['Volume'].flatten()
             bid_volumes_down    = market_data['Bids']['Down']['Volume'].flatten()
             bid_prices_up       = market_data['Bids']['Up']['Price'].flatten()
@@ -878,6 +881,35 @@ class Plotter():
             # self.save_plot(f"relative_clearing_prices{market.bidding_zone}", run_id, fig, pdf)
             
 
+            ################################################
+            #       LIGHT SCHEDULE ALTERATIONS
+            #
+
+
+            plot_name = 'light_schedule_alterations'
+
+            fig, axes = plt.subplots(n_markets, 1, figsize=self.aspect_ratio, sharex=False) if plot_name not in subplots else (subplots[plot_name]['fig'], subplots[plot_name]['axes'])
+            subplots[plot_name] = {'run_id': run_id, 'fig': fig, 'axes': axes, 'pdf': pdf}
+            ax1 = axes[i]
+
+            k = 1000/self.controller.model.C_conv_PPFD
+            u_tilde = k*(np.multiply(bid_activation_down, bid_volumes_down) - np.multiply(bid_activation_up, bid_volumes_up))
+            
+            ax1.step(t, u_nom,           color='grey',  label="Baseline",       where='post')
+            ax1.step(t, u_nom + u_tilde, color='black', label="Light Schedule", where='post')
+            ax1.fill_between(t, u_nom, u_nom + k * bid_volumes_dn_activated, color='coral',        alpha=0.4, label="Down Activations", step='post')
+            ax1.fill_between(t, u_nom - k * bid_volumes_up_activated, u_nom, color='lightskyblue', alpha=0.4, label="Up Activations",   step='post')
+            
+            ax1.set_ylabel("PPFD (€/MW)")
+            ax1.set_xlabel("Time (days)")
+            ax1.legend()
+
+            fig.suptitle(f"{run_id} Light schedule before and after activations ({controller.market.date}, {controller.market.bidding_zone})\nExpectations made based on price covariances")
+            ax1.set_title(market_type)
+            fig.tight_layout(rect=[0, 0.03, 1, 0.95]) 
+
+
+
         for plot_name, peripherals in subplots.items():
             self.save_plot(plot_name, peripherals['run_id'], peripherals['fig'], peripherals['pdf'])
 
@@ -941,7 +973,7 @@ class Plotter():
             ax1.step(t, -np.array(ub_B_volumes[0,:]).flatten(), color='grey', label='Up-regulation volume limit', linewidth = linewidth, where = 'post')
             ax1.step(t, np.array(ub_B_volumes[1,:]).flatten(), color='grey', label='Down-regulation volume limit',  linewidth = linewidth, where = 'post')
             ax1.fill_between(t, -filtered_bid_volumes_up, 0, color='blue', alpha=0.4, label='Up-regulation', step='post')
-            ax1.fill_between(t, 0, filtered_bid_volumes_down, color='red', alpha=0.4, label='down-regulation', step='post')
+            ax1.fill_between(t, 0, filtered_bid_volumes_down, color='red', alpha=0.4, label='Down-regulation', step='post')
             ax1.set_ylabel("Power (MW)")
             ax1.set_xlabel("Time")
             ax1.legend(loc="upper right")
@@ -1106,13 +1138,43 @@ class Plotter():
 
 
 
-    def plot_light_schedules(self, plot_name = 'light_schedules', run_id = None, runs = {}, pdf = None):
+    # def plot_light_schedules(self, plot_name = 'light_schedules', run_id = None, runs = {}, pdf = None):
 
-        ######################################################
-        #                   LIGHT SCHEDULE
+    #     ######################################################
+    #     #                   LIGHT SCHEDULE
         
-        # if run_id is None:
-        #     if self.find_existing_plot(plot_name, self.common_dependencies): return
+    #     # if run_id is None:
+    #     #     if self.find_existing_plot(plot_name, self.common_dependencies): return
+
+    #     controller  = self.controller
+    #     config      = self.config
+    #     spot_prices = controller.spot_prices
+    #     market      = controller.market
+
+    #     n_runs = len(runs)
+
+    #     fig, axes = plt.subplots(n_runs+1, 1, figsize=self.aspect_ratio, sharex=True)
+
+    #     for i, run in enumerate(runs):
+    #         ax = axes[i]
+    #         u = runs[run]['timeseries']['u'].flatten()
+    #         t = runs[run]['timeseries']['t'].flatten()
+    #         ax.step(t, u, label=f"{run}", where='post') 
+    #         ax.set_ylabel(self.controller.model.u_unit)
+    #         ax.legend(loc="upper right")
+
+    #     ax = axes[-1]
+    #     ax.step(t, spot_prices, label=f"Spot price", color='gray', where='post') 
+    #     ax.set_ylabel("EUR/MWh")
+    #     ax.set_xlabel("Time (days)")
+    #     ax.legend(loc="upper right")
+    #     fig.suptitle(f'Light schedules ({market.date}, {market.bidding_zone})')
+
+    #     self.save_plot(plot_name, run_id = run_id, fig=fig, pdf=pdf)
+    #     self.update_plot_log(plot_name, self.common_dependencies)
+
+
+    def plot_light_schedules(self, plot_name='light_schedules', run_id=None, runs={}, pdf=None):
 
         controller  = self.controller
         config      = self.config
@@ -1121,7 +1183,7 @@ class Plotter():
 
         n_runs = len(runs)
 
-        fig, axes = plt.subplots(n_runs+1, 1, figsize=self.aspect_ratio, sharex=True)
+        fig, axes = plt.subplots(n_runs + 1, 1, figsize=self.aspect_ratio, sharex=True)
 
         for i, run in enumerate(runs):
             ax = axes[i]
@@ -1129,16 +1191,20 @@ class Plotter():
             t = runs[run]['timeseries']['t'].flatten()
             ax.step(t, u, label=f"{run}", where='post') 
             ax.set_ylabel(self.controller.model.u_unit)
-            ax.legend(loc="upper right")
+            ax.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
 
         ax = axes[-1]
-        ax.step(t, spot_prices, label=f"Spot price", color='gray', where='post') 
+        ax.step(t, spot_prices, label="Spot price", color='gray', where='post') 
         ax.set_ylabel("EUR/MWh")
         ax.set_xlabel("Time (days)")
-        ax.legend(loc="upper right")
+        ax.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+
         fig.suptitle(f'Light schedules ({market.date}, {market.bidding_zone})')
 
-        self.save_plot(plot_name, run_id = run_id, fig=fig, pdf=pdf)
+        # Make room on the right for legends
+        fig.subplots_adjust(right=0.8)
+
+        self.save_plot(plot_name, run_id=run_id, fig=fig, pdf=pdf)
         self.update_plot_log(plot_name, self.common_dependencies)
 
 
@@ -1403,12 +1469,14 @@ class Plotter():
         ax1.set_xlabel("Bidding prices (€/MW)")
         ax1.set_xlim([-75, 25])
         ax1.legend()
+        ax1.set_yscale('log')
 
 
         ax2.hist(mfrr_prices_dn-spot_prices_eur, label="Clearing price down", color='red', alpha=0.4, bins=n_bins, density=True)
         ax2.set_xlabel("Bidding prices (€/MW)")
         ax2.set_xlim([-75, 25])
         ax2.legend()
+        ax2.set_yscale('log')
 
         plt.suptitle(f'Relative clearing prices, normalized ({market.bidding_zone}, {market.date})')
 
@@ -2089,4 +2157,197 @@ class Plotter():
 
 
         return 0            
+
+
+
+    def plot_mfrr_example(self):
+
+
+        t_qh = np.linspace(0,24,97)[1:]
+        t_h = np.arange(24)
+        t_bar_qh = t_qh+0.5*0.25
+        t_bar_h = t_h+0.5
+        baseline = np.hstack((100*np.ones(16*4), np.zeros(8*4)))
+
+        CM_volumes_up   = 100*np.array([0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1] + [0, 0, 0, 0, 0, 0, 0, 0])
+        CM_volumes_down = 100*np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] + [1, 1, 1, 1, 1, 1, 1, 1])
+        
+        CM_activated_up   = 100*np.array([0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0] + [0, 0, 0, 0, 0, 0, 0, 0])
+        CM_activated_down = 100*np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] + [0, 1, 1, 0, 0, 0, 0, 0])
+        
+        
+        AM_volumes_up = np.repeat(CM_activated_up, 4)
+        AM_volumes_up[np.random.choice(*np.where(AM_volumes_up[:16*4] == 0), 8, replace=False)] = 100* np.ones(8)
+        AM_volumes_down = np.repeat(CM_activated_down, 4) 
+        AM_volumes_down[np.random.choice(*np.where(AM_volumes_down[16*4:] == 0), 20, replace=False) + 16*4] = 100* np.ones(20)
+
+
+        AM_activated_up, AM_activated_down = np.zeros(96), np.zeros(96)
+
+        AM_activated_up[np.random.choice(*np.where(AM_volumes_up == 100),       13, replace=False)] = 100 * np.ones(13)
+        AM_activated_down[np.random.choice(*np.where(AM_volumes_down == 100),   9, replace=False)] = 100 * np.ones(9)
+
+        # AM_volumes_up = 100 * np.hstack((np.zeros(2*4), 
+        #                                  np.ones(5*4), 
+        #                                  np.zeros(6*4), 
+        #                                  np.ones(3*4), 
+        #                                  np.zeros(8*4)))
+        
+        # AM_volumes_down = 100 * np.hstack((np.zeros(16*4), 
+        #                                    np.ones(8*4)))
+
+
+        # AM_activated_up = 100 * np.hstack((np.zeros(1*4), 
+        #                                  np.ones(4*4), 
+        #                                  np.zeros(8*4), 
+        #                                  np.ones(1*4), 
+        #                                  np.zeros(9*4)))
+        
+        # AM_activated_down = 100 * np.hstack((np.zeros(17*4), 
+        #                                      np.ones(3*4),
+        #                                      np.zeros(4*4)))
+
+
+
+        # plt.figure(figsize=self.aspect_ratio)
+        fig, (ax1, ax2, ax3, ax4, ax5, ax6) = plt.subplots(6, 1, figsize=(10,10))
+
+
+        ax1.step(t_qh, baseline, label='Baseline')
+        
+        bar_width = 1
+        edge_color = 'grey'
+        alpha = 0.6
+
+        ax2.step(t_qh, baseline, label='Baseline')
+        ax2.bar(t_bar_h, CM_volumes_up,       width=bar_width, color = 'lightskyblue', edgecolor = edge_color, alpha = alpha, label='CM Up bids')
+        ax2.bar(t_bar_h, CM_volumes_down,     width=bar_width, color = 'coral',        edgecolor = edge_color, alpha = alpha, label='CM Down bids')
+        
+        ax3.step(t_qh, baseline, label='Baseline')
+        ax3.bar(t_bar_h, CM_volumes_up,       width=bar_width, color = 'lightskyblue', edgecolor = edge_color, alpha = alpha, label='CM Up bids')
+        ax3.bar(t_bar_h, CM_volumes_down,     width=bar_width, color = 'coral',        edgecolor = edge_color, alpha = alpha, label='CM Down bids')
+        ax3.bar(t_bar_h, CM_activated_up,     width=bar_width, color = 'navy',         edgecolor = edge_color, alpha = alpha, label='CM Reserved Up')
+        ax3.bar(t_bar_h, CM_activated_down,   width=bar_width, color = 'maroon',       edgecolor = edge_color, alpha = alpha, label='CM Reserved Down')
+        
+        bar_width = 0.25
+        ax4.step(t_qh, baseline, label='Baseline')
+        ax4.bar(t_bar_qh, CM_activated_up.repeat(4),    width=bar_width, color = 'navy',         edgecolor = edge_color, alpha = alpha, label='CM Up bids')
+        ax4.bar(t_bar_qh, CM_activated_down.repeat(4),  width=bar_width, color = 'maroon',       edgecolor = edge_color, alpha = alpha, label='CM Down bids')
+        ax4.bar(t_bar_qh, AM_volumes_up,                width=bar_width, color = 'lightskyblue', edgecolor = edge_color, alpha = alpha, label='CM Reserved Up')
+        ax4.bar(t_bar_qh, AM_volumes_down,              width=bar_width, color = 'coral',        edgecolor = edge_color, alpha = alpha, label='CM Reserved Down')
+
+        ax5.step(t_qh, baseline, label='Baseline')
+        ax5.bar(t_bar_qh, AM_volumes_up,                width=bar_width, color = 'lightskyblue', edgecolor = edge_color, alpha = alpha, label='CM Reserved Up')
+        ax5.bar(t_bar_qh, AM_volumes_down,              width=bar_width, color = 'coral',        edgecolor = edge_color, alpha = alpha, label='CM Reserved Down')
+        ax5.bar(t_bar_qh, AM_activated_up,              width=bar_width, color = 'navy',         edgecolor = edge_color, alpha = alpha, label='CM Reserved Up')
+        ax5.bar(t_bar_qh, AM_activated_down,            width=bar_width, color = 'maroon',       edgecolor = edge_color, alpha = alpha, label='CM Reserved Down')
+
+        ax6.step(t_qh, baseline, label='Baseline')
+        ax6.step(t_qh, baseline + AM_activated_down - AM_activated_up, label='After AM activations')
+        
+
+        plt.show()
+
+
+
+    def plot_light_schedule_slice(self, start_day, end_day):
+
+        start_idx = start_day * QUARTER_HOURS_PER_DAY
+        end_idx   =   end_day * QUARTER_HOURS_PER_DAY
+
+
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10,10))
+
+        controller = self.controller
+        t = controller.t
+
+        t_slice = t[start_idx:end_idx]
+        spot_prices_slice   = np.array(controller.spot_prices).flatten()[start_idx:end_idx]
+        fixed_slice         = np.array(controller.optimization_results['runs']['fixed']['timeseries']['u']).flatten()[start_idx:end_idx]
+        imported_slice      = np.array(controller.optimization_results['runs']['imported']['timeseries']['u']).flatten()[start_idx:end_idx]
+
+
+        ax1.step(t_slice, spot_prices_slice, label='Spot Prices', where='post')
+        ax1.set_title('Spot prices')
+
+        ax2.step(t_slice, fixed_slice, label='Fixed light schedule', where='post')
+        ax2.set_title('Fixed light schedule')
+
+        ax3.step(t_slice, imported_slice, label='Light schedule after AM Activations', where='post')
+        ax3.set_title('Light schedule after AM Activations')
+
+        fig.tight_layout()
+        plt.show()
+
+
+
+
+
+    def plot_mfrr_example_2(self):
+
+      
+        controller = self.controller
+        market = controller.market
+        t = controller.t
+
+        start_idx = 7*96
+        length = 8
+        end_idx = start_idx+length
+
+        t_slice = t[start_idx:end_idx]
+        spot_prices = controller.spot_prices
+
+        AM_clearing_prices_up   = market.get_balancing_market('AM').clearing_prices_up
+        AM_clearing_prices_down = market.get_balancing_market('AM').clearing_prices_down
+
+        spot_prices_slice = spot_prices[start_idx:end_idx]
+
+        baseline = np.array([180, 180, 180, 40, 40, 120, 120, 120])*10/200
+
+        AM_bids_up   = np.array([0, 160, 160, 0,  0,  0,   120, 120])*10/200
+        AM_bids_down = np.array([0, 0,   0,   0,  160, 80, 80,  0])*10/200
+
+        AM_activations_up   = np.array([0, 160, 0, 0, 0, 0, 0, 0])*10/200
+        AM_activations_down = np.array([0, 0, 0, 0, 0, 80,  0, 0])*10/200
+
+
+
+        fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(10,6))
+
+
+        ax1.set_title('Baseline light schedule')
+        ax1.step(t_slice, baseline, label='Baseline', where = 'post')
+
+        
+        
+        ax2.set_title('AM Bids')
+        ax2.step(t_slice, baseline, label='Baseline', where = 'post')
+        ax2.fill_between(t_slice, baseline-AM_bids_up, baseline,  color = 'lightskyblue', alpha = 0.6, label='Bid volumes up', step = 'post')
+        ax2.fill_between(t_slice, baseline, baseline+AM_bids_down, color = 'coral', alpha = 0.6, label='Bid volumes down', step = 'post')
+        
+
+        ax3.set_title('AM Activation')
+        ax3.step(t_slice, baseline, label='Baseline', where = 'post')
+        ax3.fill_between(t_slice,  baseline - AM_activations_up, baseline,  color = 'navy', alpha = 0.6, label='Up-Activations', step = 'post')
+        ax3.fill_between(t_slice, baseline, baseline + AM_activations_down, color = 'maroon', alpha = 0.6, label='Down-Activations', step = 'post')
+        
+
+        ax4.set_title('Light schedule after AM Activations')
+        ax4.step(t_slice, baseline + AM_activations_down - AM_activations_up, label='Light schedule', where = 'post')
+
+        for ax in (ax1, ax2, ax3, ax4):
+            ax.legend(loc='center left', bbox_to_anchor=(-0.35, 0.5))
+            ax.set_ylim([0, 12])
+            ax.set_xticklabels(np.arange(8))
+            ax.set_ylabel('Power (MW)')
+            
+
+        fig.tight_layout()
+
+
+    
+        plt.show()
+
+
+        
 

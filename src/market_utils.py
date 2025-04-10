@@ -744,3 +744,30 @@ def load_mfrr_CM_data(data_folder) -> pd.DataFrame:
     merged_data = full_time_range.merge(merged_data, on='Start Time', how='left').fillna(0)
 
     return merged_data
+
+
+
+def unpack_hourly_timeseries(prices_dataframe: pd.DataFrame):
+    df = prices_dataframe.copy()
+    df['Start Time'] = pd.to_datetime(df['Start Time'])
+    df['hour'] = df['Start Time'].dt.hour
+    df['date'] = df['Start Time'].dt.date
+
+    # Identify all price columns (excluding metadata columns)
+    cols = [col for col in df.columns if col not in ['Start Time', 'hour', 'date']]
+
+    result_frames = []
+
+    for col in cols:
+        # Pivot so each hour becomes a column
+        pivoted = df.pivot(index='date', columns='hour', values=col)
+
+        # Rename columns to indicate source column and hour
+        pivoted.columns = [f"{col}_hour_{hour}" for hour in pivoted.columns]
+
+        result_frames.append(pivoted)
+
+    # Combine all pivoted DataFrames
+    full_day = pd.concat(result_frames, axis=1)
+
+    return full_day

@@ -48,9 +48,7 @@ class Config():
                          self.data_path,
                          self.data_analysis_path,
                          self.output_path,
-                        #  self.mfrr_AM_clearing_prices_path, 
-                        #  self.mfrr_AM_activation_data_path, 
-                         self.mfrr_CBMP_data_path                                 
+                         self.mfrr_CBMP_data_path
                          )
 
         # Scan all data and store metrics/metadata in a readme

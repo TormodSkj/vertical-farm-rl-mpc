@@ -9,11 +9,11 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption
 
-SIM_NAME            = "plot_test"
-SIMULATION_LENGTH   = 2
+SIM_NAME            = "import_test"
+SIMULATION_LENGTH   = 18
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
-SIMULATION_DATE     = '2024-10-01'
+SIMULATION_DATE     = '2024-10-09'
 BIDDING_ZONE        = 'SE1'
 OPTIMISTIC          = 1
 SEARCH_CACHE        = 0
@@ -32,11 +32,11 @@ def main():
     ''' CREATING OBJECTS '''
     settings = Settings('general', SIMULATION_LENGTH = SIMULATION_LENGTH)
     settings.update_setting(SIM_NAME = SIM_NAME)
-    settings.add_setting('controller', SEARCH_SIM_CACHE = SEARCH_CACHE)
+    settings.add_setting('controller', SEARCH_SIM_CACHE = SEARCH_CACHE, IMPORT_FILE = 'mfrr_experiment_1.json')
     settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH)
     settings.add_setting('market', SIMULATION_DATE = SIMULATION_DATE, OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE)
     settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT, DLI_RESOLUTION = 2, DISCRETIZATION = DISCRETIZATION)
-    settings.add_setting('plotter', SEARCH_PLOT_CACHE = SEARCH_PLOT_CACHE, PLOT_EXPORT_TYPE='png')
+    settings.add_setting('plotter', SEARCH_PLOT_CACHE = SEARCH_PLOT_CACHE, PLOT_EXPORT_TYPE='pdf')
 
     config      = Config(settings)
     plant       = PlantModel(settings)
@@ -52,21 +52,21 @@ def main():
     # market.nordic_markets_overview(output=True)
 
 
-
     ''' OPTIMIZAION '''
     # market.optimal_bidding_price_prediction(controller.spot_prices)
     
     # '''
-    # controller.import_baseline('imported')
+    controller.import_light_schedule('imported', plot_run = True)
 
-    controller.optimize_spotprice('spot_opt')         #
+
+    # controller.optimize_spotprice('spot_opt', 'None')         #
     # controller.optimize_mfrr('mfrr_opt', 'spot_opt', plot_run=True)  #
     # simulator.apply_mfrr_clearing_prices('mfrr_applied', 'mfrr_opt', plot_run=True)
     
-    # controller.optimize_mfrr_mpc('mfrr_mpc')
+    # controller.optimize_AM_mpc('mfrr_mpc')
     # simulator.apply_mfrr_clearing_prices('apply_prices_mpc', 'mfrr_mpc')
 
-    # controller.optimize_mfrr_mpc('mfrr_mpc_spot', 'spot_opt')
+    # controller.optimize_AM_mpc('mfrr_mpc_spot', 'spot_opt')
     # simulator.apply_mfrr_clearing_prices('apply_prices_mpc_spot', 'mfrr_mpc_spot')
 
     # controller.generate_true_optimum_AM('abs_opt', 'spot_opt')
@@ -76,7 +76,8 @@ def main():
     # controller.generate_true_optimum_AM('optimal_AM', 'optimal_CM', plot_run = True)
     # simulator.apply_mfrr_clearing_prices('abs_applied', 'abs_opt')
 
-    controller.generate_true_optimum_CM_and_AM('MARI_opt', plot_run = True)
+    # controller.generate_true_optimum_BL_CM_AM('MARI_opt', plot_run = True)
+    # controller.generate_true_optimum_CM_AM('MARI_opt', refrun_id='spot_opt', plot_run = True)
 
     # controller.co_optimize_CM_AM('co_opt_1')
     # simulator.apply_mfrr_clearing_prices('co_opt_1_applied', 'co_opt_1_CM')
@@ -86,6 +87,7 @@ def main():
     # controller.optimize_mfrr('mfrr_fixed', 'fixed')
     # simulator.apply_mfrr_clearing_prices('mfrr_fixed_applied', 'mfrr_fixed')
 
+    # '''
     
     '''Status report'''
     # controller.status_report()
@@ -95,14 +97,14 @@ def main():
     # run_ids = ['mfrr_opt', 'abs_opt']
     # for run_id in run_ids: print(f"Upper CM participation earnings limit for {run_id}: {market.calculate_CM_earnings_upper_limit(controller, run_id)}")
           
-    # market.estimate_prices(n_xlags=10, n_ylags=10)
+    market.estimate_prices()
+    # market.price_estimation(plot_estimates=True)
 
     
-    #'''
     # 
     ''' PLOTTING '''
-    plotter.save_ocp_plots()
-    plotter.plot_financial_report()
+    # plotter.save_ocp_plots()
+    # plotter.plot_financial_report()
 
     # plotter.plot_spot_mfrr_prices() 
     # plotter.plot_CM_data() 

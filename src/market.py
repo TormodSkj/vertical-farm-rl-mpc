@@ -4,7 +4,7 @@ import casadi as ca
 import pandas as pd
 from config import Config
 from balancingmarket import BalancingMarket
-from estimator import Estimator
+from estimator import Estimator, EstimatorDF
 from globals import *
 from utils import *
 from market_utils import *
@@ -13,6 +13,12 @@ import os
 import time
 from settings import Settings
 from typing import List, Dict
+import pmdarima as pm
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import * 
+import re
+import joblib
 
 
 class Market:
@@ -110,6 +116,7 @@ class Market:
         self.analyze_market_potency(T = self.T)
 
 
+
     def get_balancing_market(self, key) -> BalancingMarket:
         if key == 'CM': key = 'Capacity Market'     
         if key == 'AM': key = 'Activation Market'   
@@ -135,7 +142,7 @@ class Market:
         CM_data_full_set    = pd.merge(spot_data, mfrr_CM_data, on='Start Time', how='inner')
 
         
-        mfrr_data_full_set  = pd.merge(AM_data_full_set.copy().rename(columns = {col: f'AM {col}' for col in AM_data_full_set.columns if 'Start Time' not in col}), 
+        mfrr_data_full_set  = pd.merge(AM_data_full_set.copy().rename(columns = {col: f'AM {col}' for col in AM_data_full_set.columns if 'Start Time' not in col and 'Spot' not in col}), 
                                            mfrr_CM_data.copy().rename(columns = {col: f'CM {col}' for col in mfrr_CM_data.columns if 'Start Time' not in col}), 
                                        on='Start Time', how='inner')
 
@@ -361,75 +368,59 @@ class Market:
 
 
 
-    def estimate_prices(self, n_xlags = 10, n_ylags = 10):
+    def estimate_prices(self):
 
 
-        # mfrr_AM_raw_data = (self.config.mfrr_AM_data_path, None)
+        xlags = list(range(24,72))
+        ylags = list(range(2,24))
+
+
 
         price_data = self.mfrr_data_full_set.copy().dropna()
-
-
-
-        # spot_prices = 
-                
-        AM_prices_labels_up     = [col for col in price_data if 'AM' in col and 'Price' in col and 'Up' in col]
-        AM_prices_labels_down   = [col for col in price_data if 'AM' in col and 'Price' in col and 'Down' in col]
-        CM_prices_labels_up     = [col for col in price_data if 'CM' in col and 'Price' in col and 'Up' in col]
-        CM_prices_labels_down   = [col for col in price_data if 'CM' in col and 'Price' in col and 'Down' in col]
-        spot_price_labels       = [col for col in price_data if 'Spot Price' in col]
-        AM_prices_labels = AM_prices_labels_up + AM_prices_labels_down
-        CM_prices_labels = CM_prices_labels_up + CM_prices_labels_down
         
-        AM_clearing_prices_up   = np.array(price_data[AM_prices_labels_up]).T
-        AM_clearing_prices_down = np.array(price_data[AM_prices_labels_down]).T
-        CM_clearing_prices_up   = np.array(price_data[CM_prices_labels_up]).T
-        CM_clearing_prices_down = np.array(price_data[CM_prices_labels_down]).T
-        spot_prices             = np.array(price_data[spot_price_labels]).T
+        price_data = price_data[[col for col in price_data if self.bidding_zone in col]]
         
-
-        CM_prices = np.vstack((CM_clearing_prices_up, 
-                               CM_clearing_prices_down))
+        spot_prices_df      = price_data[[col for col in price_data if self.bidding_zone in col and 'Spot' in col]].copy()
+        CM_prices_df        = price_data[[col for col in price_data if self.bidding_zone in col and 'CM' in col and 'Price' in col]].copy()
+        AM_prices_df        = price_data[[col for col in price_data if self.bidding_zone in col and 'AM' in col and 'Price' in col]].copy()
+        spot_CM_prices_df   = price_data[[col for col in price_data if self.bidding_zone in col and 'Spot' in col or ('CM' in col and 'Price' in col)]].copy()
         
-        AM_prices = np.vstack((AM_clearing_prices_up, 
-                               AM_clearing_prices_down))
+        CM_price_estimate = EstimatorDF(CM_prices_df, spot_prices_df,   
+                                        xlags=xlags, ylags=ylags)
+        AM_price_estimate = EstimatorDF(AM_prices_df, spot_prices_df,   
+                                        xlags=xlags, ylags=ylags)
         
-        '''
-        for i in range(CM_prices.shape[0]):
-            CM_price_estimate = Estimator(CM_prices[i,:], spot_prices,   
-                                        x_labels = CM_prices_labels[i], n_xlags=n_xlags, n_ylags=n_ylags)
-            CM_price_estimate.measure_performance(how='array')
-
-        for i in range(AM_prices.shape[0]):
-            AM_price_estimate = Estimator(AM_prices[i,:], np.vstack((CM_prices, spot_prices)),   
-                                        x_labels = AM_prices_labels[i], n_xlags=n_xlags, n_ylags=n_ylags)
-            AM_price_estimate.measure_performance(how='array')
-        '''
-        CM_price_estimate = Estimator(CM_prices, spot_prices,   
-                                        x_labels = CM_prices_labels, n_xlags=n_xlags, n_ylags=n_ylags)
-        AM_price_estimate = Estimator(AM_prices, np.vstack((CM_prices, spot_prices)),   
-                                        x_labels = AM_prices_labels, n_xlags=n_xlags, n_ylags=n_ylags)
-        
-        print(f"CM Estimator RMSE: {CM_price_estimate.rmse}\t lag: {CM_price_estimate.n_xlags}")
-        print(f"AM Estimator RMSE: {AM_price_estimate.rmse}\t lag: {AM_price_estimate.n_xlags}")
+        print(f"CM Estimator RMSE: {CM_price_estimate.rmse_scores}\t lags: {CM_price_estimate.xlags}")
+        print(f"AM Estimator RMSE: {AM_price_estimate.rmse_scores}\t lags: {AM_price_estimate.xlags}")
 
         print("\n Performance measures:")
         CM_price_estimate.measure_performance()
         AM_price_estimate.measure_performance()
         
 
+        CM_prices_up    = CM_prices_df[[col for col in CM_prices_df if 'Up Price' in col]]
+        CM_prices_down  = CM_prices_df[[col for col in CM_prices_df if 'Down Price' in col]]
+        AM_prices_up    = AM_prices_df[[col for col in AM_prices_df if 'Up Price' in col]]
+        AM_prices_down  = AM_prices_df[[col for col in AM_prices_df if 'Down Price' in col]]
+
+        Est_CM_prices_up    = CM_price_estimate.estimated_df[[col for col in CM_price_estimate.estimated_df if 'Up Price' in col]]
+        Est_CM_prices_down  = CM_price_estimate.estimated_df[[col for col in CM_price_estimate.estimated_df if 'Down Price' in col]]
+        Est_AM_prices_up    = AM_price_estimate.estimated_df[[col for col in AM_price_estimate.estimated_df if 'Up Price' in col]]
+        Est_AM_prices_down  = AM_price_estimate.estimated_df[[col for col in AM_price_estimate.estimated_df if 'Down Price' in col]]
+
+
         fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, sharex=True)
 
 
-        t = np.arange(spot_prices.shape[1])
-        ax1.plot(t, CM_price_estimate[0,:],     label='Est CM clearing up')
-        ax2.plot(t, CM_price_estimate[12,:],     label='Est CM clearing down')
-        ax3.plot(t, AM_price_estimate[0,:],     label='Est AM clearing up')
-        ax4.plot(t, AM_price_estimate[12,:],     label='Est AM clearing down')
+        ax1.plot(Est_CM_prices_up   ,     label='Est CM clearing up')
+        ax2.plot(Est_CM_prices_down ,     label='Est CM clearing down')
+        ax3.plot(Est_AM_prices_up   ,     label='Est AM clearing up')
+        ax4.plot(Est_AM_prices_down ,     label='Est AM clearing down')
 
-        ax1.plot(t, CM_prices[0,:],    linestyle = ':', color='gray', label='CM clearing up')
-        ax2.plot(t, CM_prices[12,:],    linestyle = ':', color='gray', label='CM clearing down')
-        ax3.plot(t, AM_prices[0,:],    linestyle = ':', color='gray', label='AM clearing up')
-        ax4.plot(t, AM_prices[12,:],    linestyle = ':', color='gray', label='AM clearing down')
+        ax1.plot(CM_prices_up  ,   linestyle = ':', color='gray', label='CM clearing up')
+        ax2.plot(CM_prices_down,    linestyle = ':', color='gray', label='CM clearing down')
+        ax3.plot(AM_prices_up  ,   linestyle = ':', color='gray', label='AM clearing up')
+        ax4.plot(AM_prices_down,    linestyle = ':', color='gray', label='AM clearing down')
 
         ax1.legend()
         ax2.legend()
@@ -533,8 +524,8 @@ class Market:
                     for key in data.keys():
                         data[key] = data[key][:N_max]
 
-                    AM_earnings_up      = np.multiply(data["AM_up"],   data["AM_demand_up"])
-                    AM_earnings_down    = np.multiply(data["AM_down"], data["AM_demand_down"])
+                    AM_earnings_up      = np.multiply(data["AM_up"] - data['spot'],   data["AM_demand_up"])
+                    AM_earnings_down    = np.multiply(data['spot'] - data["AM_down"], data["AM_demand_down"])
                     CM_earnings_up      = np.multiply(data["CM_up"],   data["CM_reserve_up"])
                     CM_earnings_down    = np.multiply(data["CM_down"], data["CM_reserve_down"])
 
