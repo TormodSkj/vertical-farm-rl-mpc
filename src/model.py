@@ -472,7 +472,7 @@ class PlantModel:
             P_tilde = CM_Activation_chance_down * AM_Demand_down * CM_Volume_down \
                     - CM_Activation_chance_up * AM_Demand_up * CM_Volume_up
             
-            u_tilde = 1000*P_tilde/self.C_conv_PPFD
+            u_tilde = 1000/self.C_conv_PPFD * P_tilde
 
             U = np.append(U, U_nom[:,k] + u_tilde)
 

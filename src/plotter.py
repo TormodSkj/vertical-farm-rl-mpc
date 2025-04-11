@@ -644,10 +644,12 @@ class Plotter():
 
 
             # Filter out non-activated bids
-            bid_prices_up_activated     = np.where(np.logical_and(bid_activation_up     > self.activation_th, bid_volumes_up    > self.volume_th,), bid_prices_up,    0)
-            bid_prices_dn_activated     = np.where(np.logical_and(bid_activation_down   > self.activation_th, bid_volumes_down  > self.volume_th,), bid_prices_down,  0)
-            bid_volumes_up_activated    = np.where(np.logical_and(bid_activation_up     > self.activation_th, bid_volumes_up    > self.volume_th,), bid_volumes_up,   0)
-            bid_volumes_dn_activated    = np.where(np.logical_and(bid_activation_down   > self.activation_th, bid_volumes_down  > self.volume_th,), bid_volumes_down, 0)
+            clearing_prices_up   = balancing_market.clearing_prices_up
+            clearing_prices_down = balancing_market.clearing_prices_down
+            bid_prices_up_activated     = np.where(np.logical_and(np.logical_and(bid_activation_up     > 0, bid_volumes_up    > self.volume_th,), bid_prices_up < clearing_prices_up),      bid_prices_up,    0)
+            bid_prices_dn_activated     = np.where(np.logical_and(np.logical_and(bid_activation_down   > 0, bid_volumes_down  > self.volume_th,), bid_prices_down < clearing_prices_down),  bid_prices_down,  0)
+            bid_volumes_up_activated    = np.where(np.logical_and(np.logical_and(bid_activation_up     > 0, bid_volumes_up    > self.volume_th,), bid_prices_up < clearing_prices_up),      bid_volumes_up,   0)
+            bid_volumes_dn_activated    = np.where(np.logical_and(np.logical_and(bid_activation_down   > 0, bid_volumes_down  > self.volume_th,), bid_prices_down < clearing_prices_down),  bid_volumes_down, 0)
             
             
             ######################################################
@@ -695,8 +697,6 @@ class Plotter():
             subplots[plot_name] = {'run_id': run_id, 'fig': fig, 'axes': axes, 'pdf': pdf}
             ax1, ax2 = axes[:,i]
 
-            clearing_prices_up   = balancing_market.clearing_prices_up
-            clearing_prices_down = balancing_market.clearing_prices_down
             activations_up       = balancing_market.activations_up
             activations_down     = balancing_market.activations_down
             expected_prices_up   = balancing_market.expected_prices_up

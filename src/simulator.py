@@ -168,20 +168,24 @@ class Simulator():
             bid_prices  = np.vstack((bid_prices_up,
                                      bid_prices_down))
 
-            activated_volumes, balancing_market_earnings = balancing_market.subject_bids_to_market_data(self.market.MTU_start, bid_volumes, bid_prices)
+            activations, activated_volumes, balancing_market_earnings = balancing_market.subject_bids_to_market_data(self.market.MTU_start, bid_volumes, bid_prices)
             activated_volumes_up   = activated_volumes[0,:]
             activated_volumes_down = activated_volumes[1,:]
             market_earnings[market_type] = np.sum(balancing_market_earnings)
 
+            activations_up   = activations[0,:]
+            activations_down = activations[1,:]
+
             bid_activations_up, bid_activations_down = balancing_market.get_activations()
             market_data[market_type]['Activations'] = {
-                'Up'    : bid_activations_up,
-                'Down'  : bid_activations_down
+                'Up'    : activations_up,
+                'Down'  : activations_down
             }
 
             if balancing_market.market_type == 'Activation Market':
                 P_tilde = activated_volumes_down - activated_volumes_up
-                U = U_nom + 1000/controller.model.C_conv_PPFD * P_tilde
+                U_tilde = 1000/controller.model.C_conv_PPFD * P_tilde
+                U = U_nom + U_tilde
 
         # B = np.vstack((bidding_vol_up, bidding_vol_down, bidding_price_up, bidding_price_down))
         

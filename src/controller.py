@@ -883,7 +883,7 @@ class Controller():
 
                     # Apply CM bids to CM market
                     # Extract required AM bid volumes 
-                    CM_activated_volumes, CM_earnings = market.CM.subject_bids_to_market_data(current_MTU, CM_bid_volumes_opt, CM_bid_prices_opt)
+                    CM_activations, CM_activated_volumes, CM_earnings = market.CM.subject_bids_to_market_data(current_MTU, CM_bid_volumes_opt, CM_bid_prices_opt)
 
 
                 # Update AM bid optimizer
@@ -906,7 +906,7 @@ class Controller():
 
                 # Apply bid activations
                 # Evaluate activations
-                AM_activated_volumes, AM_earnings = market.AM.subject_bids_to_market_data(current_MTU, AM_bid_volumes_opt, AM_bid_prices_opt)
+                AM_activations, AM_activated_volumes, AM_earnings = market.AM.subject_bids_to_market_data(current_MTU, AM_bid_volumes_opt, AM_bid_prices_opt)
 
                 # Store data
                 store_data_slice = slice(k, k+min(N_iter, N_horizon))
@@ -951,8 +951,8 @@ class Controller():
         AM_bid_volumes      = np.array(AM_bids_log[:2,:]).reshape((2, -1))
         AM_bid_prices       = np.array(AM_bids_log[2:4,:]).reshape((2, -1))
         
-        CM_bid_activations  = np.vstack((CM_activation_demands_up, CM_activation_demands_down))
-        AM_bid_activations  = np.vstack((AM_activation_demands_up, AM_activation_demands_down))
+        CM_bid_activations, _, _  = market.CM.subject_bids_to_market_data(market.MTU_start, CM_bid_volumes, CM_bid_prices)
+        AM_bid_activations, _, _  = market.AM.subject_bids_to_market_data(market.MTU_start, AM_bid_volumes, AM_bid_prices)
 
         X_log       = np.array(X_log).reshape((self.model.nx, -1))
         U_log       = np.array(U_log).reshape((self.model.nu, -1))
@@ -1152,6 +1152,7 @@ class Controller():
         # update parameters
         opti.set_value(opt_vars['x0'],                      x0)
         opti.set_value(opt_vars['U_nom'][:,:N_TH],          U_nom)
+        opti.set_value(opt_vars['Req_volumes'][:,:N_TH],    CM_reservations[:,:N_TH])
         opti.set_value(opt_vars['ref_weight'],              ref_weight)
         opti.set_value(opt_vars['spot_prices'][:,:N_TH],    spot_prices)
         # opti.set_value(opt_vars['B_volumes'][:,:N_TH], B_max_volumes)

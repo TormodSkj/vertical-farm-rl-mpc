@@ -296,8 +296,9 @@ class BalancingMarket:
 
         # Prepare return arrays
         n_periods = Bid_volumes.shape[1]
-        activated_volumes = np.zeros_like(Bid_volumes)
-        earnings = np.zeros_like(Bid_volumes)
+        activated_volumes   = np.zeros_like(Bid_volumes)
+        earnings            = np.zeros_like(Bid_volumes)
+        activations         = np.zeros_like(Bid_volumes)
 
         # Ensure market data has datetime index
         market_data = self.market_data_full_set.set_index('Start Time')
@@ -325,11 +326,13 @@ class BalancingMarket:
 
             # Determine activations
             if market_volume_up > 0 and market_volume_up >= market_volume_down and bid_price_up <= market_price_up:
+                activations[0, i] = 1
                 activated_volumes[0, i] = bid_volume_up
                 earnings[0, i] = bid_volume_up * (market_price_up - spot_price) / 4
 
-            if market_volume_down > 0 and market_volume_up < market_volume_down and bid_price_down >= market_price_down:
+            if market_volume_down > 0 and market_volume_up < market_volume_down and bid_price_down <= market_price_down:
+                activations[1, i] = 1
                 activated_volumes[1, i] = bid_volume_down
                 earnings[1, i] = bid_volume_down * (spot_price - market_price_down) / 4
 
-        return activated_volumes, earnings
+        return activations, activated_volumes, earnings
