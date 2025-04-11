@@ -66,8 +66,7 @@ class Plotter():
             if pdf is not None: pdf.savefig(fig)
             plt.close(fig)
             self.progressbar.update(1)
-            # self.progressbar.set_description(f"Plotting {run_id} {filename}")  # Updates dynamically
-            self.progressbar.set_postfix(status=f"Plotting {run_id} {filename}")  # Adds a small status message
+            self.progressbar.set_postfix(status=f"Plotting {run_id} {filename}")  # Add status message to progressbar
 
 
         
@@ -1051,11 +1050,11 @@ class Plotter():
             
             ax1.set_ylabel("Projected activation chance")
             ax1.set_xlabel("Bid volume (MW)")
-            ax1.title.set_text('Up-regulation bids')
+            ax1.set_title(f'{market_type} Up-regulation bids')
 
             ax2.set_ylabel("Projected activation chance")
             ax2.set_xlabel("Bid volume (MW)")
-            ax2.title.set_text('Down-regulation bids')
+            ax2.set_title(f'{market_type} Down-regulation bids')
 
             title = f"{run_id} Volumes vs predicted activation chances €/MW ({controller.market.date}, {controller.market.bidding_zone})"
             title += "\n(Activations highlighted in dark)"
@@ -1064,7 +1063,6 @@ class Plotter():
             fig.tight_layout(rect=[0, 0.03, 1, 0.95]) 
 
             # self.save_plot(f"scatter_volumes_activations", run_id, fig, pdf)
-            ax1.set_title(market_type)
 
             ######################################################
             #             EXPECTED BID IMPACTS
@@ -1437,14 +1435,16 @@ class Plotter():
         n = int(np.ceil(len(spot_prices)/10))
         idx = np.int64(np.ceil(np.linspace(1,len(spot_prices)-1,n)))
         ax1.scatter(spot_prices[idx], mfrr_prices_up[idx], color='blue', label='Clearing price up', s=0.1)
-        ax1.plot(line_x, line_x * 0.78, label='Lower limit: 0.78 x spot', color='grey', alpha=0.4)
+        # ax1.plot(line_x, line_x * 0.78, label='Lower limit: 0.78 x spot', color='grey', alpha=0.4)
+        ax1.plot(line_x, line_x, label='Spot price', color='grey', alpha=0.4)
         ax1.set_ylabel("Bidding price (€/MWh)")
         ax1.set_xlabel("Spot price (€/kWh)")
         # ax1.set_xlim([-0.5, 4.5])
         ax1.legend()
 
         ax2.scatter(spot_prices[idx], mfrr_prices_dn[idx], color='red', label='Clearing price down', s=0.1)
-        ax2.plot(line_x, line_x * 0.9, label='Upper limit: 0.9 x spot', color='grey', alpha=0.4)
+        # ax2.plot(line_x, line_x * 0.9, label='Upper limit: 0.9 x spot', color='grey', alpha=0.4)
+        ax2.plot(line_x, line_x, label='Spot price', color='grey', alpha=0.4)
         ax2.set_ylabel("Bidding price (€/MWh)")
         ax2.set_xlabel("Spot price (€/kWh)")
         # ax2.set_xlim([-0.5, 4.5])

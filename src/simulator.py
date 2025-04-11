@@ -122,41 +122,87 @@ class Simulator():
         spot_prices = controller.spot_prices
         F = controller.F
 
-        clearing_prices_up, clearing_prices_down = market.AM.get_clearing_prices(date)
-        assert len(clearing_prices_up)==N and len(clearing_prices_down)==N, f'Clearing price arrays have inconsistent lengths with simulation duration. N = {self.N}, len(clearing prices up) = {len(clearing_prices_up)}, len(clearing prices down) = {len(clearing_prices_down)}'
-        
-        activation_demands_up, activation_demands_down = market.mfrr_demands_up, market.mfrr_demands_down
-        assert len(activation_demands_down)==N and len(activation_demands_up)==N, f'Activation demand arrays have inconsistent lengths with simulation duration. N = {self.N}, len(demands up) = {len(activation_demands_up)}, len(demands down) = {len(activation_demands_down)}'
-
-        assert refrun_id in controller.optimization_results['runs'], f"{run_id}| Error: {refrun_id} not in run data"
         refrun = controller.optimization_results['runs'][refrun_id]
+        # assert refrun_id in controller.optimization_results['runs'], f"{run_id}| Error: {refrun_id} not in run data"
+        # refrun = controller.optimization_results['runs'][refrun_id]
+        U_nom = refrun['timeseries']['u_nom'].reshape(1,-1)
+        U = U_nom   # Will be overwritten if there are AM bids
 
-        # Get bidding data
-        U_nom               = refrun['timeseries']['u_nom'].reshape(1,-1)
-        bidding_vol_up      = refrun['timeseries']['P_up'].reshape(1,-1)
-        bidding_vol_down    = refrun['timeseries']['P_dn'].reshape(1,-1)
-        bidding_price_up    = refrun['timeseries']['C_up'].reshape(1,-1)
-        bidding_price_down  = refrun['timeseries']['C_dn'].reshape(1,-1)
-        B = np.vstack((bidding_vol_up, bidding_vol_down, bidding_price_up, bidding_price_down))
+        # for market_type, market_data in run['Markets'].items():
+        #     balancing_market = self.market.get_balancing_market(market_type)
+
+        #     clearing_prices_up, clearing_prices_down = balancing_market.get_clearing_prices()
+        #     assert len(clearing_prices_up)==N and len(clearing_prices_down)==N, f'Clearing price arrays have inconsistent lengths with simulation duration. N = {self.N}, len(clearing prices up) = {len(clearing_prices_up)}, len(clearing prices down) = {len(clearing_prices_down)}'
+            
+        #     activation_demands_up, activation_demands_down = balancing_market.get_activations()
+        #     assert len(activation_demands_down)==N and len(activation_demands_up)==N, f'Activation demand arrays have inconsistent lengths with simulation duration. N = {self.N}, len(demands up) = {len(activation_demands_up)}, len(demands down) = {len(activation_demands_down)}'
+
+        #     # Get bidding data
+        #     bidding_vol_up      = market_data['Bids']['Up']['Volume'].reshape(1,-1)
+        #     bidding_vol_down    = market_data['Bids']['Down']['Volume'].reshape(1,-1)
+        #     bidding_price_up    = market_data['Bids']['Up']['Price'].reshape(1,-1)
+        #     bidding_price_down  = market_data['Bids']['Down']['Price'].reshape(1,-1)
+
+        #     activated_volumes, earnings = balancing_market.subject_bids_to_market_data()
+        #     activated_volumes_up        = activated_volumes[0,:]
+        #     activated_volumes_down      = activated_volumes[1,:]
+
+        #     P_tilde = activated_volumes_down - activated_volumes_up
+
+
+        market_data = refrun['markets']
         
-        # Evaluate activations
-        activation_up   = np.where(np.logical_and(activation_demands_up > 0, bidding_price_up <= clearing_prices_up), 1, 0)
-        activation_down = np.where(np.logical_and(activation_demands_down > 0, bidding_price_down <= clearing_prices_down), 1, 0)
-        A = np.vstack((activation_up, activation_down))
+        market_earnings = {}
 
-        u = U_nom + 1000*(np.where(activation_down == 1, bidding_vol_down, 0)\
-                        - np.where(activation_up   == 1, bidding_vol_up,   0))/controller.model.C_conv_PPFD
+        for market_type in market_data:
+
+            balancing_market = self.market.get_balancing_market(market_type)
+
+            bid_volumes_up    = market_data[market_type]['Bids']['Up']['Volume'].reshape(1,-1)
+            bid_volumes_down  = market_data[market_type]['Bids']['Down']['Volume'].reshape(1,-1)
+            bid_prices_up     = market_data[market_type]['Bids']['Up']['Price'].reshape(1,-1)
+            bid_prices_down   = market_data[market_type]['Bids']['Down']['Volume'].reshape(1,-1)
+            
+            bid_volumes = np.vstack((bid_volumes_up,
+                                     bid_volumes_down))
+            bid_prices  = np.vstack((bid_prices_up,
+                                     bid_prices_down))
+
+            activated_volumes, balancing_market_earnings = balancing_market.subject_bids_to_market_data(self.market.MTU_start, bid_volumes, bid_prices)
+            activated_volumes_up   = activated_volumes[0,:]
+            activated_volumes_down = activated_volumes[1,:]
+            market_earnings[market_type] = np.sum(balancing_market_earnings)
+
+            bid_activations_up, bid_activations_down = balancing_market.get_activations()
+            market_data[market_type]['Activations'] = {
+                'Up'    : bid_activations_up,
+                'Down'  : bid_activations_down
+            }
+
+            if balancing_market.market_type == 'Activation Market':
+                P_tilde = activated_volumes_down - activated_volumes_up
+                U = U_nom + 1000/controller.model.C_conv_PPFD * P_tilde
+
+        # B = np.vstack((bidding_vol_up, bidding_vol_down, bidding_price_up, bidding_price_down))
+        
+        # # Evaluate activations
+        # activation_up   = np.where(np.logical_and(activation_demands_up > 0, bidding_price_up <= clearing_prices_up), 1, 0)
+        # activation_down = np.where(np.logical_and(activation_demands_down > 0, bidding_price_down <= clearing_prices_down), 1, 0)
+        # A = np.vstack((activation_up, activation_down))
+
 
         X = np.zeros((controller.model.nx, N+1))
         X[:,0] = controller.model.x_init.flatten()
         
         for k in range(N):
-            X[:,k+1] = np.array(F(X[:,k], np.array([u[:,k]]))).flatten()
+            X[:,k+1] = np.array(F(X[:,k], np.array([U[:,k]]))).flatten()
 
 
-        f = 0.25*(self.model.C_conv_PPFD/1000 * np.sum(np.multiply(spot_prices, U_nom)) \
-            + np.sum(np.where(activation_down == 1, np.multiply((spot_prices - clearing_prices_down),  bidding_vol_down), 0)) \
-            - np.sum(np.where(activation_up   == 1, np.multiply((spot_prices + clearing_prices_up),    bidding_vol_up), 0)))
+        f = 0.25*self.model.C_conv_PPFD/1000 * np.sum(np.multiply(spot_prices, U))\
+                  - sum([market_earnings[market_type] for market_type in market_earnings])
+        # \
+        #     + np.sum(np.where(activation_down == 1, np.multiply((spot_prices - clearing_prices_down),  bidding_vol_down), 0)) \
+        #     - np.sum(np.where(activation_up   == 1, np.multiply((spot_prices + clearing_prices_up),    bidding_vol_up), 0)))
 
 
         Eps = max(0, controller.model.Final_fw_sht - self.model.freshweight(X[:,-1]))
@@ -168,7 +214,8 @@ class Simulator():
     
         dependencies = ()
         refrun_dependencies = tuple(controller.optimization_results['runs'][refrun_id]['dependencies'])
-        controller.store_run(run_id, refrun_dependencies + dependencies, sol, X, u.reshape(1,-1), A, B, U_nom.reshape(1,-1), refrun_id=refrun_id, balancing_market=self.market.AM, plot_run=plot_run)
+        controller.store_run(run_id, dependencies, sol, X, U, refrun_id = refrun_id, market_data=market_data, plot_run=plot_run)
+        # controller.store_run(run_id, refrun_dependencies + dependencies, sol, X, u.reshape(1,-1), A, B, U_nom.reshape(1,-1), refrun_id=refrun_id, balancing_market=self.market.AM, plot_run=plot_run)
         
         return 0
 

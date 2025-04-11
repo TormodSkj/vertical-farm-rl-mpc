@@ -213,7 +213,7 @@ class PlantModel:
         L = 0
 
         for k in range(0, N_TH):
-            L += spot_prices[k] * self.C_conv_PPFD/1000 * U_nom[:,k] \
+            L += \
                   + (spot_prices[k] - expected_prices_down[k])   * bid_volumes_down[k]   * balancing_market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
                   - (spot_prices[k] + expected_prices_up[k])     * bid_volumes_up[k]     * balancing_market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
 
@@ -454,12 +454,33 @@ class PlantModel:
 
         return ca.vertcat(*U).reshape((1,-1))
     
-
-    def get_u_CM(self, N, U_nom, CM_B_volumes, CM_B_prices, AM_B_volumes, AM_B_prices, spot_prices, CM: BalancingMarket, AM: BalancingMarket):
+    
+    def get_u_CM(self, N, U_nom, CM_B_volumes, CM_B_prices, spot_prices, CM: BalancingMarket, AM: BalancingMarket):
 
         U = np.array([])
+    
+        for k in range(N):
+            
+            CM_Activation_chance_up     = CM.activation_prob_up(spot_prices[k], CM_B_prices[0,k])
+            CM_Activation_chance_down   = CM.activation_prob_down(spot_prices[k], CM_B_prices[1,k])
+            CM_Volume_up                = CM_B_volumes[0,k]
+            CM_Volume_down              = CM_B_volumes[1,k]
 
-        
+            AM_Demand_up     = AM.demand_prob_up(spot_prices[k])
+            AM_Demand_down   = AM.demand_prob_down(spot_prices[k])
+    
+            P_tilde = CM_Activation_chance_down * AM_Demand_down * CM_Volume_down \
+                    - CM_Activation_chance_up * AM_Demand_up * CM_Volume_up
+            
+            u_tilde = 1000*P_tilde/self.C_conv_PPFD
+
+            U = np.append(U, U_nom[:,k] + u_tilde)
+
+        return ca.vertcat(*U).reshape((1,-1))
+
+    def get_u_CM_AM(self, N, U_nom, CM_B_volumes, CM_B_prices, AM_B_volumes, AM_B_prices, spot_prices, CM: BalancingMarket, AM: BalancingMarket):
+
+        U = np.array([])
     
         for k in range(N):
             # if(k<controller.market.n_given_activations):

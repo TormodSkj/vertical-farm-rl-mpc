@@ -114,9 +114,11 @@ class BalancingMarket:
         return 0
 
 
-    def activation_prob_up(self, spot_price, bid_price_up):
+    def activation_prob_up(self, spot_price, bid_price_up = None):
+        if bid_price_up is None: return np.mean(self.activations_up)
         return self.activation_prob('Up', spot_price, bid_price_up)
-    def activation_prob_down(self, spot_price, bid_price_up):
+    def activation_prob_down(self, spot_price, bid_price_up=None):
+        if bid_price_up is None: return np.mean(self.activations_down)
         return self.activation_prob('Down', spot_price, bid_price_up)
     
     def activation_prob(self, direction, spot_price, bid_price_up):
@@ -158,6 +160,20 @@ class BalancingMarket:
         return np.array(data[f'{zone} Up Price']), np.array(data[f'{zone} Down Price'])
 
 
+    def get_expected_clearing_prices(self, date=None, n_days = None, zone = None):
+        if zone     == None: zone   = self.bidding_zone
+
+        data = self.get_market_data(date=date, n_days=n_days, zone=zone, 
+                                    spot_prices=False, clearing_prices=True, volumes=False)
+
+        spot_prices = np.array(data[f'{zone} Spot Price'])
+
+        expected_clearing_prices_up  , _ = conditional_expectation(spot_prices, self.price_stats[self.bidding_zone]['Up']['means'],    self.price_stats[self.bidding_zone]['Up']['cov'])
+        expected_clearing_prices_down, _ = conditional_expectation(spot_prices, self.price_stats[self.bidding_zone]['Down']['means'],  self.price_stats[self.bidding_zone]['Down']['cov'])
+        
+        return expected_clearing_prices_up, expected_clearing_prices_down
+
+
     def get_activations(self, date = None, n_days = None, zone = None):
         '''
         Returns numpy arrays of length N with Capacity market reservations during each quarter hour from the start time.
@@ -172,7 +188,7 @@ class BalancingMarket:
         
         volumes_up, volumes_down = np.array(data[f'{zone} Up Volume']), np.array(data[f'{zone} Down Volume'])
 
-        activations_up   = np.where(np.logical_and(volumes_up     > 0, volumes_up > volumes_down), 1, 0)
+        activations_up   = np.where(np.logical_and(volumes_up     > 0, volumes_up >= volumes_down), 1, 0)
         activations_down = np.where(np.logical_and(volumes_down   > 0, volumes_up < volumes_down), 1, 0)
 
         return activations_up, activations_down
@@ -259,3 +275,61 @@ class BalancingMarket:
 
         return data
 
+
+
+    def subject_bids_to_market_data(self, MTU_start, Bid_volumes, Bid_prices, zone = None):
+        """
+        Submit time-indexed bids to the market and determine activations and earnings.
+
+        Args:
+            MTU_start (pd.Timestamp): Start time of the first MTU in the bid sequence.
+            Bid_volumes (np.ndarray): [2, N] array of bid volumes (up, down).
+            Bid_prices (np.ndarray): [2, N] array of bid prices (up, down).
+
+        Returns:
+            activated_volumes (np.ndarray): [2, N] array of activated volumes.
+            earnings (np.ndarray): [2, N] array of earnings.
+        """
+
+        # Default values
+        if zone     == None: zone   = self.bidding_zone
+
+        # Prepare return arrays
+        n_periods = Bid_volumes.shape[1]
+        activated_volumes = np.zeros_like(Bid_volumes)
+        earnings = np.zeros_like(Bid_volumes)
+
+        # Ensure market data has datetime index
+        market_data = self.market_data_full_set.set_index('Start Time')
+
+        # Loop over each time period
+        for i in range(n_periods):
+            current_time = MTU_start + pd.Timedelta(hours=i)
+
+            # Skip if no matching market data
+            if current_time not in market_data.index:
+                continue
+
+            market_row          = market_data.loc[current_time]
+            spot_price          = market_row[f'{zone} Spot Price']
+            market_volume_up    = market_row[f'{zone} Up Volume']
+            market_volume_down  = market_row[f'{zone} Down Volume']
+            market_price_up     = market_row[f'{zone} Up Price']
+            market_price_down   = market_row[f'{zone} Down Price']
+            
+            # Extract bids
+            bid_price_up = Bid_prices[0, i]
+            bid_price_down = Bid_prices[1, i]
+            bid_volume_up = Bid_volumes[0, i]
+            bid_volume_down = Bid_volumes[1, i]
+
+            # Determine activations
+            if market_volume_up > 0 and market_volume_up >= market_volume_down and bid_price_up <= market_price_up:
+                activated_volumes[0, i] = bid_volume_up
+                earnings[0, i] = bid_volume_up * (market_price_up - spot_price) / 4
+
+            if market_volume_down > 0 and market_volume_up < market_volume_down and bid_price_down >= market_price_down:
+                activated_volumes[1, i] = bid_volume_down
+                earnings[1, i] = bid_volume_down * (spot_price - market_price_down) / 4
+
+        return activated_volumes, earnings

@@ -9,8 +9,8 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption
 
-SIM_NAME            = "import_test"
-SIMULATION_LENGTH   = 18
+SIM_NAME            = "complete_mpc"
+SIMULATION_LENGTH   = 2
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
 SIMULATION_DATE     = '2024-10-09'
@@ -20,7 +20,7 @@ SEARCH_CACHE        = 0
 SEARCH_PLOT_CACHE   = 0
 
 MPC_TIMEHORIZON     = 1
-MPC_STEPLENGTH      = 0.25
+MPC_STEPLENGTH      = 1
 
 DISCRETIZATION      = 'fe'
 
@@ -56,7 +56,10 @@ def main():
     # market.optimal_bidding_price_prediction(controller.spot_prices)
     
     # '''
-    controller.import_light_schedule('imported', plot_run = True)
+    # controller.import_light_schedule('imported', plot_run = True)
+
+    controller.optimize_MPC_complete('complete_MPC', 'fixed', plot_run = True)
+    # simulator.apply_mfrr_clearing_prices('complete_MPC_applied', 'complete_MPC', plot_run = True)
 
 
     # controller.optimize_spotprice('spot_opt', 'None')         #
@@ -97,14 +100,14 @@ def main():
     # run_ids = ['mfrr_opt', 'abs_opt']
     # for run_id in run_ids: print(f"Upper CM participation earnings limit for {run_id}: {market.calculate_CM_earnings_upper_limit(controller, run_id)}")
           
-    market.estimate_prices()
+    # market.estimate_prices()
     # market.price_estimation(plot_estimates=True)
 
     
     # 
     ''' PLOTTING '''
-    # plotter.save_ocp_plots()
-    # plotter.plot_financial_report()
+    plotter.save_ocp_plots()
+    plotter.plot_financial_report()
 
     # plotter.plot_spot_mfrr_prices() 
     # plotter.plot_CM_data() 

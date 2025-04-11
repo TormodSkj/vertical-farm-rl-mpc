@@ -73,6 +73,7 @@ class Market:
         self.seed               = self.market_settings['SEED']
         self.outlier_max_dist   = self.market_settings['OUTLIER_DIST_LIMIT']
         self.N = self.T * QUARTER_HOURS_PER_DAY
+        self.MTU_start          = pd.to_datetime(self.date, format='%Y-%m-%d')
 
         self.import_market_data()
 

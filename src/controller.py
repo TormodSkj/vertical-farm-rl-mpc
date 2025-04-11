@@ -171,8 +171,9 @@ class Controller():
         U = self.model.get_u(N, U_nom, B[:2,:], B[2:4,:], spot_prices, market.AM)           # Express U in terms of bidding outcomes
 
         # Initialize cost function and constraints
-        J = self.model.AM_bidding_obj_function(N, self.spot_prices, B_volumes = B[:2,:], B_prices = B[2:4,:], U_nom = U_nom, balancing_market = self.market.AM)\
-                       + self.model.terminal_cost(self, X, U, Eps)
+        J = self.model.spotopt_obj_function(N, self.spot_prices, U)\
+            + self.model.AM_bidding_obj_function(N, self.spot_prices, B_volumes = B[:2,:], B_prices = B[2:4,:], U_nom = U_nom, balancing_market = self.market.AM)\
+            + self.model.terminal_cost(self, X, U, Eps)
 
 
         g_eq, g_ineq = [], []
@@ -270,7 +271,7 @@ class Controller():
         AM_B_prices    = ca.MX.sym('AM_B_volumes', 2, N)        # Bids over time (Vol_up, Vol_down, Price_up, Price_down) (4xN vector)
         AM_Eps         = ca.MX.sym('AM_Eps', neps, 1)           # Slack variable for feasibility
         
-        CM_U = self.model.get_u_CM(N, nom_U, CM_B_volumes, CM_B_prices, AM_B_volumes, AM_B_prices, spot_prices, CM, AM)
+        CM_U = self.model.get_u_CM_AM(N, nom_U, CM_B_volumes, CM_B_prices, AM_B_volumes, AM_B_prices, spot_prices, CM, AM)
         AM_U = self.model.get_u(N, nom_U, AM_B_volumes, AM_B_prices, spot_prices, AM)
         
 
@@ -357,7 +358,7 @@ class Controller():
         AM_eps      = float(sol['x'][AM_eps_idx:][0])
 
         
-        CM_u        = np.array(self.model.get_u_CM(N, nom_u, CM_B_vols, CM_B_prices, AM_B_vols, AM_B_prices, spot_prices, CM, AM)).reshape((1,-1))
+        CM_u        = np.array(self.model.get_u_CM_AM(N, nom_u, CM_B_vols, CM_B_prices, AM_B_vols, AM_B_prices, spot_prices, CM, AM)).reshape((1,-1))
         AM_u        = np.array(self.model.get_u(N, nom_u, AM_B_vols, AM_B_prices, spot_prices, AM)).reshape((1,-1))
 
         CM_B = np.vstack((CM_B_vols, CM_B_prices))
@@ -492,11 +493,12 @@ class Controller():
         market = self.market
         F = self.F
 
-        clearing_prices_up, clearing_prices_down = market.AM.get_clearing_prices(self.market.date)
-        assert len(clearing_prices_up)==N and len(clearing_prices_down)==N, f'Clearing price arrays have inconsistent lengths with simulation duration. N = {self.N}, len(clearing prices up) = {len(clearing_prices_up)}, len(clearing prices down) = {len(clearing_prices_down)}'
+        AM_clearing_prices_up, AM_clearing_prices_down = market.AM.get_clearing_prices(self.market.date)
+        assert len(AM_clearing_prices_up)==N and len(AM_clearing_prices_down)==N, f'Clearing price arrays have inconsistent lengths with simulation duration. N = {self.N}, len(clearing prices up) = {len(AM_clearing_prices_up)}, len(clearing prices down) = {len(AM_clearing_prices_down)}'
         
-        activation_demands_up, activation_demands_down = market.mfrr_demands_up, market.mfrr_demands_down
-        assert len(activation_demands_down)==N and len(activation_demands_up)==N, f'Activation demand arrays have inconsistent lengths with simulation duration. N = {self.N}, len(demands up) = {len(activation_demands_up)}, len(demands down) = {len(activation_demands_down)}'
+        AM_activation_demands_up   = market.AM.activations_up
+        AM_activation_demands_down = market.AM.activations_down
+        assert len(AM_activation_demands_down)==N and len(AM_activation_demands_up)==N, f'Activation demand arrays have inconsistent lengths with simulation duration. N = {self.N}, len(demands up) = {len(AM_activation_demands_up)}, len(demands down) = {len(AM_activation_demands_down)}'
 
         
         target_run = self.optimization_results['runs'][target_run_id]
@@ -505,12 +507,12 @@ class Controller():
         target_weight = self.model.freshweight(target_X)
 
         # Set up optimizers
-        opti_base,  opt_vars_base = self.setup_optimizer(nx, nu, neps, N_TH, 'spot_opt')
-        opti_bid,   opt_vars_bid  = self.setup_optimizer(nx, nu, neps, N_TH, 'mfrr_opt')
+        opti_base,  opt_vars_base = self.setup_AM_optimizer(nx, nu, neps, N_TH, 'spot_opt')
+        opti_bid,   opt_vars_bid  = self.setup_AM_optimizer(nx, nu, neps, N_TH, 'mfrr_opt')
 
         # Set up constraints using parameters
-        opti_base = self.set_constraints(opti_base,  N_TH, opt_vars_base)
-        opti_bid  = self.set_constraints(opti_bid,   N_TH, opt_vars_bid)
+        opti_base = self.set_AM_constraints(opti_base,  N_TH, opt_vars_base)
+        opti_bid  = self.set_AM_constraints(opti_bid,   N_TH, opt_vars_bid)
 
         # Set up state vectors
         X = ca.DM.zeros(nx, N+1)
@@ -533,7 +535,7 @@ class Controller():
 
                 # Update baseline optimizer
                 # Apply current parameters and set initial guess
-                opti_base_copy = self.update_optimizer_baseline(
+                opti_base_copy = self.update_AM_optimizer_baseline(
                                 opti_base.copy(), k = k, N = N, N_TH = N_horizon, opt_vars = opt_vars_base, spot_prices = spot_prices[iter_slice], 
                                 x0          = X[:,k], 
                                 init_X      = target_X[:,start_iter:end_iter+1],
@@ -547,7 +549,7 @@ class Controller():
                 u_opt_base = sol_base.value(opt_vars_base['U']).reshape(1,-1)
 
                 # Apply current parameters and set initial guess
-                opti_bid_copy = self.update_optimizer_bidding(
+                opti_bid_copy = self.update_AM_optimizer_bidding(
                                 opti_bid.copy(), k = k, N = N, N_TH = N_horizon, opt_vars = opt_vars_bid, spot_prices = spot_prices[iter_slice],
                                 x0          = X[:,start_iter], 
                                 past_X      = past_X,
@@ -563,8 +565,8 @@ class Controller():
 
                 # Apply bid activations
                 # Evaluate activations
-                activation_up   = np.where(np.logical_and(activation_demands_up[iter_slice] > 0,    B_prices_opt[0,:] <= clearing_prices_up[iter_slice]),   1, 0)
-                activation_down = np.where(np.logical_and(activation_demands_down[iter_slice] > 0,  B_prices_opt[1,:] <= clearing_prices_down[iter_slice]), 1, 0)
+                activation_up   = np.where(np.logical_and(AM_activation_demands_up[iter_slice] > 0,    B_prices_opt[0,:] <= AM_clearing_prices_up[iter_slice]),   1, 0)
+                activation_down = np.where(np.logical_and(AM_activation_demands_down[iter_slice] > 0,  B_prices_opt[1,:] <= AM_clearing_prices_down[iter_slice]), 1, 0)
 
 
                 # Store data
@@ -599,7 +601,8 @@ class Controller():
         end_time = time.time()
         sol = {}
         sol['eps'] = Eps
-        sol['f'] = self.model.AM_bidding_obj_function(N, spot_prices, B[:2, :], B[2:4, :], U_nom, self.market)
+        sol['f'] = self.model.spotopt_obj_function(N, spot_prices, U)\
+                    + self.model.AM_bidding_obj_function(N, spot_prices, B[:2, :], B[2:4, :], U_nom, self.market)
         sol['elapsed_time'] = end_time - start_time
         
         self.store_run(run_id, dependencies, sol, np.array(X), np.array(U).reshape((1,-1)), B=np.array(B), U_nom=np.array(U_nom).reshape((1,-1)), refrun_id = target_run_id, balancing_market=self.market.AM, plot_run=plot_run)
@@ -609,7 +612,7 @@ class Controller():
         return 0
 
 
-    def setup_optimizer(self, nx, nu, neps, N_horizon, opti_type: str):
+    def setup_AM_optimizer(self, nx, nu, neps, N_horizon, opti_type: str):
         '''Creates opti variables. Creates opt_vars dictionaries containing opti symbolic optimization variables'''
 
         opti = ca.Opti()
@@ -658,7 +661,7 @@ class Controller():
         else:
             assert False, f'SETUP MPC | invalid opti type: {opti_type}'
                 
-    def set_constraints(self, opti: ca.Opti, N_TH, opt_vars: dict):
+    def set_AM_constraints(self, opti: ca.Opti, N_TH, opt_vars: dict):
         
         # Extract symbolic optimization variables and parameters
         X, Eps, x0, spot_prices, ref_weight = [opt_vars[key] for key in ['X', 'Eps', 'x0', 'spot_prices', 'ref_weight']]    
@@ -696,7 +699,7 @@ class Controller():
         return opti
 
 
-    def update_optimizer_baseline(self, opti: ca.Opti, k, N, N_TH, opt_vars, spot_prices, x0, init_X, past_X, init_U, ref_weight):
+    def update_AM_optimizer_baseline(self, opti: ca.Opti, k, N, N_TH, opt_vars, spot_prices, x0, init_X, past_X, init_U, ref_weight):
 
         X, U, Eps = [opt_vars[key] for key in ['X', 'U', 'Eps']]    # Extract symbolic optimization variables and parameters
 
@@ -721,7 +724,7 @@ class Controller():
 
         return opti
 
-    def update_optimizer_bidding(self, opti: ca.Opti, k, N, N_TH, opt_vars, spot_prices, x0, past_X, U_nom, ref_weight):
+    def update_AM_optimizer_bidding(self, opti: ca.Opti, k, N, N_TH, opt_vars, spot_prices, x0, past_X, U_nom, ref_weight):
 
         X, B_volumes, B_prices, Eps = [opt_vars[key] for key in ['X','B_volumes', 'B_prices', 'Eps']]    # Extract symbolic optimization variables and parameters
 
@@ -731,7 +734,9 @@ class Controller():
         [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
 
         U = self.model.get_u(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market.AM)
-        J = self.model.AM_bidding_obj_function(N_TH, spot_prices, B_volumes, B_prices, U_nom, self.market) + self.model.terminal_cost(self, X, U, Eps)
+        J = self.model.spotopt_obj_function(N_TH, spot_prices, U)\
+            + self.model.AM_bidding_obj_function(N_TH, spot_prices, B_volumes, B_prices, U_nom, self.market)\
+            + self.model.terminal_cost(self, X, U, Eps)
         
         # if (k + N_TH >= N): J += self.model.terminal_cost(self, X, U, Eps)
         # else:               J += self.model.running_cost(self.market, k, N, Eps)
@@ -771,6 +776,412 @@ class Controller():
         opti.set_initial(B_prices[:,:N_TH], B_prices_initial_guess)
 
         return opti
+
+
+
+
+    def optimize_MPC_complete(self, run_id, target_run_id = 'fixed', plot_run = False):
+        '''
+        Full MPC implementation. Meant to simulate a real-world implementation of MPC in order to control a working Vertical Farm
+        
+        '''
+
+
+        start_time = time.time()
+        
+        dependencies = ('general', 'controller', 'mpc', 'plantmodel', 'market')
+
+        if not self.load_from_json(run_id, target_run_id, dependencies): 
+            # Identical run located. Using its solution instead
+            return 0
+
+        if not self.surpress_output: print(f'{run_id} | Running MPC')
+        
+        N = self.N                      # Number of time steps for the whole optimization problem
+        N_TH = self.mpc_N_horizon       # Number of time steps for internal open-loop solver
+        N_iter = self.mpc_N_step        # Number of time steps between each open-loop solution
+        spot_prices = self.spot_prices
+        nx, nu, neps = self.model.nx, self.model.nu, self.model.neps
+        market = self.market
+        F = self.F
+
+        # AM_clearing_prices_up, AM_clearing_prices_down = market.AM.get_clearing_prices(self.market.date)
+        # assert len(AM_clearing_prices_up)==N and len(AM_clearing_prices_down)==N, f'Clearing price arrays have inconsistent lengths with simulation duration. N = {self.N}, len(clearing prices up) = {len(AM_clearing_prices_up)}, len(clearing prices down) = {len(AM_clearing_prices_down)}'
+        
+        CM_activation_demands_up   = market.CM.activations_up
+        CM_activation_demands_down = market.CM.activations_down
+        assert len(CM_activation_demands_down)==N and len(CM_activation_demands_up)==N, f'Capacity Market Activation demand arrays have inconsistent lengths with simulation duration. N = {self.N}, len(demands up) = {len(CM_activation_demands_up)}, len(demands down) = {len(CM_activation_demands_down)}'
+        
+        AM_activation_demands_up   = market.AM.activations_up
+        AM_activation_demands_down = market.AM.activations_down
+        assert len(AM_activation_demands_down)==N and len(AM_activation_demands_up)==N, f'Activation Market Activation demand arrays have inconsistent lengths with simulation duration. N = {self.N}, len(demands up) = {len(AM_activation_demands_up)}, len(demands down) = {len(AM_activation_demands_down)}'
+
+        
+        target_run = self.optimization_results['runs'][target_run_id]
+        target_X = target_run['timeseries']['x']
+        target_U = target_run['timeseries']['u']
+        target_weight = self.model.freshweight(target_X)
+
+        # Set up optimizers
+        opti_CM, opt_vars_CM = self.setup_optimizer(nx, nu, neps, N_TH, 'CM') # Handles daily optimization
+        opti_AM, opt_vars_AM = self.setup_optimizer(nx, nu, neps, N_TH, 'AM') # Handles quarter-hourly optimization
+
+        # Set up constraints using parameters
+        opti_CM  = self.set_constraints(opti_CM, N_TH, opt_vars_CM)
+        opti_AM  = self.set_constraints(opti_AM, N_TH, opt_vars_AM)
+
+
+        # Simulation state vectors
+        X_log, past_X, U_log, U_nom_log, CM_bids_log, AM_bids_log, Eps_log = self.setup_simulation_statevectors(self.model, target_run_id)
+
+
+        mtu_start = self.market.MTU_start
+        
+        k = 0
+        with tqdm(total=N, desc=f"{run_id}: Running MPC") as pbar:
+            while k < N:
+                # for QH in range(QUARTER_HOURS_PER_DAY):
+                # k = QH + QUARTER_HOURS_PER_DAY*day
+
+                current_MTU = mtu_start + pd.Timedelta(minutes = 15*k)
+                N_horizon = min(N-k, N_TH)
+                extract_solution_slice = slice(0, min(N_iter, N_horizon))
+                start_iter = k
+                end_iter = k+N_horizon
+                iter_slice = slice(start_iter, end_iter)
+
+                if current_MTU.hour == 0 and current_MTU.minute == 0:
+                    # At 00:00 every day
+
+                    # Get price estimates 
+
+
+                    # Optimize Baseline and CM Participation
+                    # Solved by co-opting BL-CM-AM
+                    # BL and CM will be used. AM will be reoptimized every step
+
+
+                    # Update BL-CM-AM optimizer
+                    opti_CM_copy = self.update_optimizer_CM_bids(
+                                    opti_CM.copy(), k = k, N = N, N_TH = N_horizon, opt_vars = opt_vars_CM, spot_prices = spot_prices[iter_slice],
+                                    x0          = X_log[:,start_iter], 
+                                    past_X      = past_X,
+                                    ref_weight  = target_weight[end_iter]
+                    )
+
+                    # Solve bidding
+                    pbar.set_postfix(status=f"Solving CM, MTU: {current_MTU}") 
+                    sol_CM              = opti_CM_copy.solve()
+                    x_opt_CM            = sol_CM.value(opt_vars_CM['X'])
+                    u_nom_opt_CM        = sol_CM.value(opt_vars_CM['U_nom']).reshape((1, -1))
+                    CM_bid_volumes_opt  = sol_CM.value(opt_vars_CM['B_volumes'])[:,:N_horizon]
+                    CM_bid_prices_opt   = sol_CM.value(opt_vars_CM['B_prices'])[:,:N_horizon]
+                    Eps_opt_CM          = sol_CM.value(opt_vars_CM['Eps'])
+                    Eps_nom_opt_CM      = sol_CM.value(opt_vars_CM['Eps_nom'])
+
+                    # Store solution
+
+                    # Apply CM bids to CM market
+                    # Extract required AM bid volumes 
+                    CM_activated_volumes, CM_earnings = market.CM.subject_bids_to_market_data(current_MTU, CM_bid_volumes_opt, CM_bid_prices_opt)
+
+
+                # Update AM bid optimizer
+                opti_AM_copy = self.update_optimizer_AM_bids(
+                                opti_AM.copy(), k = k, N = N, N_TH = N_horizon, opt_vars = opt_vars_AM, spot_prices = spot_prices[iter_slice],
+                                x0          = X_log[:,start_iter], 
+                                past_X      = past_X,
+                                U_nom       = u_nom_opt_CM[:, :N_horizon], 
+                                ref_weight  = target_weight[end_iter],
+                                CM_reservations = CM_activated_volumes
+                )
+
+                # Solve bidding
+                pbar.set_postfix(status=f"Solving AM, MTU: {current_MTU}") 
+                sol_AM              = opti_AM_copy.solve()
+                x_opt_AM            = sol_AM.value(opt_vars_AM['X'])
+                AM_bid_volumes_opt  = sol_AM.value(opt_vars_AM['B_volumes'])[:,:N_horizon]
+                AM_bid_prices_opt   = sol_AM.value(opt_vars_AM['B_prices'])[:,:N_horizon]
+                Eps_opt_AM          = sol_AM.value(opt_vars_AM['Eps'])
+
+                # Apply bid activations
+                # Evaluate activations
+                AM_activated_volumes, AM_earnings = market.AM.subject_bids_to_market_data(current_MTU, AM_bid_volumes_opt, AM_bid_prices_opt)
+
+                # Store data
+                store_data_slice = slice(k, k+min(N_iter, N_horizon))
+                
+                # Store inputs
+                U_nom_log[:,store_data_slice] = u_nom_opt_CM[:,extract_solution_slice]
+
+                AM_activated_volumes_up    = AM_activated_volumes[0,:]
+                AM_activated_volumes_down  = AM_activated_volumes[1,:]
+                u_tilde = 1000/self.model.C_conv_PPFD * (AM_activated_volumes_down - AM_activated_volumes_up)
+                u = (np.array(U_nom_log[:,iter_slice]).flatten() + u_tilde)[extract_solution_slice]
+                U_log[:,store_data_slice] = u
+                
+
+                # Store CM bid data
+                CM_bids_log[:2,store_data_slice]    = CM_bid_volumes_opt[:,extract_solution_slice]
+                CM_bids_log[2:4,store_data_slice]   = CM_bid_prices_opt[:,extract_solution_slice]
+
+                # Store AM bid data
+                AM_bids_log[:2,store_data_slice]    = AM_bid_volumes_opt[:,extract_solution_slice]
+                AM_bids_log[2:4,store_data_slice]   = AM_bid_prices_opt[:,extract_solution_slice]
+
+                # Integrate states
+                # X[:,k:k+1+min(N_iter, N_horizon)] = x_opt_bid[:,:1+min(N_iter, N_horizon)]
+                for i in range(k, k+min(N_iter, N_horizon)):
+                    X_log[:,i+1] = np.array(F(X_log[:,i], np.array([U_log[:,i]]))).reshape(1, -1)
+
+                past_X[:,-min(QUARTER_HOURS_PER_DAY, min(N_iter, N_horizon)):] = X_log[:,k:k+min(QUARTER_HOURS_PER_DAY, min(N_iter, N_horizon))]
+
+                # TODO fix eps
+                Eps_log = np.array([[float(max(0, target_weight[-1] - self.model.freshweight(X_log[:,-1])))], [0], [0]])
+                # Eps_log     = Eps_opt_AM
+                # Eps_nom_log = Eps_nom_opt_CM
+
+                pbar.update(N_iter)
+                k += N_iter
+
+        end_time = time.time()
+
+        CM_bid_volumes      = np.array(CM_bids_log[:2,:]).reshape((2, -1))
+        CM_bid_prices       = np.array(CM_bids_log[2:4,:]).reshape((2, -1))
+        AM_bid_volumes      = np.array(AM_bids_log[:2,:]).reshape((2, -1))
+        AM_bid_prices       = np.array(AM_bids_log[2:4,:]).reshape((2, -1))
+        
+        CM_bid_activations  = np.vstack((CM_activation_demands_up, CM_activation_demands_down))
+        AM_bid_activations  = np.vstack((AM_activation_demands_up, AM_activation_demands_down))
+
+        X_log       = np.array(X_log).reshape((self.model.nx, -1))
+        U_log       = np.array(U_log).reshape((self.model.nu, -1))
+        U_nom_log   = np.array(U_nom_log).reshape((self.model.nu, -1))
+
+        sol= {}
+        sol['f'] = float(
+                    self.model.spotopt_obj_function(N, spot_prices, U_log) \
+                    + self.model.AM_bidding_obj_function(N, spot_prices, AM_bid_volumes, AM_bid_prices, U_nom_log, self.market.AM)\
+                    + self.model.CM_bidding_obj_function(N, spot_prices, CM_bid_volumes, CM_bid_prices, self.market.CM)\
+                    + self.model.terminal_cost(self, X_log, U_log, Eps_log)
+                    )
+                    # + self.model.terminal_cost(self, X_nom_log, U_nom_log, Eps_nom)
+        
+        sol['elapsed_time'] = end_time - start_time
+        sol['eps'] = Eps_log[0,0]
+        
+
+        market_data = {
+            'CM': build_market_participation(CM_bid_volumes, CM_bid_prices, CM_bid_activations),
+            'AM': build_market_participation(AM_bid_volumes, AM_bid_prices, AM_bid_activations)
+        }
+        
+        self.store_run(run_id, dependencies, sol, X_log, U_log, U_nom=U_nom_log, refrun_id = target_run_id, market_data=market_data, plot_run=plot_run)
+
+        if not self.surpress_output: print(f'{run_id} | Generated theoretically optimal bid plan')
+
+        self.save_to_json()
+        return 0
+    
+
+    def setup_simulation_statevectors(self, model: PlantModel, target_run_id):
+
+        target_run  = self.optimization_results['runs'][target_run_id]
+        target_X    = target_run['timeseries']['x']
+        N  = self.N
+        nx = model.nx
+        nu = model.nu
+
+        # Simulation state vectors
+        X = ca.DM.zeros(nx, N+1)
+        X[:,0] = self.x_init
+        past_X = target_X[:,:QUARTER_HOURS_PER_DAY].copy()      # Used for backwards DLI calculation
+        U = ca.DM.zeros(nu, N)                                  # System input after subjected to bid activations
+        U_nom = ca.DM.zeros(nu, N)                              # Baseline system input
+        CM_bid_log = ca.DM.zeros(4, N)                             # Capacity Market Bids
+        AM_bid_log = ca.DM.zeros(4, N)                             # Activation Market Bids
+        Eps = 0                                                 # Slack variables
+
+        return X, past_X, U, U_nom, CM_bid_log, AM_bid_log, Eps
+
+
+
+    def setup_optimizer(self, nx, nu, neps, N_horizon, opti_type: str):
+        '''Creates opti variables. Creates opt_vars dictionaries containing opti symbolic optimization variables'''
+
+        opti = ca.Opti()
+        opts = {'ipopt.print_level':0, 'print_time':0}
+        opti.solver('ipopt', opts)
+
+        X           = opti.variable(nx, N_horizon+1)
+        Eps         = opti.variable(neps, 1)
+        B_prices    = opti.variable(2*nu, N_horizon)
+        B_volumes   = opti.variable(2*nu, N_horizon)
+
+        x0          = opti.parameter(nx, 1)         # Starting weight
+        ref_weight  = opti.parameter(1, 1)          # End weight (To be substituted)
+        spot_prices = opti.parameter(1, N_horizon)  # Spot prices for optimization window
+
+        opti.set_value(spot_prices, ca.DM.ones(spot_prices.shape))
+
+        opt_vars = {'opti_type'     : opti_type,
+                    'N_horizon'     : N_horizon,
+                    'X'             : X,
+                    'x0'            : x0,
+                    'Eps'           : Eps,
+                    'spot_prices'   : spot_prices,
+                    'ref_weight'    : ref_weight,
+                    'B_volumes'     : B_volumes,
+                    'B_prices'      : B_prices
+                    }
+        
+
+        if opti_type=='CM':
+            # Add U and nominal U as variables
+            U_nom       = opti.variable(nu, N_horizon)
+            X_nom       = opti.variable(nx, N_horizon+1)
+            Eps_nom     = opti.variable(neps, 1)
+
+            # Register opti_variables to opt_vars
+            opt_vars['U_nom']       = U_nom
+            opt_vars['X_nom']       = X_nom
+            opt_vars['Eps_nom']     = Eps_nom
+            return opti, opt_vars
+        elif opti_type=='AM':
+            
+            # Nominal U as parameter
+            U_nom       = opti.parameter(nu, N_horizon)
+            Req_volumes = opti.parameter(2*nu, N_horizon)
+
+            # Initialize parameters with 0-values
+            opti.set_value(U_nom,       ca.DM.zeros(U_nom.shape))
+            opti.set_value(Req_volumes, ca.DM.zeros(Req_volumes.shape))
+
+            # Register opti_variables and opti_params to opt_vars
+            opt_vars['U_nom']       = U_nom
+            opt_vars['Req_volumes'] = Req_volumes   # Required volumes (from CM participation)
+            return opti, opt_vars
+        else:
+            assert False, f'SETUP MPC | invalid opti type: {opti_type}'
+                
+    def set_constraints(self, opti: ca.Opti, N_TH, opt_vars: dict):
+        
+        # Extract symbolic optimization variables and parameters
+        X, Eps, x0, spot_prices, ref_weight, B_volumes, B_prices = [opt_vars[key] for key in ['X', 'Eps', 'x0', 'spot_prices', 'ref_weight', 'B_volumes', 'B_prices']]    
+        
+        g_eq, g_ineq = [], []
+
+        if opt_vars['opti_type'] == 'AM':
+            U_nom       = opt_vars['U_nom']
+            Req_volumes = opt_vars['Req_volumes']
+            U = self.model.get_u(N_TH, U_nom=U_nom, B_volumes=B_volumes, B_prices=B_prices, spot_prices=spot_prices, balancing_market=self.market.AM).reshape((1,-1))
+            g_eq, g_ineq = self.model.get_bidding_constraints(g_eq, g_ineq, N_TH, U_nom, B_prices = B_prices, B_volumes=B_volumes, B_volumes_lower_bound=Req_volumes)
+        elif opt_vars['opti_type'] == 'CM':
+            U_nom   = opt_vars['U_nom']
+            X_nom   = opt_vars['X_nom']
+            Eps_nom = opt_vars['Eps_nom']
+            U = self.model.get_u_CM(N_TH, U_nom=U_nom, CM_B_volumes=B_volumes, CM_B_prices=B_prices, spot_prices=spot_prices, CM=self.market.CM, AM=self.market.AM).reshape((1,-1))
+            g_eq, g_ineq = self.model.get_static_process_constraints(g_eq, g_ineq, N_TH, self.dt, X_nom, x0, U_nom, Eps_nom)
+            g_eq, g_ineq = self.model.get_bidding_constraints(g_eq, g_ineq, N_TH, U_nom, B_prices = B_prices, B_volumes = B_volumes)
+        else:
+            assert False, f'Inconsistent opti_type: {opt_vars["opti_type"]}'
+
+        g_eq, g_ineq = self.model.get_static_process_constraints(g_eq, g_ineq, N_TH, self.dt, X, x0, U, Eps)
+
+        # [opti.subject_to(equality_constraint == 0) for equality_constraint in g_eq]
+        # [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
+
+        with tqdm(total=len(g_eq), desc=f"    MPC {opt_vars['opti_type']}: Adding equality constraints") as pbar:
+            for equality_constraint in g_eq:
+                opti.subject_to(equality_constraint == 0)
+                pbar.update(1)
+        
+        with tqdm(total=len(g_ineq), desc=f"    MPC {opt_vars['opti_type']}: Adding inequality constraints") as pbar:
+            for inequality_constraint in g_ineq:
+                opti.subject_to(inequality_constraint >= 0)
+                pbar.update(1)
+
+        return opti
+
+
+    def update_optimizer_CM_bids(self, opti: ca.Opti, k, N, N_TH, opt_vars, spot_prices, x0, past_X, ref_weight): #, init_U = None, init_X = None):
+
+        X, X_nom, U_nom, Eps, Eps_nom, B_volumes, B_prices = [opt_vars[key] for key in ['X', 'X_nom', 'U_nom', 'Eps', 'Eps_nom', 'B_volumes', 'B_prices']]    # Extract symbolic optimization variables and parameters
+
+        g_eq, g_ineq = [], []
+        g_eq, g_ineq = self.model.get_dynamic_process_constraints(g_eq, g_ineq, N_TH, X, Eps, ref_weight, past_X = past_X)
+        [opti.subject_to(equality_constraint    == 0) for equality_constraint   in g_eq]
+        [opti.subject_to(inequality_constraint  >= 0) for inequality_constraint in g_ineq]
+
+        U = self.model.get_u_CM(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market.CM, self.market.AM)
+        J = self.model.spotopt_obj_function(N_TH, spot_prices, U) \
+           + self.model.CM_bidding_obj_function(N_TH, spot_prices, B_volumes, B_prices, self.market.CM)\
+           + self.model.terminal_cost(self, X, U, Eps)\
+           + self.model.terminal_cost(self, X_nom, U_nom, Eps_nom)
+        
+        opti.minimize(J)
+
+        # if init_X is not None: opti.set_initial(X[:,:N_TH+1], init_X)
+        # if init_U is not None: opti.set_initial(U[:,:N_TH],   init_U)
+
+        opti.set_value(opt_vars['x0'], x0)
+        opti.set_value(opt_vars['ref_weight'], ref_weight)
+        opti.set_value(opt_vars['spot_prices'][:,:N_TH], spot_prices)
+
+        return opti
+
+    def update_optimizer_AM_bids(self, opti: ca.Opti, k, N, N_TH, opt_vars, spot_prices, x0, past_X, U_nom, ref_weight, CM_reservations):
+
+        X, B_volumes, B_prices, Eps = [opt_vars[key] for key in ['X','B_volumes', 'B_prices', 'Eps']]    # Extract symbolic optimization variables and parameters
+
+        g_eq, g_ineq = [], []
+        g_eq, g_ineq = self.model.get_dynamic_process_constraints(g_eq, g_ineq, N_TH, X, Eps, ref_weight, past_X = past_X)
+        [opti.subject_to(equality_constraint == 0)   for equality_constraint in g_eq]
+        [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
+
+        U = self.model.get_u(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market.AM)
+        J = self.model.spotopt_obj_function(N_TH, spot_prices, U)\
+            + self.model.AM_bidding_obj_function(N_TH, spot_prices, B_volumes, B_prices, U_nom, self.market.AM)\
+            + self.model.terminal_cost(self, X, U, Eps)
+                
+        opti.minimize(J)
+
+        # _, ub_B_volumes, _, _  = self.model.get_bidding_bounds(N_TH, U_nom)
+        # B_max_volumes = ub_B_volumes
+
+        # update parameters
+        opti.set_value(opt_vars['x0'],                      x0)
+        opti.set_value(opt_vars['U_nom'][:,:N_TH],          U_nom)
+        opti.set_value(opt_vars['ref_weight'],              ref_weight)
+        opti.set_value(opt_vars['spot_prices'][:,:N_TH],    spot_prices)
+        # opti.set_value(opt_vars['B_volumes'][:,:N_TH], B_max_volumes)
+
+        # Set initial guesses
+
+
+        # Expected value of clearing prices given spot prices
+        # clearing_price_mu_up    = conditional_expectation(spot_prices, self.market.AM.price_stats[self.bidding_zone]['Up']['means'],    self.market.AM.price_stats[self.bidding_zone]['Up']['cov'])
+        # clearing_price_mu_down  = conditional_expectation(spot_prices, self.market.AM.price_stats[self.bidding_zone]['Down']['means'],  self.market.AM.price_stats[self.bidding_zone]['Down']['cov'])
+
+        # clearing_price_mu_up = 10*clearing_price_mu[0]
+        # clearing_price_mu_dn = 10*clearing_price_mu[1]
+
+        # Set initial optimal bidding guess to be maximum possible volume and exactly at clearing price
+        # B_prices_initial_guess = np.vstack((clearing_price_mu_up, clearing_price_mu_down))
+        # U_initial_guess = np.array(self.model.get_u(N_TH, U_nom, B_prices_initial_guess, B_max_volumes, spot_prices, self.market.AM)).flatten()
+        # X_initial_guess = ca.DM.zeros(self.model.nx, N_TH+1)
+        # X_initial_guess[:,0] = x0
+        # F = self.F
+        # for k in range(len(U_initial_guess)):
+        #     X_initial_guess[:,k+1] = F(X_initial_guess[:,k], U_initial_guess[k])
+
+        # opti.set_initial(X[:,:N_TH+1],      X_initial_guess)
+        # opti.set_initial(B_prices[:,:N_TH], B_prices_initial_guess)
+
+        return opti
+
+
+
 
 
     def fixed_light_schedule(self, run_id = 'fixed'):
@@ -832,7 +1243,7 @@ class Controller():
 
         run_id:
             - reference run: 
-            - Markets:
+            - markets:
                 - [CM/AM]:
                     - Bids:
                         - [Up/Down]:
@@ -884,8 +1295,8 @@ class Controller():
             bid_prices_down   = market_data[market_type]['Bids']['Down']['Volume'].reshape(1,-1)
             
             if  market_data[market_type]['Activations'] is None:
-                bid_activations_up   = balancing_market.activation_prob_up(self.spot_prices,   bid_prices_up)
-                bid_activations_down = balancing_market.activation_prob_down(self.spot_prices, bid_prices_down)
+                bid_activations_up   = np.array(balancing_market.activation_prob_up(self.spot_prices,   bid_prices_up)).reshape(1,-1)
+                bid_activations_down = np.array(balancing_market.activation_prob_down(self.spot_prices, bid_prices_down)).reshape(1,-1)
             else:
                 bid_activations_up   =  market_data[market_type]['Activations']['Up'].reshape(1,-1)
                 bid_activations_down =  market_data[market_type]['Activations']['Down'].reshape(1,-1)
@@ -894,8 +1305,8 @@ class Controller():
             clearing_prices_up      = balancing_market.clearing_prices_up
             clearing_prices_down    = balancing_market.clearing_prices_down
         
-            total_earnings   = 1/4 * np.sum(np.multiply(clearing_prices_up,    np.where(bid_activations_up,   bid_volumes_up,   0))) \
-                             + 1/4 * np.sum(np.multiply(clearing_prices_down,  np.where(bid_activations_down, bid_volumes_down, 0)))
+            total_earnings   = 1/4 * np.sum(np.multiply(clearing_prices_up,   np.multiply(bid_activations_up,   bid_volumes_up))) \
+                             + 1/4 * np.sum(np.multiply(clearing_prices_down, np.multiply(bid_activations_down, bid_volumes_down)))
             
             metrics_data[f'{market_type} Earnings'] = float(total_earnings)
 
