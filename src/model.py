@@ -212,10 +212,16 @@ class PlantModel:
 
         L = 0
 
+        # for k in range(0, N_TH):
+        #     L += \
+        #           + (spot_prices[k] - expected_prices_down[k])   * bid_volumes_down[k]   * balancing_market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
+        #           - (spot_prices[k] + expected_prices_up[k])     * bid_volumes_up[k]     * balancing_market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
+
+        # L = L/4
         for k in range(0, N_TH):
             L += \
-                  + (spot_prices[k] - expected_prices_down[k])   * bid_volumes_down[k]   * balancing_market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
-                  - (spot_prices[k] + expected_prices_up[k])     * bid_volumes_up[k]     * balancing_market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
+                  - expected_prices_down[k]   * bid_volumes_down[k]   * balancing_market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
+                  - expected_prices_up[k]     * bid_volumes_up[k]     * balancing_market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
 
         L = L/4
 
@@ -233,10 +239,16 @@ class PlantModel:
 
         L = 0
 
+        # for k in range(0, N_TH):
+        #     L += \
+        #           + (spot_prices[k] - expected_prices_down[k])   * bid_volumes_down[k]   * balancing_market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
+        #           - (spot_prices[k] + expected_prices_up[k])     * bid_volumes_up[k]     * balancing_market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
+
+        # L = L/4
         for k in range(0, N_TH):
             L += \
-                  + (spot_prices[k] - expected_prices_down[k])   * bid_volumes_down[k]   * balancing_market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
-                  - (spot_prices[k] + expected_prices_up[k])     * bid_volumes_up[k]     * balancing_market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
+                  - expected_prices_down[k]   * bid_volumes_down[k]   * balancing_market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
+                  - expected_prices_up[k]     * bid_volumes_up[k]     * balancing_market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
 
         L = L/4
 
