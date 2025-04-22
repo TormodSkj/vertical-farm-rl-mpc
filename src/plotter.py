@@ -51,6 +51,7 @@ class Plotter():
         self.volume_th      = self.plotter_settings['VOLUME_THRESHOLD']
         self.aspect_ratio   = self.plotter_settings['PLOT_ASPECT_RATIO']
         self.search_plot_cache   = self.plotter_settings['SEARCH_PLOT_CACHE']
+        self.filter_bids    = self.plotter_settings['FILTER_BIDS']
 
 
     def save_plot(self, filename, run_id = None, fig = None, pdf= None):
@@ -259,360 +260,13 @@ class Plotter():
         self.update_plot_log(run_id, dependencies)
 
 
-
-        '''
-            ######################################################
-            #                   BIDDING VOLUMES
-
-            fig = plt.figure(figsize=self.aspect_ratio)
-
-            _, ub_B_volumes, _, _ = self.controller.model.get_bidding_bounds(controller.N, u_nom.reshape((1,-1)))
-            linewidth = 0.8
-            plt.step(t, -np.array(ub_B_volumes[0,:]).flatten(), color='grey', label='Up-regulation volume limit', linewidth = linewidth, where = 'post')
-            plt.step(t, np.array(ub_B_volumes[1,:]).flatten(), color='grey', label='Down-regulation volume limit',  linewidth = linewidth, where = 'post')
-            plt.fill_between(t, -filtered_bid_volumes_up, 0, color='blue', alpha=0.4, label='Up-regulation', step='post')
-            plt.fill_between(t, 0, filtered_bid_volumes_down, color='red', alpha=0.4, label='down-regulation', step='post')
-            plt.ylabel("Power (MW)")
-            plt.xlabel("Time")
-            plt.legend(loc="upper right")
-            plt.title(f"{run_id} volumes in MW ({controller.market.date}, {controller.market.bidding_zone})")
-
-            # filename = f"{run_sanitized}_volume"
-            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
-            self.save_plot(f"bid_volumes", run_id, fig, pdf)
-
-            ######################################################
-            #                   BIDDING PRICES
-
-            fig, ax = plt.subplots(1, 1, figsize=self.aspect_ratio, sharex=True)
-
-            ax.fill_between(t, 0, filtered_bid_prices_up, label="Bidding Price Up", color="blue", step='post', alpha=0.4)
-            ax.fill_between(t, 0, filtered_bid_prices_down, label="Bidding Price Down", color="red", step='post', alpha=0.4)
-            ax.step(t, spot_prices, label="Spot price", color="grey", linestyle="--", where='post')
-            ax.set_ylabel("Bidding Price (€/MW)")
-            ax.tick_params(axis='y')
-            ax.legend(loc="upper left")
-
-            fig.suptitle(f"{run_id} Bidding Prices and Spot Prices in €/MW ({controller.market.date}, {controller.market.bidding_zone})")
-            fig.tight_layout(rect=[0, 0.03, 1, 0.95]) 
-
-            # filename = f"{run_sanitized}_prices"
-            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
-            self.save_plot(f"bid_prices", run_id, fig, pdf)
-
-            ######################################################
-            #                ACTIVATION PROBABILITIES
-
-            # plt.figure(figsize=self.aspect_ratio)
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=self.aspect_ratio, sharex=True)
-
-            ax1.fill_between(t, 0, prob_activation_up, color=self.color_up, alpha=0.8, label="Expected", step='post', linewidth=0)
-            ax2.fill_between(t, 0, prob_activation_down, color=self.color_dn, alpha=0.8, label="Expected", step='post', linewidth=0)
-
-            if is_realized:
-                ax1.fill_between(t, 0, np.multiply(bid_activation_up, prob_activation_up), color='navy', alpha=1, label="Activated", step='post', linewidth=0)
-                ax2.fill_between(t, 0, np.multiply(bid_activation_down, prob_activation_down), color='maroon', alpha=1, label="Activated", step='post', linewidth=0)
-
-
-            ax1.step(t, balancing_market.demand_prob_up(controller.spot_prices).reshape((-1,1)),   color='gray', linestyle=':', label="Max activation rate", where='post')
-            ax2.step(t, balancing_market.demand_prob_down(controller.spot_prices).reshape((-1,1)), color='gray', linestyle=':', label="Max activation rate", where='post')
-            ax1.set_ylabel('Expected activation probability')
-            ax2.set_ylabel("Expected activation probability")
-            ax2.set_xlabel("Time (days)")
-            ax1.legend(loc='upper left')
-            ax2.legend(loc='upper left')
-            fig.suptitle(f"{run_id} Activation Chances ({controller.market.date}, {controller.market.bidding_zone}) \nBar heights indicate expected activation probabilities per bid. Activated bids are highlighted in dark.")
-
-            # filename = f"{run_sanitized}_activations"
-            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
-            self.save_plot(f"bid_activations", run_id, fig, pdf)
-
-            ######################################################
-            #             VOLUME-ACTIVATION SCATTER
-
-            # plt.figure(figsize=self.aspect_ratio)
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=self.aspect_ratio)
-
-            if is_realized:
-                ax1.scatter(bid_volumes_up[np.where(bid_activation_up == 1)], prob_activation_up[np.where(bid_activation_up == 1)], color='navy', s=10)
-                ax2.scatter(bid_volumes_down[np.where(bid_activation_down == 1)], prob_activation_down[np.where(bid_activation_down == 1)], color='maroon', s=10)
-                ax1.scatter(bid_volumes_up[np.where(bid_activation_up == 0)], prob_activation_up[np.where(bid_activation_up == 0)], color=self.color_up, s=1)
-                ax2.scatter(bid_volumes_down[np.where(bid_activation_down == 0)], prob_activation_down[np.where(bid_activation_down == 0)], color=self.color_dn, s=1)
-            
-            else:
-                ax1.scatter(bid_volumes_up, prob_activation_up, color=self.color_up)
-                ax2.scatter(bid_volumes_down, prob_activation_down, color=self.color_dn)
-            
-            ax1.set_ylabel("Projected activation chance")
-            ax1.set_xlabel("Bid volume (MW)")
-            ax1.title.set_text('Up-regulation bids')
-
-            ax2.set_ylabel("Projected activation chance")
-            ax2.set_xlabel("Bid volume (MW)")
-            ax2.title.set_text('Down-regulation bids')
-
-            title = f"{run_id} Volumes vs predicted activation chances €/MW ({controller.market.date}, {controller.market.bidding_zone})"
-            title += "\n(Activations highlighted in dark)"
-            
-            fig.suptitle(title)
-            fig.tight_layout(rect=[0, 0.03, 1, 0.95]) 
-
-            # filename = f"{run_sanitized}_scatter_plots"
-            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
-            self.save_plot(f"scatter_volumes_activations", run_id, fig, pdf)
-
-            if is_realized:
-                
-                # Filter out non-activated bids
-                bid_prices_up_activated     = np.where(np.logical_and(bid_activation_up     > self.activation_th, bid_volumes_up    > self.volume_th,), bid_prices_up,    0)
-                bid_prices_dn_activated     = np.where(np.logical_and(bid_activation_down   > self.activation_th, bid_volumes_down  > self.volume_th,), bid_prices_down,  0)
-                bid_volumes_up_activated    = np.where(np.logical_and(bid_activation_up     > self.activation_th, bid_volumes_up    > self.volume_th,), bid_volumes_up,   0)
-                bid_volumes_dn_activated    = np.where(np.logical_and(bid_activation_down   > self.activation_th, bid_volumes_down  > self.volume_th,), bid_volumes_down, 0)
-                
-                
-                ######################################################
-                #    ACTIVATED BIDDING VOLUMES AND PRICES
-                #               [FILTERED]
-
-                # plt.figure(figsize=self.aspect_ratio)
-                fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=self.aspect_ratio, sharex=True)
-
-                ax1.fill_between(t, -filtered_bid_volumes_up, filtered_bid_volumes_down, color='grey', label="Submitted", alpha=0.4, step='post')
-                ax1.fill_between(t, -bid_volumes_up_activated, 0, color='blue', alpha=0.4, label='Up-regulation', step='post')
-                ax1.fill_between(t, 0, bid_volumes_dn_activated, color='red', alpha=0.4, label='down-regulation', step='post')
-                ax1.set_ylabel("Bid Volumes (MW)")
-                ax1.set_xlabel("Time")
-                ax1.legend(loc="upper right")
-
-                ax2.fill_between(t, 0, filtered_bid_prices_up, color='grey', label="Submitted", alpha=0.4, step='post')
-                ax2.fill_between(t, 0, bid_prices_up_activated, color='blue', label="Activated", alpha=0.4, step='post')
-                ax2.set_ylabel("Bid Price Up (€/MW)")
-                ax2.set_xlabel("Time (days)")
-                ax2.legend()
-
-                ax3.fill_between(t, 0, filtered_bid_prices_down, color='grey', label="Submitted", alpha=0.4, step='post')
-                ax3.fill_between(t, 0, bid_prices_dn_activated, color='red', label="Activated", alpha=0.4, step='post')
-                ax3.set_ylabel("Bid Price Down (€/MW)")
-                ax3.set_xlabel("Time (days)")
-                ax3.legend()
-
-                fig.suptitle(f"{run_id} activated prices and volumes. ({controller.market.date}, {controller.market.bidding_zone})")
-
-                # filename = f"{run_sanitized}_results_activated_volumes_prices"
-                # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
-                self.save_plot("results_activated_volumes_prices", run_id, fig, pdf)
-
-
-                ######################################################
-                #    EXPECTED VS RECORDED CLEARING PRICES 
-                #
-
-                # plt.figure(figsize=self.aspect_ratio)
-                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=self.aspect_ratio, sharex=True)
-
-
-                clearing_prices_up   = balancing_market.clearing_prices_up
-                clearing_prices_down = balancing_market.clearing_prices_down
-                activations_up       = balancing_market.activations_up
-                activations_down     = balancing_market.activations_down
-                expected_prices_up   = balancing_market.expected_prices_up
-                expected_prices_down = balancing_market.expected_prices_down
-
-                linewidth = 0.4
-
-                ax1.fill_between(t, 0, np.where(activations_up > 0, clearing_prices_up, 0), color='limegreen', alpha=0.4, label="Activations", step='post')
-                ax1.fill_between(t, 0, bid_prices_up_activated, color='blue', label="Activated Bid Prices", alpha=0.4, step='post')
-                ax1.step(t, clearing_prices_up, color='navy',  label="Recorded", linewidth=linewidth, where='post')
-                ax1.step(t, expected_prices_up.flatten(), color=self.color_up,  label="Expected", linewidth=linewidth, where='post')
-                ax1.step(t, filtered_bid_prices_up, color='grey',  label="Submitted", linewidth=linewidth, where='post')
-                ax1.set_ylabel("Price Up (€/MW)")
-                ax1.set_xlabel("Time (days)")
-                ax1.legend()
-
-                ax2.fill_between(t, 0, np.where(activations_down > 0, clearing_prices_down, 0), color='limegreen', alpha=0.4, label="Activations", step='post')
-                ax2.fill_between(t, 0, bid_prices_dn_activated, color='red', label="Activated Bid Prices", alpha=0.4, step='post')
-                ax2.step(t, clearing_prices_down, color='maroon', label="Recorded", linewidth=linewidth, where='post')
-                ax2.step(t, expected_prices_down.flatten(), color=self.color_dn, label="Expected", linewidth=linewidth, where='post')
-                ax2.step(t, filtered_bid_prices_down, color='grey',  label="Submitted", linewidth=linewidth, where='post')
-                ax2.set_ylabel("Price Down (€/MW)")
-                ax2.set_xlabel("Time (days)")
-                ax2.legend()
-
-
-
-                fig.suptitle(f"{run_id} Expected vs recorded clearing prices. ({controller.market.date}, {controller.market.bidding_zone})\nExpectations made based on price covariances")
-
-                # filename = f"{run_sanitized}_expected_vs_recorded_clearing_prices"
-                # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
-                self.save_plot("expected_vs_recorded_clearing_prices", run_id, fig, pdf)
-
-                ######################################################
-                #    PROJECTED VS RECORDED ACTIVATION CHANCES 
-                #
-
-                # plt.figure(figsize=self.aspect_ratio)
-                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=self.aspect_ratio)
-
-                step_size = 5
-                n_bins_up = int(np.ceil(max(prob_activation_up)*100))+step_size
-                n_bins_dn = int(np.ceil(max(prob_activation_down)*100))+step_size
-
-                probs_up, probs_dn = [], []
-                probs_up_idx, probs_dn_idx = [], []
-                for chance in range(0, n_bins_up, step_size):
-                    # Gather average activation rate of all bids projected to be within 0.5% of an activation chance
-                    slice_up = bid_activation_up[np.where(np.logical_and(prob_activation_up*100>chance-0.5*step_size, prob_activation_up*100<chance+0.5*step_size))]
-                    if len(slice_up) > 0:
-                        probs_up.append(100 * np.mean(slice_up))
-                        probs_up_idx.append(chance)
-
-                for chance in range(0, n_bins_dn, step_size):
-                    # Gather average activation rate of all bids projected to be within 0.5% of an activation chance
-                    slice_dn = bid_activation_down[np.where(np.logical_and(prob_activation_down*100>chance-0.5*step_size, prob_activation_down*100<chance+0.5*step_size))]
-                    if len(slice_dn) > 0:
-                        probs_dn.append(100 * np.mean(slice_dn))
-                        probs_dn_idx.append(chance)
-
-                ax1.plot(probs_up_idx, probs_up, color=self.color_up, marker='o')
-                ax2.plot(probs_dn_idx, probs_dn, color=self.color_dn, marker='o')
-
-                ax1.plot(np.array([0, max(probs_up_idx)]), np.array([0, max(probs_up_idx)]), color='grey', linestyle=':')
-                ax2.plot(np.array([0, max(probs_dn_idx)]), np.array([0, max(probs_dn_idx)]), color='grey', linestyle=':')
-
-                # ax1.set_aspect('equal')
-                # ax2.set_aspect('equal')
-
-                ax1.set_ylabel("Recorded bid activation rate (%)")
-                ax1.set_xlabel("Expected bid activation chance (%)")
-                ax2.set_ylabel("Recorded bid activation rate (%)")
-                ax2.set_xlabel("Expected bid activation chance (%)")
-                
-                fig.suptitle('')
-                fig.tight_layout(rect=[0, 0.03, 1, 0.95]) 
-
-                # filename = f"{run_sanitized}_expected_vs_true_probabilities"
-                # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
-                self.save_plot("expected_vs_true_probabilities", run_id, fig, pdf)
-
-                plt.close('all')
-
-                ######################################################
-                #      RECORDED VS HISTORICAL CLEARING PRICES
-                #
-
-                # plt.figure(figsize=self.aspect_ratio)
-                fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=self.aspect_ratio, sharex=True)
-                
-                activated_clearing_prices_up   = clearing_prices_up[np.where(activations_up)]
-                activated_clearing_prices_down = clearing_prices_down[np.where(activations_down)]
-                
-                n_bins = 50
-
-                #TODO This is a little redundant. Cut down
-                ax1.hist(clearing_prices_up,    label="Expected", color=self.color_up, alpha=0.8, bins=n_bins, density=True)
-                ax2.hist(clearing_prices_down,  label="Expected", color=self.color_dn, alpha=0.8, bins=n_bins, density=True)
-                
-                ax1.hist(clearing_prices_up,    label="Recorded", color='navy', histtype='step', alpha=0.8, bins=n_bins, density=True)
-                ax2.hist(clearing_prices_down,  label="Recorded", color='maroon', histtype='step', alpha=0.8, bins=n_bins, density=True)
-
-                ax3.hist(activated_clearing_prices_up,   label="Activated", color=self.color_up, alpha=0.8, bins=30, density=True)
-                ax4.hist(activated_clearing_prices_down, label="Activated", color=self.color_dn, alpha=0.8, bins=30, density=True)
-
-                # Gaussian pdfs of clearing prices
-                mu_up   = balancing_market.price_stats[zone]['Up']['means'][1]
-                mu_down = balancing_market.price_stats[zone]['Down']['means'][1]
-
-                sigma_up   = np.sqrt(balancing_market.price_stats[zone]['Up']['cov'][1,1])
-                sigma_down = np.sqrt(balancing_market.price_stats[zone]['Down']['cov'][1,1])
-                                
-                x_up = np.linspace(mu_up -3*sigma_up,     mu_up +3*sigma_up,     1000)
-                x_dn = np.linspace(mu_down -3*sigma_down, mu_down +3*sigma_down, 1000)
-                
-                ax3.plot(x_up,  stats.norm.pdf(x_up, mu_up, sigma_up),      label="Estimate of activated prices", color='navy')
-                ax4.plot(x_dn,  stats.norm.pdf(x_dn, mu_down, sigma_down),  label="Estimate of activated prices", color='maroon')
-
-                ax3.set_xlabel("Bidding prices (€/MW)")
-                ax4.set_xlabel("Bidding prices (€/MW)")
-                ax1.set_ylabel("Occurance rate (%)")
-                ax3.set_ylabel("Occurance rate (%)")
-                # ax1.set_xlim([-50, 250])
-                # ax2.set_xlim([-50, 250])
-                [ax.legend() for ax in (ax1, ax2, ax3, ax4)]
-
-                fig.suptitle(f"Distributions of clearing prices, normalized ({market.bidding_zone}, {market.date})")
-                
-                # filename = f"{run_sanitized}_clearing_prices_distributions_{market.bidding_zone}"
-                # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
-                self.save_plot(f"clearing_prices_distributions_{market.bidding_zone}", run_id, fig, pdf)
-
-
-                #############################################################################
-                #      HISTOGRAM of BIDDING PRICES RELATIVE TO CLEARING PRICES
-                #
-
-                # plt.figure(figsize=self.aspect_ratio)
-                fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=self.aspect_ratio, sharex=True)
-
-                n_bins = 50
-
-                relative_prices_up = bid_prices_up - clearing_prices_up
-                relative_prices_dn = bid_prices_down - clearing_prices_down
-                demand_relative_prices_up = relative_prices_up[np.where(np.logical_and(np.logical_and(activations_up == 1, prob_activation_up > self.activation_th), bid_volumes_up > self.volume_th))]
-                demand_relative_prices_dn = relative_prices_dn[np.where(np.logical_and(np.logical_and(activations_down == 1, prob_activation_down > self.activation_th), bid_volumes_down > self.volume_th))]
-
-                relative_prices_up = relative_prices_up[np.where(np.logical_and(prob_activation_up > self.activation_th, bid_volumes_up > self.volume_th))]
-                relative_prices_dn = relative_prices_dn[np.where(np.logical_and(prob_activation_down > self.activation_th, bid_volumes_down > self.volume_th))]
-
-                ax1.hist(relative_prices_up, color=self.color_up,  alpha=0.8, bins=n_bins, density=True)
-                ax2.hist(relative_prices_dn, color=self.color_dn,  alpha=0.8, bins=n_bins, density=True)
-                ax1.set_title('Relative Prices Up, All time slots')
-                ax2.set_title('Relative Prices Down, All time slots')
-
-                ax3.hist(demand_relative_prices_up, color=self.color_up,    alpha=0.8, bins=n_bins, density=True)
-                ax4.hist(demand_relative_prices_dn, color=self.color_dn,    alpha=0.8, bins=n_bins, density=True)
-                ax3.set_title('Relative Prices Up, Activation demand only')
-                ax4.set_title('Relative Prices Down, Activation demand only')
-                    
-                # [ax.set_xlim([-50, 150]) for ax in (ax1, ax2, ax3, ax4)]
-                [ax.set_ylabel("Occurance rate (%)") for ax in (ax1, ax3)]
-                [ax.set_xlabel("Bidding prices (€/MW)") for ax in (ax3, ax4)]
-
-                fig.suptitle(f"Distribution of bidding prices relative to clearing prices ({market.bidding_zone}, {market.date}) \nCalculated as bidding price - clearing price")
-                
-                # filename = f"{run_sanitized}_relative_clearing_prices_{market.bidding_zone}"
-                # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
-                self.save_plot(f"relative_clearing_prices{market.bidding_zone}", run_id, fig, pdf)
-
-            ######################################################
-            #                   SPOT PRICES
-
-            fig = plt.figure(figsize=self.aspect_ratio)
-            plt.step(t, self.controller.market.get_spotprice(), label="Spot price", where='post')
-            plt.ylabel("Spot price (€/MWh)")
-            plt.xlabel("Time (days)")
-            plt.legend()
-
-            self.save_plot(f"spot_price_{self.controller.market.bidding_zone}", run_id, fig, pdf)
-            plt.close('all')
-            '''
-
-
-        
-
-
-
-
     def plot_market_report(self, run_id, pdf):
 
-
-        config      = self.config
         controller  = self.controller
         market      = controller.market
         t           = self.controller.t
         N           = self.controller.N
         spot_prices = self.controller.spot_prices
-        zone        = market.bidding_zone
-
 
         subplots = {}
         markets = list(controller.optimization_results['runs'][run_id]['markets'].keys())
@@ -624,32 +278,37 @@ class Plotter():
             balancing_market = self.controller.market.get_balancing_market(market_type)
             bid_ts = self.controller.optimization_results['runs'][run_id]['timeseries']
 
-            u                   = bid_ts.get('u', np.zeros(N)).flatten()
-            u_nom               = bid_ts.get('u_nom', np.zeros(N)).flatten()
-            bid_volumes_up      = market_data['Bids']['Up']['Volume'].flatten()
-            bid_volumes_down    = market_data['Bids']['Down']['Volume'].flatten()
-            bid_prices_up       = market_data['Bids']['Up']['Price'].flatten()
-            bid_prices_down     = market_data['Bids']['Down']['Price'].flatten()
-            bid_activation_up   = market_data['Activations']['Up'].flatten()
-            bid_activation_down = market_data['Activations']['Down'].flatten()
+            u                    = bid_ts.get('u',     np.zeros(N)).flatten()
+            u_nom                = bid_ts.get('u_nom', np.zeros(N)).flatten()
+            bid_volumes_up       = market_data['Bids']['Up']['Volume'].flatten()
+            bid_volumes_down     = market_data['Bids']['Down']['Volume'].flatten()
+            bid_prices_up        = market_data['Bids']['Up']['Price'].flatten()
+            bid_prices_down      = market_data['Bids']['Down']['Price'].flatten()
+            bid_activations_up   = market_data['Activations']['Up'].flatten()
+            bid_activations_down = market_data['Activations']['Down'].flatten()
         
             prob_activation_up      = np.array(balancing_market.activation_prob_up(spot_prices, bid_prices_up)).flatten()
             prob_activation_down    = np.array(balancing_market.activation_prob_down(spot_prices, bid_prices_down)).flatten()
 
             # Filter out the unreasonably low bid activations
-            filtered_bid_prices_up      = np.where(np.logical_and(prob_activation_up   > self.activation_th, bid_volumes_up   > self.volume_th), bid_prices_up,     0).flatten()
-            filtered_bid_prices_down    = np.where(np.logical_and(prob_activation_down > self.activation_th, bid_volumes_down > self.volume_th), bid_prices_down,   0).flatten()
-            filtered_bid_volumes_up     = np.where(np.logical_and(prob_activation_up   > self.activation_th, bid_volumes_up   > self.volume_th), bid_volumes_up,    0).flatten()
-            filtered_bid_volumes_down   = np.where(np.logical_and(prob_activation_down > self.activation_th, bid_volumes_down > self.volume_th), bid_volumes_down,  0).flatten()
-
+            if self.filter_bids:
+                filtered_bid_prices_up      = np.where(np.logical_and(prob_activation_up   > self.activation_th, bid_volumes_up   > self.volume_th), bid_prices_up,     0).flatten()
+                filtered_bid_prices_down    = np.where(np.logical_and(prob_activation_down > self.activation_th, bid_volumes_down > self.volume_th), bid_prices_down,   0).flatten()
+                filtered_bid_volumes_up     = np.where(np.logical_and(prob_activation_up   > self.activation_th, bid_volumes_up   > self.volume_th), bid_volumes_up,    0).flatten()
+                filtered_bid_volumes_down   = np.where(np.logical_and(prob_activation_down > self.activation_th, bid_volumes_down > self.volume_th), bid_volumes_down,  0).flatten()
+            else:
+                filtered_bid_prices_up    = bid_prices_up   
+                filtered_bid_prices_down  = bid_prices_down 
+                filtered_bid_volumes_up   = bid_volumes_up  
+                filtered_bid_volumes_down = bid_volumes_down   
 
             # Filter out non-activated bids
             clearing_prices_up   = balancing_market.clearing_prices_up
             clearing_prices_down = balancing_market.clearing_prices_down
-            bid_prices_up_activated     = np.where(np.logical_and(np.logical_and(bid_activation_up     > 0, bid_volumes_up    > self.volume_th,), bid_prices_up < clearing_prices_up),      bid_prices_up,    0)
-            bid_prices_dn_activated     = np.where(np.logical_and(np.logical_and(bid_activation_down   > 0, bid_volumes_down  > self.volume_th,), bid_prices_down < clearing_prices_down),  bid_prices_down,  0)
-            bid_volumes_up_activated    = np.where(np.logical_and(np.logical_and(bid_activation_up     > 0, bid_volumes_up    > self.volume_th,), bid_prices_up < clearing_prices_up),      bid_volumes_up,   0)
-            bid_volumes_dn_activated    = np.where(np.logical_and(np.logical_and(bid_activation_down   > 0, bid_volumes_down  > self.volume_th,), bid_prices_down < clearing_prices_down),  bid_volumes_down, 0)
+            bid_prices_up_activated     = np.where(np.logical_and(bid_activations_up     > 0, bid_volumes_up    > self.volume_th,), bid_prices_up,    0)
+            bid_prices_dn_activated     = np.where(np.logical_and(bid_activations_down   > 0, bid_volumes_down  > self.volume_th,), bid_prices_down,  0)
+            bid_volumes_up_activated    = np.where(np.logical_and(bid_activations_up     > 0, bid_volumes_up    > self.volume_th,), bid_volumes_up,   0)
+            bid_volumes_dn_activated    = np.where(np.logical_and(bid_activations_down   > 0, bid_volumes_down  > self.volume_th,), bid_volumes_down, 0)
             
             
             ######################################################
@@ -669,6 +328,7 @@ class Plotter():
             ax1.set_ylabel("Bid Volumes (MW)")
             ax1.set_xlabel("Time (days)")
             ax1.legend(loc="upper right")
+            ax1.set_ylim([-1.1*controller.model.P_cap_max, 1.1*controller.model.P_cap_max])
 
             ax2.fill_between(t, 0, filtered_bid_prices_up, color='grey', label="Submitted", alpha=0.4, step='post')
             ax2.fill_between(t, 0, bid_prices_up_activated, color='blue', label="Activated", alpha=0.4, step='post')
@@ -684,7 +344,6 @@ class Plotter():
 
             fig.suptitle(f"{run_id} activated prices and volumes. ({controller.market.date}, {controller.market.bidding_zone})")
             ax1.set_title(market_type)
-            # self.save_plot(plot_name, run_id, fig, pdf)
 
 
             ######################################################
@@ -704,8 +363,8 @@ class Plotter():
 
             linewidth = 0.4
 
-            ax1.fill_between(t, 0, np.where(activations_up > 0, clearing_prices_up, 0), color='limegreen', alpha=0.4, label="Activations", step='post')
-            ax1.fill_between(t, 0, bid_prices_up_activated, color='blue', label="Activated Bid Prices", alpha=0.4, step='post')
+            ax1.fill_between(t, 0, np.where(activations_up > 0,     clearing_prices_up, 0), color='limegreen', alpha=0.4, label="Issued Activations", step='post')
+            ax1.fill_between(t, 0, np.where(bid_activations_up > 0, clearing_prices_up, 0), color='blue', label="Activated Bids", alpha=0.4, step='post')
             ax1.step(t, clearing_prices_up, color='navy',  label="Recorded", linewidth=linewidth, where='post')
             ax1.step(t, expected_prices_up.flatten(), color=self.color_up,  label="Expected", linewidth=linewidth, where='post')
             ax1.step(t, filtered_bid_prices_up, color='grey',  label="Submitted", linewidth=linewidth, where='post')
@@ -713,8 +372,8 @@ class Plotter():
             ax1.set_xlabel("Time (days)")
             ax1.legend()
 
-            ax2.fill_between(t, 0, np.where(activations_down > 0, clearing_prices_down, 0), color='limegreen', alpha=0.4, label="Activations", step='post')
-            ax2.fill_between(t, 0, bid_prices_dn_activated, color='red', label="Activated Bid Prices", alpha=0.4, step='post')
+            ax2.fill_between(t, 0, np.where(activations_down > 0,     clearing_prices_down, 0), color='limegreen', alpha=0.4, label="Issued Activations", step='post')
+            ax2.fill_between(t, 0, np.where(bid_activations_down > 0, clearing_prices_down, 0), color='red', label="Activated Bids", alpha=0.4, step='post')
             ax2.step(t, clearing_prices_down, color='maroon', label="Recorded", linewidth=linewidth, where='post')
             ax2.step(t, expected_prices_down.flatten(), color=self.color_down, label="Expected", linewidth=linewidth, where='post')
             ax2.step(t, filtered_bid_prices_down, color='grey',  label="Submitted", linewidth=linewidth, where='post')
@@ -747,14 +406,14 @@ class Plotter():
             probs_up_idx, probs_dn_idx = [], []
             for chance in range(0, n_bins_up, step_size):
                 # Gather average activation rate of all bids projected to be within 0.5% of an activation chance
-                slice_up = bid_activation_up[np.where(np.logical_and(prob_activation_up*100>chance-0.5*step_size, prob_activation_up*100<chance+0.5*step_size))]
+                slice_up = bid_activations_up[np.where(np.logical_and(prob_activation_up*100>chance-0.5*step_size, prob_activation_up*100<chance+0.5*step_size))]
                 if len(slice_up) > 0:
                     probs_up.append(100 * np.mean(slice_up))
                     probs_up_idx.append(chance)
 
             for chance in range(0, n_bins_dn, step_size):
                 # Gather average activation rate of all bids projected to be within 0.5% of an activation chance
-                slice_dn = bid_activation_down[np.where(np.logical_and(prob_activation_down*100>chance-0.5*step_size, prob_activation_down*100<chance+0.5*step_size))]
+                slice_dn = bid_activations_down[np.where(np.logical_and(prob_activation_down*100>chance-0.5*step_size, prob_activation_down*100<chance+0.5*step_size))]
                 if len(slice_dn) > 0:
                     probs_dn.append(100 * np.mean(slice_dn))
                     probs_dn_idx.append(chance)
@@ -777,16 +436,10 @@ class Plotter():
             ax1.set_title(market_type)
             fig.tight_layout(rect=[0, 0.03, 1, 0.95]) 
 
-            # self.save_plot("expected_vs_true_probabilities", run_id, fig, pdf)
-
-            # plt.close('all')
-
             ######################################################
             #      RECORDED VS HISTORICAL CLEARING PRICES
             #
 
-            # plt.figure(figsize=self.aspect_ratio)
-            # fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=self.aspect_ratio, sharex=True)
             plot_name = 'clearing_prices_distributions_'
 
             fig, axes = plt.subplots(2, n_markets, figsize=self.aspect_ratio, sharex=False) if plot_name not in subplots else (subplots[plot_name]['fig'], subplots[plot_name]['axes'])
@@ -797,45 +450,22 @@ class Plotter():
             activated_clearing_prices_up   = clearing_prices_up[np.where(activations_up)]
             activated_clearing_prices_down = clearing_prices_down[np.where(activations_down)]
             
-            n_bins = 50
-
-            #TODO This is a little redundant. Cut down
-            # ax1.hist(clearing_prices_up,    label="Expected", color=self.color_up, alpha=0.8, bins=n_bins, density=True)
-            # ax2.hist(clearing_prices_down,  label="Expected", color=self.color_down, alpha=0.8, bins=n_bins, density=True)
+            n_bins = 20
             
-            ax1.hist(clearing_prices_up,    label="Recorded", color='navy',   histtype='step', alpha=0.8, bins=n_bins, density=True)
-            ax2.hist(clearing_prices_down,  label="Recorded", color='maroon', histtype='step', alpha=0.8, bins=n_bins, density=True)
-
-            ax1.hist(activated_clearing_prices_up,   label="Activated", color=self.color_up,   alpha=0.8, bins=n_bins, density=True)
-            ax2.hist(activated_clearing_prices_down, label="Activated", color=self.color_down, alpha=0.8, bins=n_bins, density=True)
-
-            # Gaussian pdfs of clearing prices
-            mu_up   = balancing_market.price_stats[zone]['Up']['means'][1]
-            mu_down = balancing_market.price_stats[zone]['Down']['means'][1]
-
-            sigma_up   = np.sqrt(balancing_market.price_stats[zone]['Up']['cov'][1,1])
-            sigma_down = np.sqrt(balancing_market.price_stats[zone]['Down']['cov'][1,1])
-                            
-            x_up = np.linspace(mu_up -3*sigma_up,     mu_up +3*sigma_up,     1000)
-            x_dn = np.linspace(mu_down -3*sigma_down, mu_down +3*sigma_down, 1000)
+            ax1.hist(clearing_prices_up,   label="Clearing price Up",   color=self.color_up,   alpha=0.8, bins=n_bins)
+            ax2.hist(clearing_prices_down, label="Clearing price Down", color=self.color_down, alpha=0.8, bins=n_bins)
             
-            # ax3.plot(x_up,  stats.norm.pdf(x_up, mu_up, sigma_up),      label="Estimate of activated prices", color='navy')
-            # ax4.plot(x_dn,  stats.norm.pdf(x_dn, mu_down, sigma_down),  label="Estimate of activated prices", color='maroon')
+            ax1.hist(activated_clearing_prices_up,   label="Activated up",   color='navy',    histtype='step', alpha=0.8, bins=n_bins)
+            ax2.hist(activated_clearing_prices_down, label="Activated down", color='maroon',  histtype='step', alpha=0.8, bins=n_bins)
 
-            # ax3.set_xlabel("Bidding prices (€/MW)")
-            # ax4.set_xlabel("Bidding prices (€/MW)")
-            ax1.set_ylabel("Occurance rate (%)")
-            ax2.set_ylabel("Occurance rate (%)")
-            # ax1.set_xlim([-50, 250])
-            # ax2.set_xlim([-50, 250])
+            ax1.set_ylabel("Count")
+            ax2.set_ylabel("Count")
             [ax.legend() for ax in (ax1, ax2)]
 
-            fig.suptitle(f"Distributions of clearing prices, normalized ({market.bidding_zone}, {market.date})")
-            ax1.set_title(market_type)
-
-            # filename = f"{run_sanitized}_clearing_prices_distributions_{market.bidding_zone}"
-            # plt.savefig(config.plot_path + foldername + "/" + filename + "." + self.plot_file_type, format=self.plot_file_type)
-            # self.save_plot(f"clearing_prices_distributions_{market.bidding_zone}", run_id, fig, pdf)
+            fig.suptitle(f"Clearing prices vs activated clearing prices, normalized ({market.bidding_zone}, {market.date})")
+            ax1.set_title(f'{market_type} Up')
+            ax2.set_title(f'{market_type} Down')
+            fig.tight_layout()
 
 
             #############################################################################
@@ -892,16 +522,17 @@ class Plotter():
             ax1 = axes[i]
 
             k = 1000/self.controller.model.C_conv_PPFD
-            u_tilde = k*(np.multiply(bid_activation_down, bid_volumes_down) - np.multiply(bid_activation_up, bid_volumes_up))
+            u_tilde = k*(np.multiply(bid_activations_down, bid_volumes_down) - np.multiply(bid_activations_up, bid_volumes_up))
             
-            ax1.step(t, u_nom,           color='grey',  label="Baseline",       where='post')
-            ax1.step(t, u_nom + u_tilde, color='black', label="Light Schedule", where='post')
-            ax1.fill_between(t, u_nom, u_nom + k * bid_volumes_dn_activated, color='coral',        alpha=0.4, label="Down Activations", step='post')
-            ax1.fill_between(t, u_nom - k * bid_volumes_up_activated, u_nom, color='lightskyblue', alpha=0.4, label="Up Activations",   step='post')
+            ax1.step(t, u_nom,           color='lightgrey', label="Baseline",       where='post', linestyle=':')
+            ax1.step(t, u_nom + u_tilde, color='slategrey', label="Light Schedule", where='post')
+            ax1.fill_between(t, u_nom, u_nom + k * bid_volumes_dn_activated, color='coral',        alpha=0.6, label="Down Activations", step='post')
+            ax1.fill_between(t, u_nom - k * bid_volumes_up_activated, u_nom, color='lightskyblue', alpha=0.6, label="Up Activations",   step='post')
             
             ax1.set_ylabel("PPFD (€/MW)")
             ax1.set_xlabel("Time (days)")
             ax1.legend()
+            ax1.set_ylim([-controller.model.PPFD_max*0.10, controller.model.PPFD_max*1.10])
 
             fig.suptitle(f"{run_id} Light schedule before and after activations ({controller.market.date}, {controller.market.bidding_zone})\nExpectations made based on price covariances")
             ax1.set_title(market_type)
@@ -947,10 +578,16 @@ class Plotter():
             prob_activation_down    = np.array(balancing_market.activation_prob_down(spot_prices, bid_prices_down)).flatten()
 
             # Filter out the unreasonably low bid activations
-            filtered_bid_prices_up      = np.where(np.logical_and(prob_activation_up   > self.activation_th, bid_volumes_up   > self.volume_th), bid_prices_up,     0).flatten()
-            filtered_bid_prices_down    = np.where(np.logical_and(prob_activation_down > self.activation_th, bid_volumes_down > self.volume_th), bid_prices_down,   0).flatten()
-            filtered_bid_volumes_up     = np.where(np.logical_and(prob_activation_up   > self.activation_th, bid_volumes_up   > self.volume_th), bid_volumes_up,    0).flatten()
-            filtered_bid_volumes_down   = np.where(np.logical_and(prob_activation_down > self.activation_th, bid_volumes_down > self.volume_th), bid_volumes_down,  0).flatten()
+            if self.filter_bids:
+                filtered_bid_prices_up      = np.where(np.logical_and(prob_activation_up   > self.activation_th, bid_volumes_up   > self.volume_th), bid_prices_up,     0).flatten()
+                filtered_bid_prices_down    = np.where(np.logical_and(prob_activation_down > self.activation_th, bid_volumes_down > self.volume_th), bid_prices_down,   0).flatten()
+                filtered_bid_volumes_up     = np.where(np.logical_and(prob_activation_up   > self.activation_th, bid_volumes_up   > self.volume_th), bid_volumes_up,    0).flatten()
+                filtered_bid_volumes_down   = np.where(np.logical_and(prob_activation_down > self.activation_th, bid_volumes_down > self.volume_th), bid_volumes_down,  0).flatten()
+            else:
+                filtered_bid_prices_up          = bid_prices_up
+                filtered_bid_prices_down        = bid_prices_down
+                filtered_bid_volumes_up         = bid_volumes_up
+                filtered_bid_volumes_down       = bid_volumes_down
 
 
 
@@ -1017,11 +654,11 @@ class Plotter():
 
             ax1, ax2 = axes[:,i]
 
-            ax1.fill_between(t, 0, prob_activation_up, color=self.color_up, alpha=0.8, label="Expected", step='post', linewidth=0)
+            ax1.fill_between(t, 0, prob_activation_up,   color=self.color_up,   alpha=0.8, label="Expected", step='post', linewidth=0)
             ax2.fill_between(t, 0, prob_activation_down, color=self.color_down, alpha=0.8, label="Expected", step='post', linewidth=0)
 
-            ax1.step(t, balancing_market.demand_prob_up(controller.spot_prices).reshape((-1,1)),   color='gray', linestyle=':', label="Max activation rate", where='post')
-            ax2.step(t, balancing_market.demand_prob_down(controller.spot_prices).reshape((-1,1)), color='gray', linestyle=':', label="Max activation rate", where='post')
+            ax1.step(t, balancing_market.demand_prob_up(spot_prices).reshape((-1,1)),   color='gray', linestyle=':', label="Max activation rate", where='post')
+            ax2.step(t, balancing_market.demand_prob_down(spot_prices).reshape((-1,1)), color='gray', linestyle=':', label="Max activation rate", where='post')
             ax1.set_ylabel('Expected activation probability')
             ax2.set_ylabel("Expected activation probability")
             ax2.set_xlabel("Time (days)")

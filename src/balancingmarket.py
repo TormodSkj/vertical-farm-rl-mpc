@@ -50,8 +50,7 @@ class BalancingMarket:
         self.clearing_prices_down    = np.array(self.market_data_working_set[f'{self.bidding_zone} Down Price'])
         self.volume_up               = np.array(self.market_data_working_set[f'{self.bidding_zone} Up Volume'])
         self.volume_down             = np.array(self.market_data_working_set[f'{self.bidding_zone} Down Volume'])
-        self.activations_up          = np.where(np.logical_and(self.volume_up > 0,   self.volume_up >= self.volume_down), 1, 0)
-        self.activations_down        = np.where(np.logical_and(self.volume_down > 0, self.volume_up < self.volume_down),  1, 0)
+        self.activations_up, self.activations_down = self.get_activations()
 
         self.perform_statistical_analysis()
         self.perform_price_estimation()
@@ -114,21 +113,21 @@ class BalancingMarket:
         return 0
 
 
-    def activation_prob_up(self, spot_price, bid_price_up = None):
-        if bid_price_up is None: return np.mean(self.activations_up)
-        return self.activation_prob('Up', spot_price, bid_price_up)
-    def activation_prob_down(self, spot_price, bid_price_up=None):
-        if bid_price_up is None: return np.mean(self.activations_down)
-        return self.activation_prob('Down', spot_price, bid_price_up)
+    def activation_prob_up(self, spot_price, bid_price = None):
+        if bid_price is None: return np.mean(self.activations_up)
+        return self.activation_prob('Up', spot_price, bid_price)
+    def activation_prob_down(self, spot_price, bid_price=None):
+        if bid_price is None: return np.mean(self.activations_down)
+        return self.activation_prob('Down', spot_price, bid_price)
     
-    def activation_prob(self, direction, spot_price, bid_price_up):
-        bid_price_up = bid_price_up.reshape((1,-1))
+    def activation_prob(self, direction, spot_price, bid_price):
+        bid_price = bid_price.reshape((1,-1))
         
         mu, sigma = conditional_expectation(spot_price, self.price_stats[self.bidding_zone][direction]['means'], self.price_stats[self.bidding_zone][direction]['cov'])
 
-        bid_price_up_normalized = ((bid_price_up - ca.vertcat(*mu).reshape((1,-1)))/sigma).reshape((1,-1))
+        bid_price_normalized = ((bid_price - ca.vertcat(*mu).reshape((1,-1)))/sigma).reshape((1,-1))
 
-        return np.multiply(self.demand_prob_up(spot_price), (1.0 + ca.erf(-bid_price_up_normalized / ca.sqrt(2.0))) / 2.0)
+        return np.multiply(self.demand_prob(direction, spot_price), (1.0 + ca.erf(-bid_price_normalized / ca.sqrt(2.0))) / 2.0)
 
 
     def demand_prob_up(self, spot_price = None): 
@@ -140,15 +139,14 @@ class BalancingMarket:
 
 
     def demand_prob(self, direction, spot_price):
-            # Use mean spot_price if none other is specified
 
-        expected_activation_up, _ = conditional_expectation(spot_price, 
+        expected_activation, _ = conditional_expectation(spot_price, 
                                         self.activation_stats[self.bidding_zone][direction]['means'], 
                                         self.activation_stats[self.bidding_zone][direction]['cov']
                                     )
-        expected_activation_up = ca.horzcat(*expected_activation_up).reshape((1,-1))
+        expected_activation = ca.horzcat(*expected_activation).reshape((1,-1))
                 
-        return casadi_saturate(expected_activation_up, 0, 1)
+        return casadi_saturate(expected_activation, 0, 1)
     
 
     def get_clearing_prices(self, date=None, n_days = None, zone = None):
@@ -160,13 +158,13 @@ class BalancingMarket:
         return np.array(data[f'{zone} Up Price']), np.array(data[f'{zone} Down Price'])
 
 
-    def get_expected_clearing_prices(self, date=None, n_days = None, zone = None):
+    def get_expected_clearing_prices(self, spot_prices = None, date=None, n_days = None, zone = None):
         if zone     == None: zone   = self.bidding_zone
 
-        data = self.get_market_data(date=date, n_days=n_days, zone=zone, 
-                                    spot_prices=False, clearing_prices=True, volumes=False)
-
-        spot_prices = np.array(data[f'{zone} Spot Price'])
+        if spot_prices is None: 
+            data = self.get_market_data(date=date, n_days=n_days, zone=zone, 
+                                        spot_prices=True, clearing_prices=True, volumes=False)
+            spot_prices = np.array(data[f'{zone} Spot Price'])
 
         expected_clearing_prices_up  , _ = conditional_expectation(spot_prices, self.price_stats[self.bidding_zone]['Up']['means'],    self.price_stats[self.bidding_zone]['Up']['cov'])
         expected_clearing_prices_down, _ = conditional_expectation(spot_prices, self.price_stats[self.bidding_zone]['Down']['means'],  self.price_stats[self.bidding_zone]['Down']['cov'])
@@ -188,8 +186,10 @@ class BalancingMarket:
         
         volumes_up, volumes_down = np.array(data[f'{zone} Up Volume']), np.array(data[f'{zone} Down Volume'])
 
-        activations_up   = np.where(np.logical_and(volumes_up     > 0, volumes_up >= volumes_down), 1, 0)
-        activations_down = np.where(np.logical_and(volumes_down   > 0, volumes_up < volumes_down), 1, 0)
+        # activations_up   = np.where(np.logical_and(volumes_up     > 0, volumes_up >= volumes_down), 1, 0)
+        # activations_down = np.where(np.logical_and(volumes_down   > 0, volumes_up < volumes_down), 1, 0)
+        activations_up   = np.where(volumes_up   > 0, 1, 0)
+        activations_down = np.where(volumes_down > 0, 1, 0)
 
         return activations_up, activations_down
 
@@ -287,6 +287,7 @@ class BalancingMarket:
             Bid_prices (np.ndarray): [2, N] array of bid prices (up, down).
 
         Returns:
+            activations (np.ndarray): [2, N] array of 1s and 0s indicating when a bid was activated
             activated_volumes (np.ndarray): [2, N] array of activated volumes.
             earnings (np.ndarray): [2, N] array of earnings.
         """
@@ -325,12 +326,12 @@ class BalancingMarket:
             bid_volume_down = Bid_volumes[1, i]
 
             # Determine activations
-            if market_volume_up > 0 and market_volume_up >= market_volume_down and bid_price_up <= market_price_up:
+            if market_volume_up > 0 and bid_price_up <= market_price_up:
                 activations[0, i] = 1
                 activated_volumes[0, i] = bid_volume_up
                 earnings[0, i] = bid_volume_up * (market_price_up - spot_price) / 4
 
-            if market_volume_down > 0 and market_volume_up < market_volume_down and bid_price_down <= market_price_down:
+            if market_volume_down > 0 and bid_price_down <= market_price_down:
                 activations[1, i] = 1
                 activated_volumes[1, i] = bid_volume_down
                 earnings[1, i] = bid_volume_down * (spot_price - market_price_down) / 4

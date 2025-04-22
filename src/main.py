@@ -9,8 +9,8 @@ from globals import *
 from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption
 
-SIM_NAME            = "complete_mpc"
-SIMULATION_LENGTH   = 3
+SIM_NAME            = "complete_mpc_test"
+SIMULATION_LENGTH   = 5
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
 SIMULATION_DATE     = '2024-10-09'
@@ -19,7 +19,7 @@ OPTIMISTIC          = 1
 SEARCH_CACHE        = 0
 SEARCH_PLOT_CACHE   = 0
 
-MPC_TIMEHORIZON     = 1
+MPC_TIMEHORIZON     = 2
 MPC_STEPLENGTH      = 1
 
 DISCRETIZATION      = 'fe'
@@ -36,10 +36,10 @@ def main():
     settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH)
     settings.add_setting('market', SIMULATION_DATE = SIMULATION_DATE, OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE)
     settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT, DLI_RESOLUTION = 2, DISCRETIZATION = DISCRETIZATION)
-    settings.add_setting('plotter', SEARCH_PLOT_CACHE = SEARCH_PLOT_CACHE, PLOT_EXPORT_TYPE='pdf')
+    settings.add_setting('plotter', SEARCH_PLOT_CACHE = SEARCH_PLOT_CACHE, PLOT_EXPORT_TYPE='pdf', FILTER_BIDS = False)
 
     config      = Config(settings)
-    plant       = PlantModel(settings)
+    plant       = PlantModel(settings) 
     market      = Market(settings, config)
     controller  = Controller(settings, plant, market, config)
     simulator   = Simulator(settings, plant, market, config, controller)
@@ -58,6 +58,7 @@ def main():
     # '''
     # controller.import_light_schedule('imported', plot_run = True)
 
+    # controller.generate_true_optimum_BL_CM_AM('MARI_opt', plot_run = True)
     controller.optimize_MPC_complete('complete_MPC', 'fixed', plot_run = True)
     # simulator.apply_mfrr_clearing_prices('complete_MPC_applied', 'complete_MPC', plot_run = True)
 

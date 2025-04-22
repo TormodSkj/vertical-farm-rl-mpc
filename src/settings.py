@@ -73,7 +73,8 @@ class Settings():
                          PLOT_ASPECT_RATIO      = (10, 6),
                          SEARCH_PLOT_CACHE      = True,
                          ACTIVATION_THRESHOLD   = 0.01,
-                         VOLUME_THRESHOLD       = 0.001
+                         VOLUME_THRESHOLD       = 0.001,
+                         FILTER_BIDS            = False
                          )
 
 
