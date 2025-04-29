@@ -224,4 +224,40 @@ class Simulator():
         return 0
 
 
+
+    # def simulate_growth_trial(self):
+    #     '''Uses schduled events to simulate a realistic growth trial scenario with CM & AM participation
+        
+    #     '''
+
+    #     controller  = self.controller
+    #     model       = controller.model
+    #     market      = controller.market
+
+    #     simulation = Simulation(self.settings, model, market, self.config, controller)
+
+    #     events = self.configure_growth_trial(simulation)
+
+    #     # for event, args, kwargs in events: 
+    #     #   event(args, kwargs)
+
+
+
+    # def configure_growth_trial(self, simulation) -> pd.DataFrame:
+
+    #     controller  = self.controller
+    #     model       = controller.model
+    #     market      = controller.market
+
+
+    #     events = pd.DataFrame({'Time': [], 'Eventname': [], 'Eventfunc': [], 'args': [], 'kwargs': []})
+
+
+
+
+
+
+    #     return events
+    
+
 #'''

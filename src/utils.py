@@ -708,13 +708,14 @@ def build_dependency_groups(optimization_results: dict):
 def get_DLI(X):
 
     N = X.shape[1]-1
-    DLI = np.zeros((1, N-QUARTER_HOURS_PER_DAY))
+    DLI = np.zeros((1, N))
 
-    for k in range(QUARTER_HOURS_PER_DAY, N):
-        # k = 96 +24, +48, +72 ...
-        LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
-        
-        DLI[:,k-QUARTER_HOURS_PER_DAY] = LI
+    for k in range(0, N):
+        if k < QUARTER_HOURS_PER_DAY:
+            DLI[:,k] = X[2,QUARTER_HOURS_PER_DAY]
+        else:
+            LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
+            DLI[:,k] = LI
             
     return DLI
 

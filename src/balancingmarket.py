@@ -13,6 +13,7 @@ class BalancingMarket:
     '''
 
     '''
+    seed: int
 
     market_data_working_set: pd.DataFrame
     market_data_full_set:    pd.DataFrame
@@ -38,11 +39,15 @@ class BalancingMarket:
         self.bidding_zone       = self.market_settings['BIDDING_ZONE']
         self.date               = self.market_settings['SIMULATION_DATE']
         self.optimistic         = self.market_settings['OPTIMISTIC']
+        self.bid_price_limit    = self.market_settings['BID_PRICE_LIMIT']
+        self.seed               = self.market_settings['SEED']
         self.N = self.T * QUARTER_HOURS_PER_DAY
 
         self.market_type    = market_type
 
         self.market_data_full_set       = self.standardize_market_data(market_data)
+        if market_type == 'Activation Market':  self.generate_activation_times(activation_chance=self.market_settings['AM_ACTIVATION_RATE'], hourly_roll=False)
+        if market_type == 'Capacity Market':    self.generate_activation_times(activation_chance=self.market_settings['CM_ACTIVATION_RATE'], hourly_roll=True)
         self.market_data_working_set    = self.get_market_data()
 
         self.spot_prices             = np.array(self.market_data_working_set[f'{self.bidding_zone} Spot Price'])
@@ -125,7 +130,8 @@ class BalancingMarket:
         
         mu, sigma = conditional_expectation(spot_price, self.price_stats[self.bidding_zone][direction]['means'], self.price_stats[self.bidding_zone][direction]['cov'])
 
-        bid_price_normalized = ((bid_price - ca.vertcat(*mu).reshape((1,-1)))/sigma).reshape((1,-1))
+        epsilon = 1e-6
+        bid_price_normalized = ((bid_price - ca.vertcat(*mu).reshape((1,-1)))/(sigma + epsilon)).reshape((1,-1))
 
         return np.multiply(self.demand_prob(direction, spot_price), (1.0 + ca.erf(-bid_price_normalized / ca.sqrt(2.0))) / 2.0)
 
@@ -184,12 +190,13 @@ class BalancingMarket:
         data = self.get_market_data(date=date, n_days=n_days, zone=zone, 
                                        spot_prices=False, clearing_prices=False, volumes=True)
         
-        volumes_up, volumes_down = np.array(data[f'{zone} Up Volume']), np.array(data[f'{zone} Down Volume'])
+        activations_up, activations_down = np.array(data[f'{zone} Activated Up']), np.array(data[f'{zone} Activated Down'])
+        # volumes_up, volumes_down = np.array(data[f'{zone} Up Volume']), np.array(data[f'{zone} Down Volume'])
 
         # activations_up   = np.where(np.logical_and(volumes_up     > 0, volumes_up >= volumes_down), 1, 0)
         # activations_down = np.where(np.logical_and(volumes_down   > 0, volumes_up < volumes_down), 1, 0)
-        activations_up   = np.where(volumes_up   > 0, 1, 0)
-        activations_down = np.where(volumes_down > 0, 1, 0)
+        # activations_up   = np.where(volumes_up   > 0, 1, 0)
+        # activations_down = np.where(volumes_down > 0, 1, 0)
 
         return activations_up, activations_down
 
@@ -197,6 +204,50 @@ class BalancingMarket:
     def perform_price_estimation(self):
         self.expected_prices_up, _   = conditional_expectation(self.spot_prices, self.price_stats[self.bidding_zone]['Up']['means'],    self.price_stats[self.bidding_zone]['Up']['cov'])
         self.expected_prices_down, _ = conditional_expectation(self.spot_prices, self.price_stats[self.bidding_zone]['Down']['means'],  self.price_stats[self.bidding_zone]['Down']['cov'])
+
+
+    def generate_activation_times(self, activation_chance=1, hourly_roll=False):
+        dataset = self.market_data_full_set.copy()
+
+        np.random.seed(self.seed)
+
+        time_col = 'Start Time'
+        if time_col not in dataset.columns:
+            raise ValueError(f"'{time_col}' column is required.")
+
+        for col in dataset.columns:
+            if "Volume" in col:
+                direction = "Up" if "Up" in col else "Down"
+                zone = col.split()[0]
+                new_col_name = f"{zone} Activated {direction}"
+
+                # Identify time slots where activation is possible (volume > 0)
+                eligible = dataset[col] > 0
+
+                # Default to zero activation
+                activation = np.zeros(len(dataset), dtype=int)
+
+                if hourly_roll:
+                    # Roll once per hour, but only where volume > 0
+                    hours = dataset[time_col].dt.floor('H')
+                    dataset['__hour'] = hours  # Temporary helper column
+                    eligible_hours = hours[eligible]
+                    unique_eligible_hours = eligible_hours.unique()
+                    hour_randoms = {
+                        hour: np.random.rand() < activation_chance for hour in unique_eligible_hours
+                    }
+                    random_activation = hours.map(hour_randoms).fillna(False).astype(int)
+                    activation = random_activation * eligible.astype(int)
+                    dataset.drop(columns='__hour', inplace=True)  # Clean up
+                else:
+                    # Roll per time slot, but only apply where eligible
+                    random_draws = np.random.rand(len(dataset)) < activation_chance
+                    activation = (random_draws & eligible).astype(int)
+
+                dataset[new_col_name] = activation
+
+        self.market_data_full_set = dataset
+        return
 
 
     def get_market_data(self, date=None, n_days = None, zone = None, spot_prices=True, clearing_prices=True, volumes=True):
@@ -224,7 +275,7 @@ class BalancingMarket:
         keywords = []
         if spot_prices:     keywords.append('spot')
         if clearing_prices: keywords += ['up price', 'down price']
-        if volumes:         keywords.append('volume')
+        if volumes:         keywords += ['volume', 'activated']
         columns = ['Start Time'] + [col for col in market_data_working_set.columns if any([keyword in col.lower() for keyword in keywords])]
 
         market_data_working_set = market_data_working_set[columns].copy()
@@ -304,9 +355,11 @@ class BalancingMarket:
         # Ensure market data has datetime index
         market_data = self.market_data_full_set.set_index('Start Time')
 
+        # clearing_prices = self.get_clearing_prices(date = MTU_start)
+
         # Loop over each time period
         for i in range(n_periods):
-            current_time = MTU_start + pd.Timedelta(hours=i)
+            current_time = MTU_start + pd.Timedelta(minutes=i*15)
 
             # Skip if no matching market data
             if current_time not in market_data.index:
@@ -318,22 +371,26 @@ class BalancingMarket:
             market_volume_down  = market_row[f'{zone} Down Volume']
             market_price_up     = market_row[f'{zone} Up Price']
             market_price_down   = market_row[f'{zone} Down Price']
+            market_activation_up   = market_row[f'{zone} Activated Up']
+            market_activation_down = market_row[f'{zone} Activated Down']
             
             # Extract bids
-            bid_price_up = Bid_prices[0, i]
-            bid_price_down = Bid_prices[1, i]
-            bid_volume_up = Bid_volumes[0, i]
+            bid_price_up    = Bid_prices[0, i]
+            bid_price_down  = Bid_prices[1, i]
+            bid_volume_up   = Bid_volumes[0, i]
             bid_volume_down = Bid_volumes[1, i]
 
             # Determine activations
-            if market_volume_up > 0 and bid_price_up <= market_price_up:
+            if market_volume_up > 0 and bid_price_up <= market_price_up and market_activation_up:
                 activations[0, i] = 1
                 activated_volumes[0, i] = bid_volume_up
-                earnings[0, i] = bid_volume_up * (market_price_up - spot_price) / 4
+                # earnings[0, i] = bid_volume_up * (market_price_up - spot_price) / 4
+                earnings[0, i] = bid_volume_up * (market_price_up) / 4
 
-            if market_volume_down > 0 and bid_price_down <= market_price_down:
+            if market_volume_down > 0 and bid_price_down <= market_price_down and market_activation_down:
                 activations[1, i] = 1
                 activated_volumes[1, i] = bid_volume_down
-                earnings[1, i] = bid_volume_down * (spot_price - market_price_down) / 4
+                # earnings[1, i] = bid_volume_down * (spot_price - market_price_down) / 4
+                earnings[1, i] = bid_volume_down * (market_price_down) / 4
 
         return activations, activated_volumes, earnings

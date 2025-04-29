@@ -19,6 +19,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import * 
 import re
 import joblib
+from matplotlib.colors import ListedColormap
 
 
 class Market:
@@ -648,21 +649,37 @@ class Market:
         ####################################################
                 #   FRACTIONAL COST REDUCTION BAR CHART. Zone-wise
 
-        fig, ax = plt.subplots(figsize=(3, 3.5))  # Adjusted for a narrow format
+        fontname = "DejaVu Serif"
+
+        # my_colors = ["#264653", "#2a9d8f", "#e9c46a", "#f4a261", "#e76f51"]
+        # my_colors = ["#3D8D7A", "#B3D8A8", "#A3D1C6"]
+        # my_colors = ["#328E6E", "#67AE6E", "#90C67C", "#E1EEBC"]
+        # my_colors = ["#727D73", "#AAB99A", "#D0DDD0", "#F0F0D7"]
+        # my_colors = ["#4B5945", "#66785F", "#91AC8F", "#B2C9AD"]
+        # my_colors = ["#BF9264", "#6F826A", "#BBD8A3", "#F0F1C5"]
+        my_colors = ["#557571", "#D49A89", "#F7D1BA", "#F4F4F4"]
+        plt.rcParams['axes.prop_cycle'] = plt.cycler(color=my_colors)
+
+
+        # plt.title('title',**csfont)
+        # plt.xlabel('xlabel', **hfont)
+
+        plt.rcParams["font.family"] = fontname
+
+        fig, ax = plt.subplots(figsize=(6, 3.5))  # Adjusted for a narrow format
 
         # ax.barh(zones,  spot_reduction, color='lightgrey', label="Spot Market")
-        ax.axvline(x=100, color='black', linestyle='dotted', linewidth=1, label="Break-even Point")
-        ax.barh(zones, spot_reduction, color='lightgrey', label="Spot Market")
-        ax.barh(zones, CM_reduction, left=spot_reduction, color=colors['CM'], label="Capacity Market")
-        ax.barh(zones, AM_reduction, left=spot_reduction + CM_reduction, color=colors['AM'], label="Activation Market")
+        # ax.axvline(x=100, color='black', linestyle='dotted', linewidth=1, label="Break-even Point")
+        ax.barh(zones, spot_reduction, label="Spot Market")
+        ax.barh(zones, CM_reduction, left=spot_reduction, label="Capacity Market")
+        ax.barh(zones, AM_reduction, left=spot_reduction + CM_reduction, label="Activation Market")
 
         # Labels and Title
         ax.set_ylabel("Bidding Zones")
         ax.set_xlabel("Cost Reduction (%)")
         # ax.set_title("Upper Estimate of Cost Reduction for a VF in Nordic Bidding Zones")
-        ax.legend(prop={'size': 6})
+        ax.legend(prop={'size': 10}, loc='upper right')# , bbox_to_anchor=(1, 0.7))
         ax.grid(axis='x', linestyle='-', alpha=0.6)
-
 
         plt.gca().invert_yaxis()  # Ensures zones are listed top-to-bottom
         plt.tight_layout()  # Optimizes spacing for a research paper

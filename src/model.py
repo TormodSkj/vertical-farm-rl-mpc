@@ -332,9 +332,9 @@ class PlantModel:
         
         return g_eq, g_ineq
 
-    def get_bidding_constraints(self, g_eq, g_ineq, N, U_nom, B_volumes = None, B_prices=None, B_volumes_lower_bound = None, B_prices_upper_bound = None):
+    def get_bidding_constraints(self, g_eq, g_ineq, N, U_nom, balancing_market: BalancingMarket, B_volumes = None, B_prices=None, B_volumes_lower_bound = None, B_prices_upper_bound = None):
 
-        lb_B_volumes, ub_B_volumes, lb_B_prices, ub_B_prices = self.get_bidding_bounds(N, U_nom)
+        lb_B_volumes, ub_B_volumes, lb_B_prices, ub_B_prices = self.get_bidding_bounds(N, U_nom, balancing_market)
         lb_B_volumes = lb_B_volumes if B_volumes_lower_bound is None else B_volumes_lower_bound
         ub_B_prices = ub_B_prices   if B_prices_upper_bound  is None else B_prices_upper_bound
 
@@ -455,6 +455,23 @@ class PlantModel:
 
         return g_eq, g_ineq
     
+
+    def simulate_growth(self, x0, u):
+        
+        u = u.reshape((1, -1))
+        N = u.shape[1]
+        X = ca.DM.zeros((self.nx, N+1))
+        X[:,0] = x0
+
+        F = self.casadi_function()
+
+        for k in range(N):
+            X[:,k+1] = F(X[:,k], u[:,k])
+
+        return X
+
+
+    
     def get_u(self, N, U_nom, B_volumes, B_prices, spot_prices, balancing_market: BalancingMarket):
 
         U = np.zeros(N, type(U_nom))
@@ -527,17 +544,17 @@ class PlantModel:
         return ca.vertcat(*U).reshape((1,-1))
 
 
-    def get_bidding_bounds(self, N, U_nom):
+    def get_bidding_bounds(self, N, U_nom, balancing_market: BalancingMarket):
 
-        U_nom = U_nom.reshape((1,-1))                                                   # Ensure correct dimension
+        U_nom = U_nom.reshape((1,-1))                                                  # Ensure correct dimension
 
         lb_B_prices = ca.DM.zeros(2, N)
-        ub_B_prices = ca.vertcat(100 * ca.DM.ones((1, N)),                             # Bid price up. Arbitrary limit of 1000€ / MW 
-                                 100 * ca.DM.ones((1, N)))                             # Bid price down. Arbitrary limit of 1000€ / MW 
+        ub_B_prices = ca.vertcat(balancing_market.bid_price_limit * ca.DM.ones((1, N)),  # Bid price up
+                                 balancing_market.bid_price_limit * ca.DM.ones((1, N)))  # Bid price down
         
         lb_B_volumes = ca.DM.zeros(2, N)
-        ub_B_volumes = ca.vertcat(self.C_conv_PPFD * U_nom/1000,                           # Bid vol up
-                                  self.C_conv_PPFD * (self.PPFD_max - U_nom)/1000)       # Bid vol down                       # Bid price down. Arbitrary limit of 1000€ / MW 
+        ub_B_volumes = ca.vertcat(self.C_conv_PPFD * U_nom/1000,                       # Bid vol up
+                                  self.C_conv_PPFD * (self.PPFD_max - U_nom)/1000)     # Bid vol down
 
         return lb_B_volumes, ub_B_volumes, lb_B_prices, ub_B_prices
     

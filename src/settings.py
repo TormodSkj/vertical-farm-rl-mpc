@@ -31,7 +31,10 @@ class Settings():
                          OPTIMISTIC          = 1,
                          n_given_bids        = 2,
                          n_given_activations = 1,
-                         OUTLIER_DIST_LIMIT  = 3
+                         OUTLIER_DIST_LIMIT  = 3,
+                         BID_PRICE_LIMIT     = 100,
+                         AM_ACTIVATION_RATE  = 0.25,
+                         CM_ACTIVATION_RATE  = 0.25
                          )
 
         # Model settings

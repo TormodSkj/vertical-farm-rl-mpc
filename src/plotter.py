@@ -322,28 +322,30 @@ class Plotter():
 
             ax1, ax2, ax3 = axes[:,i]
 
-            ax1.fill_between(t, -filtered_bid_volumes_up, filtered_bid_volumes_down, color='grey', label="Submitted", alpha=0.4, step='post')
-            ax1.fill_between(t, -bid_volumes_up_activated, 0, color='blue', alpha=0.4, label='Up-regulation', step='post')
-            ax1.fill_between(t, 0, bid_volumes_dn_activated, color='red', alpha=0.4, label='down-regulation', step='post')
+            ax1.fill_between(t, -bid_volumes_up, bid_volumes_down, color='grey', label="Submitted", alpha=0.25, step='post', linewidth=0)
+            ax1.fill_between(t, -filtered_bid_volumes_up, filtered_bid_volumes_down, color='slategrey', label="Filtered", alpha=0.45, step='post')
+            ax1.fill_between(t, -bid_volumes_up_activated, 0, color='blue', alpha=0.4, label='Up', step='post')
+            ax1.fill_between(t, 0, bid_volumes_dn_activated, color='red', alpha=0.4, label='Down', step='post')
             ax1.set_ylabel("Bid Volumes (MW)")
             ax1.set_xlabel("Time (days)")
-            ax1.legend(loc="upper right")
+            ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
             ax1.set_ylim([-1.1*controller.model.P_cap_max, 1.1*controller.model.P_cap_max])
 
             ax2.fill_between(t, 0, filtered_bid_prices_up, color='grey', label="Submitted", alpha=0.4, step='post')
             ax2.fill_between(t, 0, bid_prices_up_activated, color='blue', label="Activated", alpha=0.4, step='post')
             ax2.set_ylabel("Bid Price Up (€/MW)")
             ax2.set_xlabel("Time (days)")
-            ax2.legend()
+            ax2.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
 
             ax3.fill_between(t, 0, filtered_bid_prices_down, color='grey', label="Submitted", alpha=0.4, step='post')
             ax3.fill_between(t, 0, bid_prices_dn_activated, color='red', label="Activated", alpha=0.4, step='post')
             ax3.set_ylabel("Bid Price Down (€/MW)")
             ax3.set_xlabel("Time (days)")
-            ax3.legend()
+            ax3.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
 
             fig.suptitle(f"{run_id} activated prices and volumes. ({controller.market.date}, {controller.market.bidding_zone})")
             ax1.set_title(market_type)
+            fig.tight_layout()
 
 
             ######################################################
@@ -363,23 +365,23 @@ class Plotter():
 
             linewidth = 0.4
 
-            ax1.fill_between(t, 0, np.where(activations_up > 0,     clearing_prices_up, 0), color='limegreen', alpha=0.4, label="Issued Activations", step='post')
+            ax1.fill_between(t, 0, np.where(activations_up > 0,     clearing_prices_up, 0), color='limegreen', alpha=0.4, label="Available Activations", step='post')
             ax1.fill_between(t, 0, np.where(bid_activations_up > 0, clearing_prices_up, 0), color='blue', label="Activated Bids", alpha=0.4, step='post')
             ax1.step(t, clearing_prices_up, color='navy',  label="Recorded", linewidth=linewidth, where='post')
             ax1.step(t, expected_prices_up.flatten(), color=self.color_up,  label="Expected", linewidth=linewidth, where='post')
             ax1.step(t, filtered_bid_prices_up, color='grey',  label="Submitted", linewidth=linewidth, where='post')
             ax1.set_ylabel("Price Up (€/MW)")
             ax1.set_xlabel("Time (days)")
-            ax1.legend()
+            ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
 
-            ax2.fill_between(t, 0, np.where(activations_down > 0,     clearing_prices_down, 0), color='limegreen', alpha=0.4, label="Issued Activations", step='post')
+            ax2.fill_between(t, 0, np.where(activations_down > 0,     clearing_prices_down, 0), color='limegreen', alpha=0.4, label="Available Activations", step='post')
             ax2.fill_between(t, 0, np.where(bid_activations_down > 0, clearing_prices_down, 0), color='red', label="Activated Bids", alpha=0.4, step='post')
             ax2.step(t, clearing_prices_down, color='maroon', label="Recorded", linewidth=linewidth, where='post')
             ax2.step(t, expected_prices_down.flatten(), color=self.color_down, label="Expected", linewidth=linewidth, where='post')
             ax2.step(t, filtered_bid_prices_down, color='grey',  label="Submitted", linewidth=linewidth, where='post')
             ax2.set_ylabel("Price Down (€/MW)")
             ax2.set_xlabel("Time (days)")
-            ax2.legend()
+            ax2.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
 
             fig.suptitle(f"{run_id} Expected vs recorded clearing prices. ({controller.market.date}, {controller.market.bidding_zone})\nExpectations made based on price covariances")
             ax1.set_title(market_type)
@@ -460,7 +462,7 @@ class Plotter():
 
             ax1.set_ylabel("Count")
             ax2.set_ylabel("Count")
-            [ax.legend() for ax in (ax1, ax2)]
+            [ax.legend(loc='center left', bbox_to_anchor=(1.0, 0.5)) for ax in (ax1, ax2)]
 
             fig.suptitle(f"Clearing prices vs activated clearing prices, normalized ({market.bidding_zone}, {market.date})")
             ax1.set_title(f'{market_type} Up')
@@ -531,7 +533,7 @@ class Plotter():
             
             ax1.set_ylabel("PPFD (€/MW)")
             ax1.set_xlabel("Time (days)")
-            ax1.legend()
+            ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
             ax1.set_ylim([-controller.model.PPFD_max*0.10, controller.model.PPFD_max*1.10])
 
             fig.suptitle(f"{run_id} Light schedule before and after activations ({controller.market.date}, {controller.market.bidding_zone})\nExpectations made based on price covariances")
@@ -604,7 +606,7 @@ class Plotter():
 
             # fig = plt.figure(figsize=self.aspect_ratio)
 
-            _, ub_B_volumes, _, _ = self.controller.model.get_bidding_bounds(controller.N, u_nom.reshape((1,-1)))
+            _, ub_B_volumes, _, _ = self.controller.model.get_bidding_bounds(controller.N, u_nom.reshape((1,-1)), balancing_market)
             linewidth = 0.8
             ax1.step(t, -np.array(ub_B_volumes[0,:]).flatten(), color='grey', label='Up-regulation volume limit', linewidth = linewidth, where = 'post')
             ax1.step(t, np.array(ub_B_volumes[1,:]).flatten(), color='grey', label='Down-regulation volume limit',  linewidth = linewidth, where = 'post')
@@ -612,7 +614,7 @@ class Plotter():
             ax1.fill_between(t, 0, filtered_bid_volumes_down, color='red', alpha=0.4, label='Down-regulation', step='post')
             ax1.set_ylabel("Power (MW)")
             ax1.set_xlabel("Time")
-            ax1.legend(loc="upper right")
+            ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
 
             fig.suptitle(f"{run_id} volumes in MW ({controller.market.date}, {controller.market.bidding_zone})")
             ax1.set_title(market_type)
@@ -635,7 +637,7 @@ class Plotter():
             ax1.step(t, spot_prices, label="Spot price", color="grey", linestyle="--", where='post')
             ax1.set_ylabel("Bidding Price (€/MW)")
             ax1.tick_params(axis='y')
-            ax1.legend(loc="upper left")
+            ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
 
             fig.suptitle(f"{run_id} Bidding Prices and Spot Prices in €/MW ({controller.market.date}, {controller.market.bidding_zone})")
             ax1.set_title(market_type)
@@ -662,8 +664,8 @@ class Plotter():
             ax1.set_ylabel('Expected activation probability')
             ax2.set_ylabel("Expected activation probability")
             ax2.set_xlabel("Time (days)")
-            ax1.legend(loc='upper left')
-            ax2.legend(loc='upper left')
+            ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+            ax2.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
 
             fig.suptitle(f"{run_id} Activation Chances ({controller.market.date}, {controller.market.bidding_zone}) \nBar heights indicate expected activation probabilities per bid. Activated bids are highlighted in dark.")
             ax1.set_title(market_type)
@@ -720,7 +722,7 @@ class Plotter():
             
             ax1.set_ylabel("Expected Bid impact (MW)")
             ax1.set_xlabel("Time (days)")
-            ax1.legend(title='Direction')
+            ax1.legend(title = 'Direction', loc='center left', bbox_to_anchor=(1.0, 0.5))
 
             title = f"{run_id} Expected consumption impact of bids (MW) ({controller.market.date}, {controller.market.bidding_zone})"
             
@@ -867,6 +869,7 @@ class Plotter():
             X = runs[run]['timeseries']['x']
             t = runs[run]['timeseries']['t']
             DLI = get_DLI(X).flatten()
+            # if len(t[-len(DLI):]) == len(DLI): 
             ax.plot(t[-len(DLI):], DLI, label=f"{run}") 
             ax.set_ylabel('Daily light integral')
             ax.axhline(y=controller.model.DLI_max, color='gray', linestyle=':')
