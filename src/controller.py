@@ -208,8 +208,8 @@ class Controller():
         if self.warm_start: 
             z0[:nx*(N+1)]                   = refrun['timeseries']['x'].flatten()
             z0[nx*(N+1):nx*(N+1)+2*N]       = ub_B_volumes.reshape((2*N,1))             # Bid volumes
-            z0[nx*(N+1)+2*N:nx*(N+1)+3*N]   = self.market.AM.expected_clearing_prices_up            # Bid prices up
-            z0[nx*(N+1)+3*N:nx*(N+1)+4*N]   = self.market.AM.expected_clearing_prices_down          # Bid prices down
+            z0[nx*(N+1)+2*N:nx*(N+1)+3*N]   = self.market.AM.expected_clearing_prices_up            # Bid prices up      TODO replace with proper function
+            z0[nx*(N+1)+3*N:nx*(N+1)+4*N]   = self.market.AM.expected_clearing_prices_down          # Bid prices down    TODO replace with proper function
         
         sol = solver(x0=z0, lbg=lbg, ubg=ubg, lbx=lbz, ubx=ubz)
 
@@ -602,7 +602,7 @@ class Controller():
         sol = {}
         sol['eps'] = Eps
         sol['f'] = self.model.elcost_obj_function(N, spot_prices, U)\
-                    + self.model.AM_bidding_obj_function(N, spot_prices, B[:2, :], B[2:4, :], self.market)
+                    + self.model.AM_bidding_obj_function(N, spot_prices, B[:2, :], B[2:4, :], self.market)  
         sol['elapsed_time'] = end_time - start_time
         
         self.store_run(run_id, dependencies, sol, np.array(X), np.array(U).reshape((1,-1)), B=np.array(B), U_nom=np.array(U_nom).reshape((1,-1)), refrun_id = target_run_id, balancing_market=self.market.AM, plot_run=plot_run)
@@ -737,7 +737,7 @@ class Controller():
         U = self.model.get_u(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market.AM)
         J = self.model.elcost_obj_function(N_TH, spot_prices, U)\
             + self.model.AM_bidding_obj_function(N_TH, spot_prices, B_volumes, B_prices, self.market)\
-            + self.model.terminal_cost(self, X, U, Eps)
+            + self.model.terminal_cost(self, X, U, Eps)     # TODO add mtu to AM_bidding_obj_function at the end [, MTU_start = ... )]
         
         # if (k + N_TH >= N): J += self.model.terminal_cost(self, X, U, Eps)
         # else:               J += self.model.running_cost(self.market, k, N, Eps)
@@ -805,18 +805,6 @@ class Controller():
         nx, nu, neps = self.model.nx, self.model.nu, self.model.neps
         market = self.market
         F = self.F
-
-        # AM_clearing_prices_up, AM_clearing_prices_down = market.AM.get_clearing_prices(self.market.date)
-        # assert len(AM_clearing_prices_up)==N and len(AM_clearing_prices_down)==N, f'Clearing price arrays have inconsistent lengths with simulation duration. N = {self.N}, len(clearing prices up) = {len(AM_clearing_prices_up)}, len(clearing prices down) = {len(AM_clearing_prices_down)}'
-        
-        # CM_activation_demands_up   = market.CM.activations_up
-        # CM_activation_demands_down = market.CM.activations_down
-        # assert len(CM_activation_demands_down)==N and len(CM_activation_demands_up)==N, f'Capacity Market Activation demand arrays have inconsistent lengths with simulation duration. N = {self.N}, len(demands up) = {len(CM_activation_demands_up)}, len(demands down) = {len(CM_activation_demands_down)}'
-        
-        # AM_activation_demands_up   = market.AM.activations_up
-        # AM_activation_demands_down = market.AM.activations_down
-        # assert len(AM_activation_demands_down)==N and len(AM_activation_demands_up)==N, f'Activation Market Activation demand arrays have inconsistent lengths with simulation duration. N = {self.N}, len(demands up) = {len(AM_activation_demands_up)}, len(demands down) = {len(AM_activation_demands_down)}'
-
         
         target_run = self.optimization_results['runs'][target_run_id]
         target_X = target_run['timeseries']['x']
@@ -837,7 +825,7 @@ class Controller():
 
 
         mtu_start = self.market.MTU_start
-        stop_simulation = False
+        terminate_simulation = False
         
         # k = 0
         with tqdm(total=N, desc=f"{run_id}: Running MPC") as pbar:
@@ -857,15 +845,9 @@ class Controller():
 
                         # At 00:00 every day
 
-                        # Get price estimates 
-
-
-                        # Optimize Baseline and CM Participation
-                        # Solved by co-opting BL-CM
-
-                        # Update BL-CM-AM optimizer
+                        # Update BL-CM optimizer
                         opti_CM_copy = self.update_optimizer_CM_bids(
-                                        opti_CM.copy(), k = k, N = N, N_TH = N_horizon, opt_vars = opt_vars_CM, spot_prices = spot_prices[CM_iter_slice],
+                                        opti_CM.copy(), MTU = current_MTU, N_TH = N_horizon, opt_vars = opt_vars_CM, spot_prices = spot_prices[CM_iter_slice],
                                         x0          = X_log[:,start_iter], 
                                         past_X      = past_X,
                                         ref_weight  = target_weight[end_iter]
@@ -884,21 +866,13 @@ class Controller():
                             Eps_nom_opt_CM      = sol_CM.value(opt_vars_CM['Eps_nom'])
                         except Exception as e:
                             print(f"\nCM Solver failed, using last known values.\n{e}")
-                            stop_simulation = True
+                            terminate_simulation = True
                             x_opt_CM            = opti_CM_copy.debug.value(opt_vars_CM['X'])
                             u_nom_opt_CM        = opti_CM_copy.debug.value(opt_vars_CM['U_nom']).reshape((1, -1))
                             CM_bid_volumes_opt  = opti_CM_copy.debug.value(opt_vars_CM['B_volumes'])[:,:N_horizon]
                             CM_bid_prices_opt   = opti_CM_copy.debug.value(opt_vars_CM['B_prices'])[:,:N_horizon]
                             Eps_opt_CM          = opti_CM_copy.debug.value(opt_vars_CM['Eps'])
                             Eps_nom_opt_CM      = opti_CM_copy.debug.value(opt_vars_CM['Eps_nom'])
-
-                        # sol_CM              = opti_CM_copy.solve()
-                        # x_opt_CM            = sol_CM.value(opt_vars_CM['X'])
-                        # u_nom_opt_CM        = sol_CM.value(opt_vars_CM['U_nom']).reshape((1, -1))
-                        # CM_bid_volumes_opt  = sol_CM.value(opt_vars_CM['B_volumes'])[:,:N_horizon]
-                        # CM_bid_prices_opt   = sol_CM.value(opt_vars_CM['B_prices'])[:,:N_horizon]
-                        # Eps_opt_CM          = sol_CM.value(opt_vars_CM['Eps'])
-                        # Eps_nom_opt_CM      = sol_CM.value(opt_vars_CM['Eps_nom'])
 
                         # Store solution
 
@@ -920,7 +894,7 @@ class Controller():
 
 
 
-                        if stop_simulation: break
+                        if terminate_simulation: break
                         # End if qh == 0
                         
                     # qh_slice = ()
@@ -929,19 +903,12 @@ class Controller():
                     AM_N_horizon    = min(N_TH - qh, N_horizon)
                     AM_iter_slice   = slice(start_iter, start_iter + AM_N_horizon)
 
-                    AM_expected_clearing_prices_up,   AM_clearing_prices_sigma_up   = conditional_expectation(spot_prices[AM_iter_slice], market.AM.price_stats[market.AM.bidding_zone]['Up']['means'], market.AM.price_stats[market.AM.bidding_zone]['Up']['cov'])
-                    AM_expected_clearing_prices_down, AM_clearing_prices_sigma_down = conditional_expectation(spot_prices[AM_iter_slice], market.AM.price_stats[market.AM.bidding_zone]['Down']['means'], market.AM.price_stats[market.AM.bidding_zone]['Down']['cov'])
-                    AM_expected_clearing_prices = np.vstack((AM_expected_clearing_prices_up, AM_expected_clearing_prices_down))
-                    AM_expected_clearing_sigmas = np.vstack((AM_clearing_prices_sigma_up,    AM_clearing_prices_sigma_down))
-
                     AM_B_volumes_min = CM_activated_volumes[:,qh:]
-                    AM_B_prices_max  = np.where(CM_activations[:,qh:], self.market.CM.bid_price_limit/2, self.market.CM.bid_price_limit) 
-                    # AM_B_prices_max  = np.where(CM_activations[:,qh:], 2*AM_expected_clearing_prices, 1000) # TODO Define a proper upper bound for the bidding price
-
+                    AM_B_prices_max  = np.where(CM_activations[:,qh:], self.market.AM.bid_price_limit/2, self.market.AM.bid_price_limit) # TODO Define a proper upper bound for the bidding price
 
                     # Update AM bid optimizer
                     opti_AM_copy = self.update_optimizer_AM_bids(
-                                    opti_AM.copy(), k = k, N = N, N_TH = AM_N_horizon, opt_vars = opt_vars_AM, spot_prices = spot_prices[AM_iter_slice],
+                                    opti_AM.copy(), MTU = current_MTU, N_TH = AM_N_horizon, opt_vars = opt_vars_AM, spot_prices = spot_prices[AM_iter_slice],
                                     x0          = X_log[:,start_iter], 
                                     past_X      = past_X,
                                     U_nom       = U_nom_log[:, AM_iter_slice], 
@@ -960,7 +927,7 @@ class Controller():
                         Eps_opt_AM          = sol_AM.value(opt_vars_AM['Eps'])
                     except Exception as e:
                         print(f"\nAM Solver failed, using last known values.\n{e}")
-                        stop_simulation = True
+                        terminate_simulation = True
                         x_opt_AM = opti_AM_copy.debug.value(opt_vars_AM['X'])
                         AM_bid_volumes_opt = opti_AM_copy.debug.value(opt_vars_AM['B_volumes'])[:, :AM_N_horizon]
                         AM_bid_prices_opt = opti_AM_copy.debug.value(opt_vars_AM['B_prices'])[:, :AM_N_horizon]
@@ -996,10 +963,10 @@ class Controller():
 
 
                     pbar.update(min(N_iter, QUARTER_HOURS_PER_DAY))
-                    if stop_simulation: break
+                    if terminate_simulation: break
                     # End for qh in day
 
-                if stop_simulation: break
+                if terminate_simulation: break
                 # End for day
 
         end_time = time.time()
@@ -1036,7 +1003,10 @@ class Controller():
         
         self.store_run(run_id, dependencies, sol, X_log, U_log, U_nom=U_nom_log, refrun_id = target_run_id, market_data=market_data, plot_run=plot_run)
 
-        if not self.surpress_output: print(f'{run_id} | Generated theoretically optimal bid plan')
+        if not self.surpress_output: 
+            if terminate_simulation: print(f'{run_id} | Terminated MPC simulation prematurely')
+            else: print(f'{run_id} | Finished MPC simulation')
+            
 
         self.save_to_json()
         return 0
@@ -1079,9 +1049,12 @@ class Controller():
         x0          = opti.parameter(nx, 1)         # Starting weight
         ref_weight  = opti.parameter(1, 1)          # End weight (To be substituted)
         spot_prices = opti.parameter(1, N_horizon)  # Spot prices for optimization window
+        Est_prices  = opti.parameter(2*nu, N_horizon)
+
 
         # opti.set_value(spot_prices, np.mean(self.spot_prices)* ca.DM.ones(spot_prices.shape))
         opti.set_value(spot_prices, 10000 * ca.DM.ones(spot_prices.shape))
+        opti.set_value(Est_prices,  1000*ca.DM.ones(Est_prices.shape))
 
         opt_vars = {'opti_type'     : opti_type,
                     'N_horizon'     : N_horizon,
@@ -1091,7 +1064,8 @@ class Controller():
                     'spot_prices'   : spot_prices,
                     'ref_weight'    : ref_weight,
                     'B_volumes'     : B_volumes,
-                    'B_prices'      : B_prices
+                    'B_prices'      : B_prices,
+                    'Est_prices'    : Est_prices
                     }
         
 
@@ -1138,6 +1112,7 @@ class Controller():
         ref_weight  = opt_vars['ref_weight']
         B_volumes   = opt_vars['B_volumes']
         B_prices    = opt_vars['B_prices']
+        Est_prices  = opt_vars['Est_prices']
                 
         g_eq, g_ineq = [], []
 
@@ -1145,7 +1120,7 @@ class Controller():
             U_nom       = opt_vars['U_nom']
             Req_volumes = opt_vars['Req_volumes']
             Max_prices  = opt_vars['Max_prices']
-            U = self.model.get_u(N_TH, U_nom=U_nom, B_volumes=B_volumes, B_prices=B_prices, spot_prices=spot_prices, balancing_market=self.market.AM).reshape((1,-1))
+            U = self.model.get_u(N_TH, U_nom=U_nom, B_volumes=B_volumes, B_prices=B_prices, spot_prices=spot_prices, balancing_market=self.market.AM, clearing_prices = Est_prices).reshape((1,-1))
             g_eq, g_ineq = self.model.get_static_process_constraints(g_eq, g_ineq, N_TH, self.dt, X, x0, U, Eps)
             g_eq, g_ineq = self.model.get_bidding_constraints(g_eq, g_ineq, N_TH, U_nom, self.market.AM, B_prices = B_prices, B_volumes=B_volumes, 
                                                               B_volumes_lower_bound=Req_volumes, B_prices_upper_bound=Max_prices)
@@ -1154,7 +1129,7 @@ class Controller():
             U_nom   = opt_vars['U_nom']
             X_nom   = opt_vars['X_nom']
             Eps_nom = opt_vars['Eps_nom']
-            U = self.model.get_u_CM(N_TH, U_nom=U_nom, CM_B_volumes=B_volumes, CM_B_prices=B_prices, spot_prices=spot_prices, CM=self.market.CM, AM=self.market.AM).reshape((1,-1))
+            U = self.model.get_u_CM(N_TH, U_nom=U_nom, CM_B_volumes=B_volumes, CM_B_prices=B_prices, spot_prices=spot_prices, CM=self.market.CM, AM=self.market.AM, CM_clearing_prices=Est_prices).reshape((1,-1))
             g_eq, g_ineq = self.model.get_static_process_constraints(g_eq, g_ineq, N_TH, self.dt, X_nom, x0, U_nom, Eps_nom)
             g_eq, g_ineq = self.model.get_static_process_constraints(g_eq, g_ineq, N_TH, self.dt, X, x0, U, Eps)
             g_eq, g_ineq = self.model.get_bidding_constraints(g_eq, g_ineq, N_TH, U_nom, self.market.CM, B_volumes = B_volumes, B_prices = B_prices)
@@ -1179,7 +1154,7 @@ class Controller():
         return opti
 
 
-    def update_optimizer_CM_bids(self, opti: ca.Opti, k, N, N_TH, opt_vars, spot_prices, x0, past_X, ref_weight): #, init_U = None, init_X = None):
+    def update_optimizer_CM_bids(self, opti: ca.Opti, MTU, N_TH, opt_vars, spot_prices, x0, past_X, ref_weight): #, init_U = None, init_X = None):
 
         X           = opt_vars['X']
         X_nom       = opt_vars['X_nom']
@@ -1188,6 +1163,10 @@ class Controller():
         Eps_nom     = opt_vars['Eps_nom']
         B_volumes   = opt_vars['B_volumes']
         B_prices    = opt_vars['B_prices']
+        Est_prices  = opt_vars['Est_prices']
+
+        CM_prices_up, CM_prices_down = self.market.CM.get_estimated_clearing_prices(start_date = MTU, n_data = N_TH)
+        CM_prices = np.vstack((CM_prices_up, CM_prices_down))
 
         g_eq, g_ineq = [], []
         g_eq, g_ineq = self.model.get_dynamic_process_constraints(g_eq, g_ineq, N_TH, X,     Eps,     ref_weight, past_X = past_X)
@@ -1195,10 +1174,10 @@ class Controller():
         for equality_constraint   in g_eq:   opti.subject_to(equality_constraint   == 0)   
         for inequality_constraint in g_ineq: opti.subject_to(inequality_constraint >= 0) 
 
-        U = self.model.get_u_CM(N_TH, U_nom, B_volumes, B_prices, spot_prices, CM = self.market.CM, AM = self.market.AM)
+        U = self.model.get_u_CM(N_TH, U_nom, B_volumes, B_prices, spot_prices, CM = self.market.CM, AM = self.market.AM, CM_clearing_prices=Est_prices)
         # U = self.model.get_u(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market.CM)
         J = self.model.elcost_obj_function(N_TH, spot_prices, U) \
-           + self.model.CM_bidding_obj_function(N_TH, spot_prices, B_volumes, B_prices, self.market.CM)\
+           + self.model.CM_bidding_obj_function(N_TH, spot_prices, B_volumes, B_prices, self.market.CM, MTU_start = MTU)\
            + self.model.terminal_cost(self, X, U, Eps)\
            + self.model.terminal_cost(self, X_nom, U_nom, Eps_nom)
         
@@ -1215,7 +1194,7 @@ class Controller():
         opti.set_initial(opt_vars['B_volumes'][:,:N_TH], B_volumes_initguess)
         opti.set_initial(opt_vars['B_prices'][:,:N_TH],  B_prices_initguess)
 
-        U_initguess = self.model.get_u_CM(N_TH, U_nom_initguess, B_volumes_initguess, B_prices_initguess, spot_prices, CM = self.market.CM, AM = self.market.AM)
+        U_initguess = self.model.get_u_CM(N_TH, U_nom_initguess, B_volumes_initguess, B_prices_initguess, spot_prices, CM = self.market.CM, AM = self.market.AM, CM_clearing_prices = CM_prices)
         X_initguess = self.model.simulate_growth(x0, U_initguess)
         X_nom_initguess = self.model.simulate_growth(x0, U_nom_initguess)
 
@@ -1229,23 +1208,26 @@ class Controller():
         opti.set_value(opt_vars['ref_weight'], ref_weight)
         opti.set_value(opt_vars['spot_prices'][:,:N_TH], spot_prices)
 
+        opti.set_value(opt_vars['Est_prices'][:,:N_TH], CM_prices)
+
         return opti
 
-    def update_optimizer_AM_bids(self, opti: ca.Opti, k, N, N_TH, opt_vars, spot_prices, x0, past_X, U_nom, ref_weight, B_volumes_min, B_prices_max):
+    def update_optimizer_AM_bids(self, opti: ca.Opti, MTU, N_TH, opt_vars, spot_prices, x0, past_X, U_nom, ref_weight, B_volumes_min, B_prices_max):
 
         X           = opt_vars['X']
         Eps         = opt_vars['Eps']
         B_volumes   = opt_vars['B_volumes']
         B_prices    = opt_vars['B_prices']
+        Est_prices  = opt_vars['Est_prices']
 
         g_eq, g_ineq = [], []
         g_eq, g_ineq = self.model.get_dynamic_process_constraints(g_eq, g_ineq, N_TH, X, Eps, ref_weight, past_X = past_X)
         for equality_constraint   in g_eq:   opti.subject_to(equality_constraint   == 0)   
         for inequality_constraint in g_ineq: opti.subject_to(inequality_constraint >= 0) 
 
-        U = self.model.get_u(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market.AM)
+        U = self.model.get_u(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market.AM, clearing_prices=Est_prices)
         J = self.model.elcost_obj_function(N_TH, spot_prices, U)\
-            + self.model.AM_bidding_obj_function(N_TH, spot_prices, B_volumes, B_prices, self.market.AM)\
+            + self.model.AM_bidding_obj_function(N_TH, spot_prices, B_volumes, B_prices, self.market.AM, MTU_start=MTU)\
             + self.model.terminal_cost(self, X, U, Eps)
                 
         opti.minimize(J)
@@ -1257,6 +1239,10 @@ class Controller():
         opti.set_value(opt_vars['Max_prices'][:,:N_TH],     B_prices_max)
         opti.set_value(opt_vars['ref_weight'],              ref_weight)
         opti.set_value(opt_vars['spot_prices'][:,:N_TH],    spot_prices)
+        
+        AM_prices_up, AM_prices_down = self.market.AM.get_estimated_clearing_prices(start_date = MTU, n_data = N_TH)
+        AM_prices = np.vstack((AM_prices_up, AM_prices_down))
+        opti.set_value(opt_vars['Est_prices'][:,:N_TH], AM_prices)
         # opti.set_value(opt_vars['B_volumes'][:,:N_TH], B_max_volumes)
 
 
@@ -1271,7 +1257,7 @@ class Controller():
         opti.set_initial(opt_vars['B_volumes'][:,:N_TH], B_volumes_initguess)
         opti.set_initial(opt_vars['B_prices'][:,:N_TH],  B_prices_initguess)
 
-        U_initguess = self.model.get_u(N_TH, U_nom, B_volumes_initguess, B_prices_initguess, spot_prices, balancing_market = self.market.AM)
+        U_initguess = self.model.get_u(N_TH, U_nom, B_volumes_initguess, B_prices_initguess, spot_prices, balancing_market = self.market.AM, clearing_prices = AM_prices)
         X_initguess = self.model.simulate_growth(x0, U_initguess)
 
         opti.set_initial(opt_vars['X'][:,:N_TH+1],     X_initguess)
@@ -1389,14 +1375,17 @@ class Controller():
 
             balancing_market = self.market.get_balancing_market(market_type)
 
+            estimated_prices_up, estimated_prices_down = balancing_market.get_estimated_clearing_prices()
+            estimated_price_variance_up, estimated_price_variance_down = balancing_market.get_estimated_clearing_price_variances()
+
             bid_volumes_up    = market_data[market_type]['Bids']['Up']['Volume'].reshape(1,-1)
             bid_volumes_down  = market_data[market_type]['Bids']['Down']['Volume'].reshape(1,-1)
             bid_prices_up     = market_data[market_type]['Bids']['Up']['Price'].reshape(1,-1)
             bid_prices_down   = market_data[market_type]['Bids']['Down']['Volume'].reshape(1,-1)
             
             if  market_data[market_type]['Activations'] is None:
-                bid_activations_up   = np.array(balancing_market.activation_prob_up(self.spot_prices,   bid_prices_up)).reshape(1,-1)
-                bid_activations_down = np.array(balancing_market.activation_prob_down(self.spot_prices, bid_prices_down)).reshape(1,-1)
+                bid_activations_up   = np.array(balancing_market.activation_prob_up(bid_prices_up, self.spot_prices, estimated_prices_up, estimated_price_variance_up)).reshape(1,-1)
+                bid_activations_down = np.array(balancing_market.activation_prob_down(bid_prices_down, self.spot_prices, estimated_prices_down, estimated_price_variance_down)).reshape(1,-1)
             else:
                 bid_activations_up   =  market_data[market_type]['Activations']['Up'].reshape(1,-1)
                 bid_activations_down =  market_data[market_type]['Activations']['Down'].reshape(1,-1)
@@ -1414,8 +1403,8 @@ class Controller():
             activation_th   = 0.01
             volume_th       = 0.001 * self.model.P_cap_max
 
-            prob_activations_up     = np.array(balancing_market.activation_prob_up(self.spot_prices, bid_prices_up)).reshape(1,-1)
-            prob_activations_down   = np.array(balancing_market.activation_prob_down(self.spot_prices, bid_prices_down)).reshape(1,-1)
+            prob_activations_up     = np.array(balancing_market.activation_prob_up(bid_prices_up, self.spot_prices, estimated_prices_up, estimated_price_variance_up)).reshape(1,-1)
+            prob_activations_down   = np.array(balancing_market.activation_prob_down(bid_prices_down, self.spot_prices, estimated_prices_down, estimated_price_variance_down)).reshape(1,-1)
 
             up_bids     = np.where(np.logical_and(prob_activations_up > activation_th,   bid_volumes_up > volume_th))
             down_bids   = np.where(np.logical_and(prob_activations_down > activation_th, bid_volumes_down > volume_th))

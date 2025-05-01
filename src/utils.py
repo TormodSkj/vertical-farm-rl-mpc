@@ -228,6 +228,19 @@ def conditional_expectation(y, means, cov_matrix):
 #     return cond_cov
 
 
+def gaussian_CDF(X, mu, sigma: float):
+    '''
+    Calculates the probability of P(x<=X) if x ~N(x; mu, sigma)
+    '''
+
+    mu = np.array([mu])  # Sanitation of input
+
+    epsilon = 1e-6
+    X_normalized = ((X - ca.vertcat(*mu).reshape((1,-1)))/(sigma + epsilon)).reshape((1,-1))
+
+    return (1.0 + ca.erf(X_normalized / ca.sqrt(2.0))) / 2.0
+
+
 
 
 def generate_freshweight_outcomes(controller, u, b_p_up, b_p_dn, b_a_up, b_a_dn):
@@ -345,6 +358,10 @@ def generate_weighted_samples(values, probabilities, n, seed=None):
 
 
 def calculate_light_schedule_variance(controller, bidding_volumes_up, bidding_volumes_dn, bidding_prices_up, bidding_prices_dn):
+    '''
+    OUTDATED. Must be updated to fit with balancing_market structure and expected prices in activation_prob_up/activation_prob_down
+    '''
+
 
     market = controller.market
     model = controller.model

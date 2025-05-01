@@ -201,7 +201,7 @@ class PlantModel:
     
     
 
-    def AM_bidding_obj_function(self, N_TH, spot_prices, B_volumes, B_prices, balancing_market: BalancingMarket):
+    def AM_bidding_obj_function(self, N_TH, spot_prices, B_volumes, B_prices, balancing_market: BalancingMarket, MTU_start = None):
         
         bid_volumes_up      = B_volumes[0,:]
         bid_volumes_down    = B_volumes[1,:]
@@ -209,27 +209,23 @@ class PlantModel:
         bid_prices_down     = B_prices[1,:]
 
         # expected_prices_up, expected_prices_down = balancing_market.expected_clearing_prices_up.flatten(), balancing_market.expected_clearing_prices_down.flatten()
-        expected_prices_up, expected_prices_down = balancing_market.get_expected_clearing_prices(spot_prices)
+        expected_prices_up, expected_prices_down = balancing_market.get_estimated_clearing_prices(start_date = MTU_start, n_data = N_TH)
+        expected_price_variance_up, expected_price_variance_down = balancing_market.get_estimated_clearing_price_variances()
+        # expected_prices_up, expected_prices_down = balancing_market.get_expected_clearing_prices(spot_prices)
 
         L = 0
 
-        # for k in range(0, N_TH):
-        #     L += \
-        #           + (spot_prices[k] - expected_prices_down[k])   * bid_volumes_down[k]   * balancing_market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
-        #           - (spot_prices[k] + expected_prices_up[k])     * bid_volumes_up[k]     * balancing_market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
-
-        # L = L/4
         for k in range(0, N_TH):
             L += \
-                  - expected_prices_down[:,k]   * bid_volumes_down[k]   * balancing_market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
-                  - expected_prices_up[:,k]     * bid_volumes_up[k]     * balancing_market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
+                  - expected_prices_down[:,k]   * bid_volumes_down[k]   * balancing_market.activation_prob_down(bid_prices_down[k], spot_prices[k], expected_prices_down[:,k], expected_price_variance_down)\
+                  - expected_prices_up[:,k]     * bid_volumes_up[k]     * balancing_market.activation_prob_up(bid_prices_up[k], spot_prices[k], expected_prices_up[:,k], expected_price_variance_up)
 
         L = L/4
 
         return L
     
     
-    def CM_bidding_obj_function(self, N_TH, spot_prices, B_volumes, B_prices, balancing_market: BalancingMarket):
+    def CM_bidding_obj_function(self, N_TH, spot_prices, B_volumes, B_prices, balancing_market: BalancingMarket, MTU_start = None):
         
         bid_volumes_up      = B_volumes[0,:]
         bid_volumes_down    = B_volumes[1,:]
@@ -238,19 +234,16 @@ class PlantModel:
 
         # expected_prices_up, expected_prices_down = balancing_market.expected_clearing_prices_up.flatten(), balancing_market.expected_clearing_prices_down.flatten()
         
-        expected_prices_up, expected_prices_down = balancing_market.get_expected_clearing_prices(spot_prices)
+        # expected_prices_up, expected_prices_down = balancing_market.get_estimated_clearing_prices(spot_prices)
+        expected_prices_up, expected_prices_down = balancing_market.get_estimated_clearing_prices(start_date = MTU_start, n_data = N_TH)
+        expected_price_variance_up, expected_price_variance_down = balancing_market.get_estimated_clearing_price_variances()
+        
         L = 0
 
-        # for k in range(0, N_TH):
-        #     L += \
-        #           + (spot_prices[k] - expected_prices_down[k])   * bid_volumes_down[k]   * balancing_market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
-        #           - (spot_prices[k] + expected_prices_up[k])     * bid_volumes_up[k]     * balancing_market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
-
-        # L = L/4
         for k in range(0, N_TH):
             L += \
-                  - expected_prices_down[:,k]   * bid_volumes_down[k]   * balancing_market.activation_prob_down(spot_prices[k],  bid_prices_down[k])\
-                  - expected_prices_up[:,k]     * bid_volumes_up[k]     * balancing_market.activation_prob_up(spot_prices[k],    bid_prices_up[k])
+                  - expected_prices_down[:,k]   * bid_volumes_down[k]   * balancing_market.activation_prob_down(bid_prices_down[k], spot_prices[k], expected_prices_down[:,k], expected_price_variance_down)\
+                  - expected_prices_up[:,k]     * bid_volumes_up[k]     * balancing_market.activation_prob_up(bid_prices_up[k], spot_prices[k], expected_prices_up[:,k], expected_price_variance_up)
 
         L = L/4
 
@@ -472,32 +465,57 @@ class PlantModel:
 
 
     
-    def get_u(self, N, U_nom, B_volumes, B_prices, spot_prices, balancing_market: BalancingMarket):
+    def get_u(self, N, U_nom, B_volumes, B_prices, spot_prices, balancing_market: BalancingMarket, clearing_prices = None):
 
         U = np.zeros(N, type(U_nom))
+        
+        clearing_prices_up   = None if clearing_prices is None else clearing_prices[0,:].reshape((1,-1))
+        clearing_prices_down = None if clearing_prices is None else clearing_prices[1,:].reshape((1,-1))
+
+        clearing_price_variance_up   = balancing_market.estimated_price_variances[balancing_market.bidding_zone]['Up']
+        clearing_price_variance_down = balancing_market.estimated_price_variances[balancing_market.bidding_zone]['Down']
     
         for k in range(N):
 
-            P_tilde = B_volumes[1,k]*balancing_market.activation_prob_down(spot_prices[k], B_prices[1,k])\
-                    - B_volumes[0,k]*balancing_market.activation_prob_up(spot_prices[k], B_prices[0,k])
+            P_tilde = B_volumes[1,k]*balancing_market.activation_prob_down(B_prices[1,k], spot_prices[k], clearing_prices_down[:,k], clearing_price_variance_down)\
+                    - B_volumes[0,k]*balancing_market.activation_prob_up(B_prices[0,k], spot_prices[k], clearing_prices_up[:,k], clearing_price_variance_up)
             
             u_tilde = 1000/self.C_conv_PPFD * P_tilde
 
             U[k] = U_nom[:,k] + u_tilde
 
+        # for k in range(N):
+
+        #     P_tilde = B_volumes[1,k]*balancing_market.activation_prob_down(spot_prices[k], B_prices[1,k])\
+        #             - B_volumes[0,k]*balancing_market.activation_prob_up(spot_prices[k], B_prices[0,k])
+            
+        #     u_tilde = 1000/self.C_conv_PPFD * P_tilde
+
+        #     U[k] = U_nom[:,k] + u_tilde
+
         return ca.vertcat(*U).reshape((1,-1))
     
     
-    def get_u_CM(self, N, U_nom, CM_B_volumes, CM_B_prices, spot_prices, CM: BalancingMarket, AM: BalancingMarket):
+    def get_u_CM(self, N, U_nom, CM_B_volumes, CM_B_prices, spot_prices, CM: BalancingMarket, AM: BalancingMarket, CM_clearing_prices = None):
 
         assert CM_B_prices.shape[0] == CM_B_volumes.shape[0], 'Inconsitent sizes of bid arrays'
         assert CM_B_prices.shape[1] == CM_B_volumes.shape[1], 'Inconsitent sizes of bid arrays'
         U = np.zeros(N, type(U_nom))
     
+        CM_clearing_prices_up   = None if CM_clearing_prices is None else CM_clearing_prices[0,:].reshape((1,-1))
+        CM_clearing_prices_down = None if CM_clearing_prices is None else CM_clearing_prices[1,:].reshape((1,-1))
+        CM_clearing_price_variance_up, CM_clearing_price_variance_down = CM.get_estimated_clearing_price_variances()
+
+        # AM_clearing_prices_up   = None if AM_clearing_prices is None else AM_clearing_prices[0,:]
+        # AM_clearing_prices_down = None if AM_clearing_prices is None else AM_clearing_prices[1,:]
+        # AM_clearing_price_variance_up   = AM.estimated_price_variances[AM.bidding_zone]['Up']
+        # AM_clearing_price_variance_down = AM.estimated_price_variances[AM.bidding_zone]['Down']
+
+
         for k in range(N):
             
-            CM_Activation_chance_up     = CM.activation_prob_up(spot_prices[k],   CM_B_prices[0,k])
-            CM_Activation_chance_down   = CM.activation_prob_down(spot_prices[k], CM_B_prices[1,k])
+            CM_Activation_chance_up     = CM.activation_prob_up(CM_B_prices[0,k], spot_prices[k],   CM_clearing_prices_up[:,k],   CM_clearing_price_variance_up)
+            CM_Activation_chance_down   = CM.activation_prob_down(CM_B_prices[1,k], spot_prices[k], CM_clearing_prices_down[:,k], CM_clearing_price_variance_down)
             CM_Volume_up                = CM_B_volumes[0,k]
             CM_Volume_down              = CM_B_volumes[1,k]
 
@@ -535,7 +553,6 @@ class PlantModel:
             P_tilde = AM_A_down*(CM_A_down * casadi_max(CM_Volume_down, AM_Volume_down) + (1-CM_A_down)*AM_Volume_down) \
                     - AM_A_up*(CM_A_up * casadi_max(CM_Volume_up, AM_Volume_up) + (1-CM_A_up)*AM_Volume_up)
             
-            # (B_volumes[1,k]*balancing_market.activation_prob_down(spot_prices[k], B_prices[1,k]) - B_volumes[0,k]*balancing_market.activation_prob_up(spot_prices[k], B_prices[0,k]))
 
             u_tilde = 1000*P_tilde/self.C_conv_PPFD
 

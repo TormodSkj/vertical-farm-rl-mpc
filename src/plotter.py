@@ -278,6 +278,9 @@ class Plotter():
             balancing_market = self.controller.market.get_balancing_market(market_type)
             bid_ts = self.controller.optimization_results['runs'][run_id]['timeseries']
 
+            estimated_prices_up, estimated_prices_down = balancing_market.get_estimated_clearing_prices()
+            estimated_price_variance_up, estimated_price_variance_down = balancing_market.get_estimated_clearing_price_variances()
+
             u                    = bid_ts.get('u',     np.zeros(N)).flatten()
             u_nom                = bid_ts.get('u_nom', np.zeros(N)).flatten()
             bid_volumes_up       = market_data['Bids']['Up']['Volume'].flatten()
@@ -287,8 +290,8 @@ class Plotter():
             bid_activations_up   = market_data['Activations']['Up'].flatten()
             bid_activations_down = market_data['Activations']['Down'].flatten()
         
-            prob_activation_up      = np.array(balancing_market.activation_prob_up(spot_prices, bid_prices_up)).flatten()
-            prob_activation_down    = np.array(balancing_market.activation_prob_down(spot_prices, bid_prices_down)).flatten()
+            prob_activation_up      = np.array(balancing_market.activation_prob_up(bid_prices_up, spot_prices, estimated_prices_up, estimated_price_variance_up)).flatten()
+            prob_activation_down    = np.array(balancing_market.activation_prob_down(bid_prices_down, spot_prices, estimated_prices_down, estimated_price_variance_down)).flatten()
 
             # Filter out the unreasonably low bid activations
             if self.filter_bids:
@@ -306,9 +309,9 @@ class Plotter():
             clearing_prices_up   = balancing_market.clearing_prices_up
             clearing_prices_down = balancing_market.clearing_prices_down
             bid_prices_up_activated     = np.where(np.logical_and(bid_activations_up     > 0, bid_volumes_up    > self.volume_th,), bid_prices_up,    0)
-            bid_prices_dn_activated     = np.where(np.logical_and(bid_activations_down   > 0, bid_volumes_down  > self.volume_th,), bid_prices_down,  0)
+            bid_prices_down_activated   = np.where(np.logical_and(bid_activations_down   > 0, bid_volumes_down  > self.volume_th,), bid_prices_down,  0)
             bid_volumes_up_activated    = np.where(np.logical_and(bid_activations_up     > 0, bid_volumes_up    > self.volume_th,), bid_volumes_up,   0)
-            bid_volumes_dn_activated    = np.where(np.logical_and(bid_activations_down   > 0, bid_volumes_down  > self.volume_th,), bid_volumes_down, 0)
+            bid_volumes_down_activated  = np.where(np.logical_and(bid_activations_down   > 0, bid_volumes_down  > self.volume_th,), bid_volumes_down, 0)
             
             
             ######################################################
@@ -322,10 +325,10 @@ class Plotter():
 
             ax1, ax2, ax3 = axes[:,i]
 
-            ax1.fill_between(t, -bid_volumes_up, bid_volumes_down, color='grey', label="Submitted", alpha=0.25, step='post', linewidth=0)
-            ax1.fill_between(t, -filtered_bid_volumes_up, filtered_bid_volumes_down, color='slategrey', label="Filtered", alpha=0.45, step='post')
+            ax1.fill_between(t, -bid_volumes_up, bid_volumes_down, color='grey', label="Unfiltered", alpha=0.25, step='post', linewidth=0)
+            ax1.fill_between(t, -filtered_bid_volumes_up, filtered_bid_volumes_down, color='slategrey', label="Submitted", alpha=0.45, step='post')
             ax1.fill_between(t, -bid_volumes_up_activated, 0, color='blue', alpha=0.4, label='Up', step='post')
-            ax1.fill_between(t, 0, bid_volumes_dn_activated, color='red', alpha=0.4, label='Down', step='post')
+            ax1.fill_between(t, 0, bid_volumes_down_activated, color='red', alpha=0.4, label='Down', step='post')
             ax1.set_ylabel("Bid Volumes (MW)")
             ax1.set_xlabel("Time (days)")
             ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
@@ -338,7 +341,7 @@ class Plotter():
             ax2.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
 
             ax3.fill_between(t, 0, filtered_bid_prices_down, color='grey', label="Submitted", alpha=0.4, step='post')
-            ax3.fill_between(t, 0, bid_prices_dn_activated, color='red', label="Activated", alpha=0.4, step='post')
+            ax3.fill_between(t, 0, bid_prices_down_activated, color='red', label="Activated", alpha=0.4, step='post')
             ax3.set_ylabel("Bid Price Down (€/MW)")
             ax3.set_xlabel("Time (days)")
             ax3.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
@@ -360,8 +363,12 @@ class Plotter():
 
             activations_up       = balancing_market.activations_up
             activations_down     = balancing_market.activations_down
-            expected_prices_up   = balancing_market.expected_prices_up
-            expected_prices_down = balancing_market.expected_prices_down
+            # expected_prices_up   = balancing_market.expected_clearing_prices_up
+            # expected_prices_down = balancing_market.expected_clearing_prices_down
+            expected_prices_up, expected_prices_down = balancing_market.get_estimated_clearing_prices()
+            # expected_prices_up   = expected_prices_up.flatten()
+            # expected_prices_down = expected_prices_down.flatten()
+
 
             linewidth = 0.4
 
@@ -385,6 +392,7 @@ class Plotter():
 
             fig.suptitle(f"{run_id} Expected vs recorded clearing prices. ({controller.market.date}, {controller.market.bidding_zone})\nExpectations made based on price covariances")
             ax1.set_title(market_type)
+            fig.tight_layout()
 
             # self.save_plot("expected_vs_recorded_clearing_prices", run_id, fig, pdf)
 
@@ -434,7 +442,7 @@ class Plotter():
             ax2.set_ylabel("Recorded bid activation rate (%)")
             ax2.set_xlabel("Expected bid activation chance (%)")
             
-            fig.suptitle('')
+            fig.suptitle(f'Expected vs recorded activation rates ({market.bidding_zone}, {market.date})')
             ax1.set_title(market_type)
             fig.tight_layout(rect=[0, 0.03, 1, 0.95]) 
 
@@ -528,7 +536,7 @@ class Plotter():
             
             ax1.step(t, u_nom,           color='lightgrey', label="Baseline",       where='post', linestyle=':')
             ax1.step(t, u_nom + u_tilde, color='slategrey', label="Light Schedule", where='post')
-            ax1.fill_between(t, u_nom, u_nom + k * bid_volumes_dn_activated, color='coral',        alpha=0.6, label="Down Activations", step='post')
+            ax1.fill_between(t, u_nom, u_nom + k * bid_volumes_down_activated, color='coral',        alpha=0.6, label="Down Activations", step='post')
             ax1.fill_between(t, u_nom - k * bid_volumes_up_activated, u_nom, color='lightskyblue', alpha=0.6, label="Up Activations",   step='post')
             
             ax1.set_ylabel("PPFD (€/MW)")
@@ -570,14 +578,17 @@ class Plotter():
             balancing_market = self.controller.market.get_balancing_market(market_type)
             bid_ts = self.controller.optimization_results['runs'][run_id]['timeseries']
 
+            estimated_prices_up, estimated_prices_down = balancing_market.get_estimated_clearing_prices()
+            estimated_price_variance_up, estimated_price_variance_down = balancing_market.get_estimated_clearing_price_variances()
+
             u_nom               = bid_ts.get('u_nom', np.zeros(N)).flatten()
             bid_volumes_up      = market_data['Bids']['Up']['Volume'].flatten()
             bid_volumes_down    = market_data['Bids']['Down']['Volume'].flatten()
             bid_prices_up       = market_data['Bids']['Up']['Price'].flatten()
             bid_prices_down     = market_data['Bids']['Down']['Price'].flatten()
             
-            prob_activation_up      = np.array(balancing_market.activation_prob_up(spot_prices, bid_prices_up)).flatten()
-            prob_activation_down    = np.array(balancing_market.activation_prob_down(spot_prices, bid_prices_down)).flatten()
+            prob_activation_up      = np.array(balancing_market.activation_prob_up(bid_prices_up, spot_prices, estimated_prices_up, estimated_price_variance_up)).flatten()
+            prob_activation_down    = np.array(balancing_market.activation_prob_down(bid_prices_down, spot_prices, estimated_prices_down, estimated_price_variance_down)).flatten()
 
             # Filter out the unreasonably low bid activations
             if self.filter_bids:

@@ -4,7 +4,7 @@ import casadi as ca
 import scipy as sp
 from globals import *
 from utils import *
-from estimator import Estimator
+from estimator import Estimator, EstimatorDF
 from market_utils import *
 from config import Config
 from settings import Settings
@@ -29,13 +29,14 @@ class BalancingMarket:
     price_stats:        dict
     activation_stats:   dict
 
-    def __init__(self, settings: Settings, market_type, market_data):
+    def __init__(self, settings: Settings, market_type, market_data, data_resolution, estimator_config):
         
         self.settings       = settings
 
         self.market_settings = settings.get_settings_group('general', 'market')
 
         self.T                  = self.market_settings['SIMULATION_LENGTH']
+        self.dt                 = self.market_settings['SIM_TIMEDELTA']
         self.bidding_zone       = self.market_settings['BIDDING_ZONE']
         self.date               = self.market_settings['SIMULATION_DATE']
         self.optimistic         = self.market_settings['OPTIMISTIC']
@@ -43,12 +44,13 @@ class BalancingMarket:
         self.seed               = self.market_settings['SEED']
         self.N = self.T * QUARTER_HOURS_PER_DAY
 
-        self.market_type    = market_type
+        self.market_type        = market_type
+        self.data_resolution    = data_resolution
 
-        self.market_data_full_set       = self.standardize_market_data(market_data)
+        self.market_data_full_set    = self.standardize_market_data(market_data)
         if market_type == 'Activation Market':  self.generate_activation_times(activation_chance=self.market_settings['AM_ACTIVATION_RATE'], hourly_roll=False)
         if market_type == 'Capacity Market':    self.generate_activation_times(activation_chance=self.market_settings['CM_ACTIVATION_RATE'], hourly_roll=True)
-        self.market_data_working_set    = self.get_market_data()
+        self.market_data_working_set = self.get_market_data(all=True)
 
         self.spot_prices             = np.array(self.market_data_working_set[f'{self.bidding_zone} Spot Price'])
         self.clearing_prices_up      = np.array(self.market_data_working_set[f'{self.bidding_zone} Up Price'])
@@ -58,10 +60,13 @@ class BalancingMarket:
         self.activations_up, self.activations_down = self.get_activations()
 
         self.perform_statistical_analysis()
-        self.perform_price_estimation()
+        self.perform_price_estimation(estimator_config)
 
-        self.expected_clearing_prices_up  , conditional_price_variance_up   = conditional_expectation(self.spot_prices, self.price_stats[self.bidding_zone]['Up']['means'],    self.price_stats[self.bidding_zone]['Up']['cov'])
-        self.expected_clearing_prices_down, conditional_price_variance_down = conditional_expectation(self.spot_prices, self.price_stats[self.bidding_zone]['Down']['means'],  self.price_stats[self.bidding_zone]['Down']['cov'])
+        # self.expected_clearing_prices_up  , conditional_price_variance_up   = conditional_expectation(self.spot_prices, self.price_stats[self.bidding_zone]['Up']['means'],    self.price_stats[self.bidding_zone]['Up']['cov'])
+        # self.expected_clearing_prices_down, conditional_price_variance_down = conditional_expectation(self.spot_prices, self.price_stats[self.bidding_zone]['Down']['means'],  self.price_stats[self.bidding_zone]['Down']['cov'])
+
+        self.estimated_clearing_prices_up, self.estimated_clearing_prices_down = self.get_estimated_clearing_prices()
+        self.conditional_price_variance_up, self.conditional_price_variance_down = self.get_estimated_clearing_price_variances()
 
 
     def perform_statistical_analysis(self):
@@ -92,10 +97,10 @@ class BalancingMarket:
                 activation_statistics[zone][direction] = {}
 
                 price_data = market_data[[f'{zone} Spot Price', 
-                                    f'{zone} {direction} Price']][market_data[f'{zone} {direction} Volume'] > 0]
+                                    f'{zone} {direction} Price']][market_data[f'{zone} Activated {direction}'] > 0]
 
-                activation_data = market_data[[f'{zone} Spot Price', f'{zone} {direction} Volume']].copy()
-                activation_data[f'{zone} {direction} Volume'] = (activation_data[f"{zone} {direction} Volume"] > 0).astype(int)
+                activation_data = market_data[[f'{zone} Spot Price', f'{zone} Activated {direction}']].copy()
+                activation_data[f'{zone} Activated {direction}'] = (activation_data[f"{zone} Activated {direction}"] > 0).astype(int)
 
                 # if there are no activations, any dataset will do
                 n = len(price_data.columns)
@@ -118,22 +123,22 @@ class BalancingMarket:
         return 0
 
 
-    def activation_prob_up(self, spot_price, bid_price = None):
+    def activation_prob_up(self, bid_price = None, spot_price = None, clearing_price = None, clearing_price_variance = None):
         if bid_price is None: return np.mean(self.activations_up)
-        return self.activation_prob('Up', spot_price, bid_price)
-    def activation_prob_down(self, spot_price, bid_price=None):
+        return self.activation_prob('Up', bid_price, spot_price, clearing_price, clearing_price_variance)
+    def activation_prob_down(self, bid_price = None, spot_price = None, clearing_price = None, clearing_price_variance = None):
         if bid_price is None: return np.mean(self.activations_down)
-        return self.activation_prob('Down', spot_price, bid_price)
+        return self.activation_prob('Down', bid_price, spot_price, clearing_price, clearing_price_variance)
     
-    def activation_prob(self, direction, spot_price, bid_price):
+    def activation_prob(self, direction, bid_price, spot_price = None, clearing_price = None, clearing_price_variance = None):
         bid_price = bid_price.reshape((1,-1))
         
-        mu, sigma = conditional_expectation(spot_price, self.price_stats[self.bidding_zone][direction]['means'], self.price_stats[self.bidding_zone][direction]['cov'])
+        if spot_price is not None and (clearing_price is None or clearing_price_variance is None):
+            clearing_price, clearing_price_variance = conditional_expectation(spot_price, self.price_stats[self.bidding_zone][direction]['means'], self.price_stats[self.bidding_zone][direction]['cov'])
+        elif spot_price is None and (clearing_price is None or clearing_price_variance is None):
+            assert False, 'activation_prob called without either spot price or clearing prices'
 
-        epsilon = 1e-6
-        bid_price_normalized = ((bid_price - ca.vertcat(*mu).reshape((1,-1)))/(sigma + epsilon)).reshape((1,-1))
-
-        return np.multiply(self.demand_prob(direction, spot_price), (1.0 + ca.erf(-bid_price_normalized / ca.sqrt(2.0))) / 2.0)
+        return np.multiply(self.demand_prob(direction, spot_price), 1 - gaussian_CDF(bid_price, clearing_price, clearing_price_variance))
 
 
     def demand_prob_up(self, spot_price = None): 
@@ -158,24 +163,62 @@ class BalancingMarket:
     def get_clearing_prices(self, date=None, n_days = None, zone = None):
         if zone     == None: zone   = self.bidding_zone
 
-        data = self.get_market_data(date=date, n_days=n_days, zone=zone, 
-                                       spot_prices=False, clearing_prices=True, volumes=False)
+        data = self.get_market_data(start_date=date, n_days=n_days, zone=zone, 
+                                     times= True, clearing_prices=True)
         
         return np.array(data[f'{zone} Up Price']), np.array(data[f'{zone} Down Price'])
 
 
-    def get_expected_clearing_prices(self, spot_prices = None, date=None, n_days = None, zone = None):
-        if zone     == None: zone   = self.bidding_zone
+    def get_estimated_clearing_prices(self, spot_prices = None, start_date=None, end_date=None, n_data = None, zone = None):
 
-        if spot_prices is None: 
-            data = self.get_market_data(date=date, n_days=n_days, zone=zone, 
-                                        spot_prices=True, clearing_prices=True, volumes=False)
-            spot_prices = np.array(data[f'{zone} Spot Price'])
+        # if spot_prices is None: 
+        #     data = self.get_market_data(start_date=start_date, end_date = end_date, n_days=n_days, zone=zone, 
+        #                                 times=True, spot_prices=True, clearing_prices=True)
+        #     spot_prices = np.array(data[f'{zone} Spot Price'])
 
-        expected_clearing_prices_up  , _ = conditional_expectation(spot_prices, self.price_stats[self.bidding_zone]['Up']['means'],    self.price_stats[self.bidding_zone]['Up']['cov'])
-        expected_clearing_prices_down, _ = conditional_expectation(spot_prices, self.price_stats[self.bidding_zone]['Down']['means'],  self.price_stats[self.bidding_zone]['Down']['cov'])
+        # expected_clearing_prices_up  , _ = conditional_expectation(spot_prices, self.price_stats[self.bidding_zone]['Up']['means'],    self.price_stats[self.bidding_zone]['Up']['cov'])
+        # expected_clearing_prices_down, _ = conditional_expectation(spot_prices, self.price_stats[self.bidding_zone]['Down']['means'],  self.price_stats[self.bidding_zone]['Down']['cov'])
+
+
+        # TODO use EstimatorDF values instead. Found in self.expected_prices_data
+
+        if start_date == None: start_date = self.date
+        if n_data     == None: n_data     = self.N
+        if end_date   == None: end_date   = pd.to_datetime(start_date, format='%Y-%m-%d') + pd.DateOffset(seconds = n_data*self.dt)
+        if zone       == None: zone       = self.bidding_zone
+
+        start_date = pd.to_datetime(start_date, format='%Y-%m-%d')
+
+        # Remove dates before simdate
+        est_prices_full_set = self.estimated_prices_data.copy()
+
+        est_prices_working_set = est_prices_full_set[
+            (est_prices_full_set['Start Time']   >= start_date)    &
+            (est_prices_full_set['Start Time']   <  end_date) 
+            ]
         
-        return expected_clearing_prices_up, expected_clearing_prices_down
+        # keywords = []
+        # if times            or all: keywords += ['Start Time']
+        # if spot_prices      or all: keywords += ['spot']
+        # if clearing_prices  or all: keywords += ['up price', 'down price']
+        # if volumes          or all: keywords += ['volume']
+        # if activations      or all: keywords += ['activated']
+        # columns = [col for col in est_prices_working_set.columns if any([keyword.lower() in col.lower() for keyword in keywords])]
+
+        # est_prices_working_set = est_prices_working_set[columns].copy()
+        # est_prices_working_set.fillna(est_prices_working_set.mean(), inplace=True)
+
+        estimated_clearing_prices_up   = np.array(est_prices_working_set[f'{zone} Up Price']).reshape((1,-1))
+        estimated_clearing_prices_down = np.array(est_prices_working_set[f'{zone} Down Price']).reshape((1,-1))
+
+        return estimated_clearing_prices_up, estimated_clearing_prices_down
+
+
+    def get_estimated_clearing_price_variances(self, zone = None):
+
+        if zone       == None: zone       = self.bidding_zone
+
+        return self.estimated_price_variances[zone]['Up'], self.estimated_price_variances[zone]['Down']
 
 
     def get_activations(self, date = None, n_days = None, zone = None):
@@ -187,23 +230,66 @@ class BalancingMarket:
 
         if zone     == None: zone   = self.bidding_zone
 
-        data = self.get_market_data(date=date, n_days=n_days, zone=zone, 
-                                       spot_prices=False, clearing_prices=False, volumes=True)
+        data = self.get_market_data(start_date=date, n_days=n_days, zone=zone, 
+                                     times=True, activations=True)
         
         activations_up, activations_down = np.array(data[f'{zone} Activated Up']), np.array(data[f'{zone} Activated Down'])
-        # volumes_up, volumes_down = np.array(data[f'{zone} Up Volume']), np.array(data[f'{zone} Down Volume'])
-
-        # activations_up   = np.where(np.logical_and(volumes_up     > 0, volumes_up >= volumes_down), 1, 0)
-        # activations_down = np.where(np.logical_and(volumes_down   > 0, volumes_up < volumes_down), 1, 0)
-        # activations_up   = np.where(volumes_up   > 0, 1, 0)
-        # activations_down = np.where(volumes_down > 0, 1, 0)
 
         return activations_up, activations_down
 
 
-    def perform_price_estimation(self):
-        self.expected_prices_up, _   = conditional_expectation(self.spot_prices, self.price_stats[self.bidding_zone]['Up']['means'],    self.price_stats[self.bidding_zone]['Up']['cov'])
-        self.expected_prices_down, _ = conditional_expectation(self.spot_prices, self.price_stats[self.bidding_zone]['Down']['means'],  self.price_stats[self.bidding_zone]['Down']['cov'])
+    def perform_price_estimation(self, estimator_config):
+
+        dep_lags   = estimator_config['dep_lags']
+        indep_lags = estimator_config['indep_lags']
+
+        max_lag = max(dep_lags + indep_lags)
+
+        training_window = estimator_config['training_window']
+
+        # if training_window[0] < max_lag
+        
+        date        = pd.to_datetime(self.date, format='%Y-%m-%d')
+        start_date  = date - pd.DateOffset(minutes= max_lag*15)
+        end_date    = date + pd.DateOffset(self.T)
+
+        training_start_date =  date + pd.DateOffset(minutes= 15 * training_window[0])
+        training_end_date =  date + pd.DateOffset(minutes= 15 * training_window[1])
+
+
+        timeslots           = self.get_market_data(start_date = start_date, end_date = end_date, zone = self.bidding_zone,
+                                                   times = True)
+        dependent_true_data      = self.get_market_data(start_date = start_date, end_date = end_date, zone = self.bidding_zone,
+                                                   clearing_prices=True)
+        independent_input_data    = self.get_market_data(start_date = start_date, end_date = end_date, zone = self.bidding_zone,
+                                                   spot_prices=True)
+
+        dependent_training_data      = self.get_market_data(start_date = training_start_date, end_date = training_end_date, zone = self.bidding_zone,
+                                                   clearing_prices=True)
+        independent_training_data    = self.get_market_data(start_date = training_start_date, end_date = training_end_date, zone = self.bidding_zone,
+                                                   spot_prices=True)
+
+
+        clearing_price_estimator = EstimatorDF(f"{self.market_type} Clearing Price Estimator", dependent_true_data, dependent_training_data, independent_input_data, independent_training_data, dep_lags, indep_lags)
+
+        estimated_data = pd.concat([timeslots, clearing_price_estimator.estimated_df], axis=1).dropna().round(1)
+        self.estimated_prices_data = estimated_data
+        
+
+        estimated_price_variances = {}
+        for col in clearing_price_estimator.estimated_df.columns:
+            zone      = col.split()[0]
+            estimated_price_variances[zone] = {}
+        
+        for col in clearing_price_estimator.estimated_df.columns:
+            zone      = col.split()[0]
+            direction = col.split()[1]
+            estimated_price_variances[zone][direction] = clearing_price_estimator.conditional_variance[f'{zone} {direction} Price']
+        
+        self.estimated_price_variances = estimated_price_variances
+    
+        clearing_price_estimator.show_estimator_profile()
+        clearing_price_estimator.measure_performance()
 
 
     def generate_activation_times(self, activation_chance=1, hourly_roll=False):
@@ -217,8 +303,7 @@ class BalancingMarket:
 
         for col in dataset.columns:
             if "Volume" in col:
-                direction = "Up" if "Up" in col else "Down"
-                zone = col.split()[0]
+                zone, direction, _ = col.split()
                 new_col_name = f"{zone} Activated {direction}"
 
                 # Identify time slots where activation is possible (volume > 0)
@@ -250,19 +335,19 @@ class BalancingMarket:
         return
 
 
-    def get_market_data(self, date=None, n_days = None, zone = None, spot_prices=True, clearing_prices=True, volumes=True):
+    def get_market_data(self, start_date=None, end_date=None, n_days = None, zone = None, all = False, times = False, spot_prices=False, clearing_prices=False, volumes=False, activations=False):
         '''
         Fetch a slice form the full data set containing specified data types.
         
         returns a dataframe containing fetched data. 
         '''
 
-        if date     == None: date   = self.date
-        if n_days   == None: n_days = self.T
-        if zone     == None: zone   = self.bidding_zone
+        if start_date == None: start_date = self.date
+        if n_days     == None: n_days     = self.T
+        if end_date   == None: end_date   = pd.to_datetime(start_date, format='%Y-%m-%d') + pd.DateOffset(n_days)
+        if zone       == None: zone       = self.bidding_zone
 
-        start_date = pd.to_datetime(date, format='%Y-%m-%d')
-        end_date = start_date + pd.DateOffset(n_days)
+        start_date = pd.to_datetime(start_date, format='%Y-%m-%d')
 
         # Remove dates before simdate
         market_data_full_set = self.market_data_full_set.copy()
@@ -273,10 +358,16 @@ class BalancingMarket:
             ]
         
         keywords = []
-        if spot_prices:     keywords.append('spot')
-        if clearing_prices: keywords += ['up price', 'down price']
-        if volumes:         keywords += ['volume', 'activated']
-        columns = ['Start Time'] + [col for col in market_data_working_set.columns if any([keyword in col.lower() for keyword in keywords])]
+        if times            or all: keywords += ['Start Time']
+        if spot_prices      or all: keywords += ['spot']
+        if clearing_prices  or all: keywords += ['up price', 'down price']
+        if volumes          or all: keywords += ['volume']
+        if activations      or all: keywords += ['activated']
+        columns = [col for col in market_data_working_set.columns if any([keyword.lower() in col.lower() for keyword in keywords])]
+
+        if zone.lower() != 'all':
+            new_columns = [col for col in columns if zone in col or 'start time' in col.lower()]
+            columns = new_columns
 
         market_data_working_set = market_data_working_set[columns].copy()
         market_data_working_set.fillna(market_data_working_set.mean(), inplace=True)

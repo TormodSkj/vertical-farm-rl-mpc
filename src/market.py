@@ -78,8 +78,12 @@ class Market:
 
         self.import_market_data()
 
-        self.CM = BalancingMarket(settings, 'Capacity Market',   self.CM_data_full_set)
-        self.AM = BalancingMarket(settings, 'Activation Market', self.AM_data_full_set)
+        CM_estimator_config = {'dep_lags': list(range(96, 192)), 'indep_lags': list(range(96, 192)),    'training_window': [-30*QUARTER_HOURS_PER_DAY, -1*QUARTER_HOURS_PER_DAY]}
+        AM_estimator_config = {'dep_lags': list(range(4,100)),    'indep_lags': list(range(4, 100)),       'training_window': [-30*QUARTER_HOURS_PER_DAY, -1*QUARTER_HOURS_PER_DAY]}
+        # AM_estimator_config = {'dep_lags': list(range(1,4)),      'indep_lags': list(range(1,4))}
+
+        self.CM = BalancingMarket(settings, 'Capacity Market',   self.CM_data_full_set, data_resolution = 24, estimator_config = CM_estimator_config)
+        self.AM = BalancingMarket(settings, 'Activation Market', self.AM_data_full_set, data_resolution = 96, estimator_config = AM_estimator_config)
         self.balancing_markets['Capacity Market']   = self.CM
         self.balancing_markets['Activation Market'] = self.AM
 
@@ -163,6 +167,9 @@ class Market:
 
 
     def optimal_bidding_price_prediction(self, spot_prices):    
+        '''
+        DEPRECATED since addition of CM and AM objects in the market class
+        '''
 
         start_time = time.time()
         print("Starting price prediction")
@@ -387,9 +394,9 @@ class Market:
         AM_prices_df        = price_data[[col for col in price_data if self.bidding_zone in col and 'AM' in col and 'Price' in col]].copy()
         spot_CM_prices_df   = price_data[[col for col in price_data if self.bidding_zone in col and 'Spot' in col or ('CM' in col and 'Price' in col)]].copy()
         
-        CM_price_estimate = EstimatorDF(CM_prices_df, spot_prices_df,   
+        CM_price_estimate = EstimatorDF('CM Prices', CM_prices_df, spot_prices_df,   
                                         xlags=xlags, ylags=ylags)
-        AM_price_estimate = EstimatorDF(AM_prices_df, spot_prices_df,   
+        AM_price_estimate = EstimatorDF('CM Prices', AM_prices_df, spot_prices_df,   
                                         xlags=xlags, ylags=ylags)
         
         print(f"CM Estimator RMSE: {CM_price_estimate.rmse_scores}\t lags: {CM_price_estimate.xlags}")
@@ -768,8 +775,8 @@ class Market:
 
     def nordic_markets_overview(self, output=False):
 
-        AM_data_raw = self.AM.get_market_data('2024-01-01', n_days=365)
-        CM_data_raw = self.CM.get_market_data('2024-01-01', n_days=365)
+        AM_data_raw = self.AM.get_market_data('2024-01-01', n_days=365, all=True)
+        CM_data_raw = self.CM.get_market_data('2024-01-01', n_days=365, all=True)
         
 
         zones = ['DK1', 'DK2', 'FI', 'NO1', 'NO2', 'NO3', 'NO4', 'NO5', 'SE1', 'SE2', 'SE3', 'SE4']

@@ -4,6 +4,8 @@ import casadi as ca
 import scipy as sp
 from globals import *
 from utils import *
+from tqdm import tqdm
+
 
 class Estimator:
     '''
@@ -86,7 +88,7 @@ class Estimator:
     def add_sample(self, X_sample: np.ndarray, Y_sample: np.ndarray):
 
         assert X_sample.shape[1] == Y_sample.shape[1],  f"Inconsistent lengths of dependent and independent data"
-        assert X_sample.shape[1] > self.n_xlags - 1,     f"Sample data is too short for choice of lag variables"
+        assert X_sample.shape[1] > self.n_xlags - 1,    f"Sample data is too short for choice of lag variables"
         assert Y_sample.shape[1] == self.n_data,        f"Size inconsistency when adding input signal. Expected length {self.n_data}, received length{Y_sample.shape[1]} "
         
         self.ny = Y_sample.shape[0]
@@ -304,24 +306,35 @@ class EstimatorDF:
 
     estimated_data: np.ndarray
 
-    def __init__(self, x_df: pd.DataFrame, y_df: pd.DataFrame = None, xlags=None, ylags=None, exact=False):
-        assert isinstance(x_df, pd.DataFrame), "x_df must be a pandas DataFrame"
-        if y_df is not None:
-            assert isinstance(y_df, pd.DataFrame), "y_df must be a pandas DataFrame"
+    def __init__(self, name, x_truth_df: pd.DataFrame, x_training_df: pd.DataFrame, y_input_df: pd.DataFrame = None,  y_training_df: pd.DataFrame = None,
+                 xlags=None, ylags=None, exact=False, show_output = False):
+        assert isinstance(x_truth_df, pd.DataFrame), "x_df must be a pandas DataFrame"
+        assert isinstance(x_training_df, pd.DataFrame), "x_df must be a pandas DataFrame"
+        if y_input_df is not None:
+            assert isinstance(y_input_df, pd.DataFrame), "y_df must be a pandas DataFrame"
         else:
-            y_df = pd.DataFrame(index=x_df.index)
+            y_input_df = pd.DataFrame(index=x_truth_df.index)
+        if y_training_df is not None:
+            assert isinstance(y_training_df, pd.DataFrame), "y_df must be a pandas DataFrame"
+        else:
+            y_training_df = pd.DataFrame(index=x_training_df.index)
 
-        self.x_df = x_df.copy()
-        self.y_df = y_df.copy()
+        self.x_df = x_truth_df.copy()
+        self.y_df = y_input_df.copy()
+        self.x_training_df = x_training_df.copy()
+        self.y_training_df = y_training_df.copy()
         self.xlags = sorted(xlags or [])
         self.ylags = sorted(ylags or [])
         self.exact = exact
         self.max_lag = max(self.xlags + self.ylags + [0])
 
-        self.estimated_df = pd.DataFrame(index=x_df.index, columns=x_df.columns, dtype='float64')
+        self.estimated_df = pd.DataFrame(index=x_truth_df.index, columns=x_truth_df.columns, dtype='float64')
         self.covariance_matrix = None
         self.conditional_covariance = None
         self.rmse_scores = None
+
+        self.name = name
+        self.show_output = show_output
 
         self.update_covariances()
         self.calculate_estimate()
@@ -330,48 +343,59 @@ class EstimatorDF:
         lagged = []
         for lag in lags:
             shifted = df.shift(lag)
-            shifted.columns = [f"{prefix}_{col}_lag{lag}" for col in df.columns]
+            shifted.columns = [f"{prefix} {col} lag {lag}" for col in df.columns]
             lagged.append(shifted)
         return pd.concat(lagged, axis=1)
 
     def update_covariances(self):
-        lagged_x = self.build_lagged_matrix(self.x_df, self.xlags, 'x')
-        lagged_y = self.build_lagged_matrix(self.y_df, self.ylags, 'y')
+        lagged_x_truth = self.build_lagged_matrix(self.x_df, self.xlags, 'x')
+        lagged_y_input = self.build_lagged_matrix(self.y_df, self.ylags, 'y')
 
-        combined = pd.concat([self.x_df, lagged_x, self.y_df, lagged_y], axis=1).dropna()
-        self.valid_index = combined.index
-        self.full_data = combined
+        lagged_x_training = self.build_lagged_matrix(self.x_training_df, self.xlags, 'x')
+        lagged_y_training = self.build_lagged_matrix(self.y_training_df, self.ylags, 'y')
 
-        self.covariance_matrix = combined.cov().values
-        self.means = combined.mean().values
+        # combined = pd.concat([self.x_df, lagged_x, self.y_df, lagged_y], axis=1).dropna()
+        combined_training = pd.concat([self.x_training_df, lagged_x_training, lagged_y_training], axis=1).dropna()
+        combined_truth    = pd.concat([self.x_df, lagged_x_truth, lagged_y_input], axis=1).dropna()
+        self.indices_truth      = combined_truth.index
+        self.indices_training   = combined_training.index
+        self.full_data_truth    = combined_truth
+        self.full_data_training = combined_training
+
+        self.covariance_matrix = combined_training.cov().values
+        self.means = combined_training.mean().values
 
     def build_stable_covariances(self, threshold=1e8):
         nx = self.x_df.shape[1]
-        total_vars = self.full_data.shape[1]
+        total_vars = self.full_data_training.shape[1]
 
         Pyy = np.zeros((0, 0))
         Pxy = np.zeros((nx, 0))
         selected_lags = []
 
-        for i in range(nx, total_vars):
-            if Pyy.size == 0:
-                candidate = np.array([[self.covariance_matrix[i, i]]])
-            else:
-                col = self.covariance_matrix[selected_lags + [i], i].reshape(-1, 1)
-                row = col.T
-                candidate = np.block([[Pyy, col[:-1]], [row[:, :-1], row[:, -1]]])
 
-            if np.linalg.cond(candidate) < threshold:
-                selected_lags.append(i)
-                Pyy = candidate
-                new_Pxy_col = self.covariance_matrix[:nx, i].reshape(-1, 1)
-                Pxy = np.hstack([Pxy, new_Pxy_col])
+        with tqdm(total = total_vars - nx, desc=f"Estimator {self.name} Building stable covariance matrix") as pbar:
+            for i in range(nx, total_vars):
+                if Pyy.size == 0:
+                    candidate = np.array([[self.covariance_matrix[i, i]]])
+                else:
+                    col = self.covariance_matrix[selected_lags + [i], i].reshape(-1, 1)
+                    row = col.T
+                    candidate = np.block([[Pyy, col[:-1]], [row[:, :-1], row[:, -1]]])
+
+                if np.linalg.cond(candidate) < threshold:
+                    selected_lags.append(i)
+                    Pyy = candidate
+                    new_Pxy_col = self.covariance_matrix[:nx, i].reshape(-1, 1)
+                    Pxy = np.hstack([Pxy, new_Pxy_col])
+                
+                pbar.update(1)
 
         return Pyy, Pxy, selected_lags
 
     def calculate_estimate(self):
         if self.exact:
-            self.estimated_df.loc[self.valid_index] = self.x_df.loc[self.valid_index]
+            self.estimated_df.loc[self.indices_truth] = self.x_df.loc[self.indices_truth]
             return
 
         Pxx = self.covariance_matrix[:self.x_df.shape[1], :self.x_df.shape[1]]
@@ -382,19 +406,43 @@ class EstimatorDF:
         mu_y = self.means[selected_vars].reshape((-1, 1))
 
         estimates = []
-        for idx in self.valid_index:
-            y = self.full_data.loc[idx].values[selected_vars].reshape((-1, 1))
+        for idx in self.indices_truth:
+            y = self.full_data_truth.loc[idx].values[selected_vars].reshape((-1, 1))
             x_hat = mu_x + Pxy @ Pyy_inv @ (y - mu_y)
             estimates.append(x_hat.flatten())
 
         est_array = np.array(estimates)
         self.estimated_data = est_array.T
-        self.estimated_df.loc[self.valid_index] = est_array
+        self.estimated_df.loc[self.indices_truth] = est_array
         self.conditional_covariance = Pxx - Pxy @ Pyy_inv @ Pxy.T
+        self.conditional_variance = {col: self.conditional_covariance[i,i] for i, col in enumerate(self.x_df.columns)}
 
-        self.rmse_scores = np.sqrt(np.mean((self.estimated_df.loc[self.valid_index] - self.x_df.loc[self.valid_index]) ** 2))
+        self.rmse_scores = np.sqrt(np.mean((self.estimated_df.loc[self.indices_truth] - self.x_df.loc[self.indices_truth]) ** 2))
+        self.selected_vars = selected_vars
+        self.Pxx = Pxx
+        self.Pxy = Pxy
+        self.Pyy = Pyy
+        self.Pyy_inv = Pyy_inv
 
     def measure_performance(self):
         for col in self.x_df.columns:
-            rmse = np.sqrt(np.mean((self.estimated_df[col] - self.x_df[col]) ** 2))
-            print(f"RMSE for {col}: {rmse:.4f}")
+            rmse = np.sqrt(np.mean(np.square(self.estimated_df[col] - self.x_df[col])))
+            print(f"Estimator {self.name} RMSE for {col}: {rmse:.4f}")
+
+    def show_estimator_profile(self, n_vars = 10):
+        print(f"\n{self.name} estimator profile:")
+        
+        selected_vars = np.array(self.selected_vars)
+
+        for i, col in enumerate(self.x_df.columns):
+            
+            weights = self.Pxy @ self.Pyy_inv
+
+            sorted_weights_idx = np.argsort(np.abs(weights[i,:]))[-n_vars:]
+
+            print(f"Most important inputs for {col}:")
+            for idx in reversed(sorted_weights_idx):
+                var = selected_vars[idx]
+                print(f"\tInput: {self.full_data_training.columns[var]}\tWeight {weights[i,idx]:.4f}")
+                # print(f"\tInput: {self.full_data.columns[var]}\tCovariance {self.covariance_matrix[i,var]:.4f}")
+
