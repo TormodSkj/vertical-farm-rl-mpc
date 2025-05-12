@@ -7,9 +7,9 @@ from plotter import Plotter
 import numpy as np
 from globals import *
 from simulator import Simulator
-from utils import vertigrow_calculate_energy_consumption
+from utils import vertigrow_calculate_energy_consumption, plot_balancing_market_earnings_upper_bounds
 
-SIM_NAME            = "Full_MPC_7_day"
+SIM_NAME            = "complete_mpc_test_7"
 SIMULATION_LENGTH   = 7
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
@@ -20,11 +20,14 @@ SEARCH_CACHE        = 0
 SEARCH_PLOT_CACHE   = 0
 
 MPC_TIMEHORIZON     = 3
-MPC_STEPLENGTH      = 1/4
+MPC_STEPLENGTH      = 1/2
 
 DISCRETIZATION      = 'fe'
 
 def main():
+
+    # plot_balancing_market_earnings_upper_bounds()
+
 
     # x_init = 0.031415 * np.array([5, 1, 0])   # From germination [calibrated from 18d experiment]
     X_INIT = np.array([5, 1, 0])   # Specify init vector [structural and non structural dry weight in grams]
@@ -35,7 +38,7 @@ def main():
     settings.add_setting('controller', SEARCH_SIM_CACHE = SEARCH_CACHE, IMPORT_FILE = 'mfrr_experiment_1.json')
     settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH)
     settings.add_setting('market', SIMULATION_DATE = SIMULATION_DATE, OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE, 
-                         AM_ACTIVATION_RATE  = 0.1, CM_ACTIVATION_RATE  = 0.25)
+                         AM_ACTIVATION_RATE  = 1, CM_ACTIVATION_RATE  = 1)
     settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT, DLI_RESOLUTION = 2, DISCRETIZATION = DISCRETIZATION)
     settings.add_setting('plotter', SEARCH_PLOT_CACHE = SEARCH_PLOT_CACHE, PLOT_EXPORT_TYPE='pdf', FILTER_BIDS = True, PLOT_ASPECT_RATIO = (14, 6))
 
@@ -54,13 +57,12 @@ def main():
 
 
     ''' OPTIMIZAION '''
-    # market.optimal_bidding_price_prediction(controller.spot_prices)
     
     # '''
     # controller.import_light_schedule('imported', plot_run = True)
 
     # controller.generate_true_optimum_BL_CM_AM('MARI_opt', plot_run = True)
-    controller.optimize_MPC_complete('complete_MPC', 'fixed', plot_run = True)
+    # controller.optimize_MPC_complete('complete_MPC', 'fixed', plot_run = True)
     # simulator.apply_mfrr_clearing_prices('complete_MPC_applied', 'complete_MPC', plot_run = True)
 
 

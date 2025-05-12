@@ -519,8 +519,8 @@ class PlantModel:
             CM_Volume_up                = CM_B_volumes[0,k]
             CM_Volume_down              = CM_B_volumes[1,k]
 
-            AM_Demand_up     = AM.demand_prob_up(spot_prices[k])
-            AM_Demand_down   = AM.demand_prob_down(spot_prices[k])
+            AM_Demand_up     = AM.demand_prob_up(spot_prices[k])   # * 0.5 
+            AM_Demand_down   = AM.demand_prob_down(spot_prices[k]) # * 0.5
     
             P_tilde = CM_Activation_chance_down * AM_Demand_down * CM_Volume_down \
                     - CM_Activation_chance_up   * AM_Demand_up   * CM_Volume_up

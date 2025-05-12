@@ -408,7 +408,7 @@ class Plotter():
             subplots[plot_name] = {'run_id': run_id, 'fig': fig, 'axes': axes, 'pdf': pdf}
             ax1, ax2 = axes[:,i]
 
-            step_size = 5
+            step_size = 10
             n_bins_up = int(np.ceil(max(prob_activation_up)*100))+step_size
             n_bins_dn = int(np.ceil(max(prob_activation_down)*100))+step_size
 

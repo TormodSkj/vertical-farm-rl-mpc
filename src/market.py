@@ -630,8 +630,17 @@ class Market:
                 results[zone]['message'] = f"Net cost reduction in percentage for {zone}: \t{spot_cost_reduction:.2f}, AM: {AM_earnings_perc:.2f}, CM: {CM_earnings_perc:.2f}, \tNominal cost: {total_electricity_costs_fixed:.2f}, mFRR cost: {total_cost_mFRR:.2f}"
                 pbar.update(1)
 
-        for zone in results: print(results[zone]['message'])
+        output_dir = self.config.output_path
+        # Save summary results
+        with open(os.path.join(output_dir, "summary_results.json"), "w") as f:
+            json.dump(results, f, indent=4)
 
+        # Save daily time series
+        nominal_costs_df.to_csv(os.path.join(output_dir, "nominal_costs.csv"), index=False)
+        mfrr_costs_df.to_csv(os.path.join(output_dir, "mfrr_costs.csv"), index=False)
+
+        '''
+        for zone in results: print(results[zone]['message'])
 
         cmap = plt.get_cmap("Set3")
         colors = {
@@ -656,7 +665,6 @@ class Market:
         ####################################################
                 #   FRACTIONAL COST REDUCTION BAR CHART. Zone-wise
 
-        fontname = "DejaVu Serif"
 
         # my_colors = ["#264653", "#2a9d8f", "#e9c46a", "#f4a261", "#e76f51"]
         # my_colors = ["#3D8D7A", "#B3D8A8", "#A3D1C6"]
@@ -670,7 +678,8 @@ class Market:
 
         # plt.title('title',**csfont)
         # plt.xlabel('xlabel', **hfont)
-
+        
+        fontname = "DejaVu Serif"
         plt.rcParams["font.family"] = fontname
 
         fig, ax = plt.subplots(figsize=(6, 3.5))  # Adjusted for a narrow format
@@ -771,6 +780,9 @@ class Market:
         plt.show()
 
         return
+
+        #'''
+        
 
 
     def nordic_markets_overview(self, output=False):

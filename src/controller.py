@@ -804,6 +804,8 @@ class Controller():
         spot_prices = self.spot_prices
         nx, nu, neps = self.model.nx, self.model.nu, self.model.neps
         market = self.market
+        CM = market.CM
+        AM = market.AM
         F = self.F
         
         target_run = self.optimization_results['runs'][target_run_id]
@@ -878,7 +880,7 @@ class Controller():
 
                         # Apply CM bids to CM market
                         # Extract required AM bid volumes 
-                        CM_activations, CM_activated_volumes, CM_earnings = market.CM.subject_bids_to_market_data(current_MTU, CM_bid_volumes_opt, CM_bid_prices_opt)
+                        CM_activations, CM_activated_volumes, CM_earnings = CM.subject_bids_to_market_data(current_MTU, CM_bid_volumes_opt, CM_bid_prices_opt)
 
                         # Store data
 
@@ -904,7 +906,11 @@ class Controller():
                     AM_iter_slice   = slice(start_iter, start_iter + AM_N_horizon)
 
                     AM_B_volumes_min = CM_activated_volumes[:,qh:]
-                    AM_B_prices_max  = np.where(CM_activations[:,qh:], self.market.AM.bid_price_limit/2, self.market.AM.bid_price_limit) # TODO Define a proper upper bound for the bidding price
+
+                    max_prices_reserved     = np.vstack(AM.get_estimated_clearing_prices(start_date=current_MTU, n_data = N_TH))
+                    max_prices_not_reserved = max_prices_reserved + 1.96*np.vstack(np.sqrt(AM.get_estimated_clearing_price_variances()))
+                    # AM_B_prices_max  = np.where(CM_activations[:,qh:], self.market.AM.bid_price_limit/2, self.market.AM.bid_price_limit) # TODO Define a proper upper bound for the bidding price
+                    AM_B_prices_max  = np.where(CM_activations[:,qh:], max_prices_reserved, max_prices_not_reserved) # TODO Define a proper upper bound for the bidding price
 
                     # Update AM bid optimizer
                     opti_AM_copy = self.update_optimizer_AM_bids(
@@ -976,8 +982,8 @@ class Controller():
         AM_bid_volumes      = np.array(AM_bids_log[:2, :]).reshape((2, -1))
         AM_bid_prices       = np.array(AM_bids_log[2:4,:]).reshape((2, -1))
         
-        CM_bid_activations, _, _  = market.CM.subject_bids_to_market_data(market.MTU_start, CM_bid_volumes, CM_bid_prices)
-        AM_bid_activations, _, _  = market.AM.subject_bids_to_market_data(market.MTU_start, AM_bid_volumes, AM_bid_prices)
+        CM_bid_activations, _, _  = CM.subject_bids_to_market_data(market.MTU_start, CM_bid_volumes, CM_bid_prices)
+        AM_bid_activations, _, _  = AM.subject_bids_to_market_data(market.MTU_start, AM_bid_volumes, AM_bid_prices)
 
         X_log       = np.array(X_log).reshape((self.model.nx, -1))
         U_log       = np.array(U_log).reshape((self.model.nu, -1))
@@ -986,8 +992,8 @@ class Controller():
         sol= {}
         sol['f'] = float(
                     self.model.elcost_obj_function(N, spot_prices, U_log) \
-                    + self.model.AM_bidding_obj_function(N, spot_prices, AM_bid_volumes, AM_bid_prices, self.market.AM)\
-                    + self.model.CM_bidding_obj_function(N, spot_prices, CM_bid_volumes, CM_bid_prices, self.market.CM)\
+                    + self.model.AM_bidding_obj_function(N, spot_prices, AM_bid_volumes, AM_bid_prices, AM)\
+                    + self.model.CM_bidding_obj_function(N, spot_prices, CM_bid_volumes, CM_bid_prices, CM)\
                     + self.model.terminal_cost(self, X_log, U_log, Eps_log)
                     )
                     # + self.model.terminal_cost(self, X_nom_log, U_nom_log, Eps_nom)

@@ -433,6 +433,9 @@ class EstimatorDF:
         print(f"\n{self.name} estimator profile:")
         
         selected_vars = np.array(self.selected_vars)
+        
+        for timeseries in self.conditional_variance:
+            print(f"{timeseries} \tEstimator standard deviation: {np.sqrt(self.conditional_variance[timeseries])}")
 
         for i, col in enumerate(self.x_df.columns):
             
