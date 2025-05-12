@@ -325,8 +325,14 @@ class EstimatorDF:
         self.y_training_df = y_training_df.copy()
         self.xlags = sorted(xlags or [])
         self.ylags = sorted(ylags or [])
-        self.exact = exact
+        self.n_xlags = len(self.xlags)
+        self.n_ylags = len(self.ylags)
+        self.nx = self.x_df.shape[1]
+        self.ny = self.y_df.shape[1]
         self.max_lag = max(self.xlags + self.ylags + [0])
+        self.max_xlag = max(self.xlags + [0])
+        self.max_ylag = max(self.ylags + [0])
+        self.exact = exact
 
         self.estimated_df = pd.DataFrame(index=x_truth_df.index, columns=x_truth_df.columns, dtype='float64')
         self.covariance_matrix = None
@@ -337,6 +343,7 @@ class EstimatorDF:
         self.show_output = show_output
 
         self.update_covariances()
+        self.build_stable_covariances()
         self.calculate_estimate()
 
     def build_lagged_matrix(self, df, lags, prefix):
@@ -391,16 +398,37 @@ class EstimatorDF:
                 
                 pbar.update(1)
 
-        return Pyy, Pxy, selected_lags
+        Pxx = self.covariance_matrix[:self.x_df.shape[1], :self.x_df.shape[1]]
+        Pyy_inv = np.linalg.inv(Pyy)
+
+        self.selected_vars = np.array(selected_lags)
+        self.Pxx = Pxx
+        self.Pxy = Pxy
+        self.Pyy = Pyy
+        self.Pyy_inv = Pyy_inv
+
+        weights = Pxy @ Pyy_inv
+
+        full_weights = np.zeros((self.nx, self.nx*self.max_xlag + self.ny * self.max_ylag))
+        full_weights[:, self.selected_vars-nx] = weights
+
+        self.weights = weights
+        self.full_weights = full_weights
+        self.full_weights_x = full_weights[:,:self.nx*self.max_xlag]
+        self.full_weights_y = full_weights[:,self.nx*self.max_xlag:]
+        return
 
     def calculate_estimate(self):
         if self.exact:
             self.estimated_df.loc[self.indices_truth] = self.x_df.loc[self.indices_truth]
             return
 
-        Pxx = self.covariance_matrix[:self.x_df.shape[1], :self.x_df.shape[1]]
-        Pyy, Pxy, selected_vars = self.build_stable_covariances()
-        Pyy_inv = np.linalg.inv(Pyy)
+        selected_vars   = self.selected_vars
+        Pxx             = self.Pxx
+        Pxy             = self.Pxy
+        Pyy             = self.Pyy
+        Pyy_inv         = self.Pyy_inv
+        weights         = self.weights
 
         mu_x = self.means[:self.x_df.shape[1]].reshape((-1, 1))
         mu_y = self.means[selected_vars].reshape((-1, 1))
@@ -408,7 +436,7 @@ class EstimatorDF:
         estimates = []
         for idx in self.indices_truth:
             y = self.full_data_truth.loc[idx].values[selected_vars].reshape((-1, 1))
-            x_hat = mu_x + Pxy @ Pyy_inv @ (y - mu_y)
+            x_hat = mu_x + weights @ (y - mu_y)
             estimates.append(x_hat.flatten())
 
         est_array = np.array(estimates)
@@ -418,11 +446,94 @@ class EstimatorDF:
         self.conditional_variance = {col: self.conditional_covariance[i,i] for i, col in enumerate(self.x_df.columns)}
 
         self.rmse_scores = np.sqrt(np.mean((self.estimated_df.loc[self.indices_truth] - self.x_df.loc[self.indices_truth]) ** 2))
-        self.selected_vars = selected_vars
-        self.Pxx = Pxx
-        self.Pxy = Pxy
-        self.Pyy = Pyy
-        self.Pyy_inv = Pyy_inv
+
+    def calculate_future_prediction(self, true_x, past_x, y):
+        '''
+        Calculate prediction of future values
+
+        Inputs:
+            - past_x:   Initial values of x.
+            - input_y:  values of y
+            - past_y:   Initial values of y.
+
+        Outputs: 
+            - x_pred:   pd.DataFrame of predicted x.values for time slots for which y-values exist
+        
+        '''
+
+        # if self.exact:
+        #     self.estimated_df.loc[self.indices_truth] = self.x_df.loc[self.indices_truth]
+        #     return
+                
+        selected_vars  = self.selected_vars
+
+        past_x_array    = np.array(past_x).transpose()
+        y_array         = np.array(y).transpose()
+
+        n_pastx = past_x_array.shape[1]
+
+        # assert n_pastx >= self.max_xlag, f"past_x is too short. Expected at least length {self.max_xlag}, but got a length of {past_x_array.shape[1]}"
+        # assert past_y.shape[1] >= self.max_ylag, f"past_y is too short. Expected at least length {self.max_ylag}, but got a length of {past_y.shape[1]}"
+
+        
+        x_pred = pd.DataFrame(index=true_x.index, columns=true_x.columns, dtype='float64')
+
+        selected_past_x = selected_vars[np.where(selected_vars <= self.max_xlag*self.nx)]
+        selected_past_y = selected_vars[np.where(selected_vars >  self.max_xlag*self.nx)] - self.max_xlag
+
+        # mu_x = self.means[:self.x_df.shape[1]].reshape((-1, 1))
+        mu_x = np.array(self.x_df.mean()).reshape((1,-1))
+        # mu_y = self.means[selected_vars].reshape((-1, 1))
+
+
+        x_hat = np.hstack((past_x_array, np.zeros((past_x_array.shape[0], y_array.shape[1] -  n_pastx))))
+        # x_hat = np.zeros_like(y_array)
+
+        # x_mean = np.array(self.x_df.mean())
+        # y_mean = np.array(self.y_df.mean())
+        x_mean = np.tile(self.x_df.mean(), self.max_xlag)
+        y_mean = np.tile(self.y_df.mean(), self.max_ylag)
+
+        full_weights_x = np.flip(self.full_weights_x, axis=1)
+        full_weights_y = np.flip(self.full_weights_y, axis=1)
+        # full_weights_x = np.array(self.full_weights_x)
+        # full_weights_y = np.array(self.full_weights_y)
+
+        full_weights_x = np.zeros_like(self.full_weights_x)
+        for i in range(self.nx): full_weights_x[:,i::self.nx] = np.flip(self.full_weights_x[:,i::self.nx], axis=1)
+        full_weights_y = np.zeros_like(self.full_weights_y)
+        for i in range(self.ny): full_weights_y[:,i::self.ny] = np.flip(self.full_weights_y[:,i::self.ny], axis=1)
+
+
+        # estimates = []
+        for k in range(n_pastx, x_hat.shape[1]):
+            # y = self.full_data_truth.loc[idx].values[selected_vars].reshape((-1, 1))
+
+            x_vals = x_hat[:,   k-self.max_xlag:k].transpose().ravel()
+            y_vals = y_array[:, k-self.max_ylag:k].transpose().ravel()
+
+            # y = np.hstack((x_hat[:,k - selected_past_x], y_array[:, k - selected_past_y])).reshape((-1,1))
+
+            # x_hat = mu_x + Pxy @ Pyy_inv @ (y - mu_y)
+            next_x = mu_x.flatten() + full_weights_x @ (x_vals - x_mean) + full_weights_y @ (y_vals - y_mean)
+            
+            x_hat[:,k] = next_x
+            
+            # estimates.append(x_hat.flatten())
+
+        # est_array = np.array(x_hat)
+        # self.estimated_data = est_array.T
+        x_pred.loc[true_x.index] = x_hat[:, n_pastx:].transpose()
+        # self.conditional_covariance = Pxx - Pxy @ Pyy_inv @ Pxy.T
+        # self.conditional_variance = {col: self.conditional_covariance[i,i] for i, col in enumerate(self.x_df.columns)}
+
+        # self.rmse_scores = np.sqrt(np.mean((self.estimated_df.loc[self.indices_truth] - self.x_df.loc[self.indices_truth]) ** 2))
+
+        print(f'{self.name} RMSE: {rmse(true_x, x_pred, axis=0)}')
+
+        return x_pred
+        
+
 
     def measure_performance(self):
         for col in self.x_df.columns:
@@ -432,14 +543,14 @@ class EstimatorDF:
     def show_estimator_profile(self, n_vars = 10):
         print(f"\n{self.name} estimator profile:")
         
-        selected_vars = np.array(self.selected_vars)
+        selected_vars = self.selected_vars
         
         for timeseries in self.conditional_variance:
             print(f"{timeseries} \tEstimator standard deviation: {np.sqrt(self.conditional_variance[timeseries])}")
 
         for i, col in enumerate(self.x_df.columns):
             
-            weights = self.Pxy @ self.Pyy_inv
+            weights = self.weights
 
             sorted_weights_idx = np.argsort(np.abs(weights[i,:]))[-n_vars:]
 

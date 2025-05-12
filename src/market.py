@@ -78,8 +78,9 @@ class Market:
 
         self.import_market_data()
 
-        CM_estimator_config = {'dep_lags': list(range(96, 192)), 'indep_lags': list(range(96, 192)),    'training_window': [-30*QUARTER_HOURS_PER_DAY, -1*QUARTER_HOURS_PER_DAY]}
-        AM_estimator_config = {'dep_lags': list(range(4,100)),    'indep_lags': list(range(4, 100)),       'training_window': [-30*QUARTER_HOURS_PER_DAY, -1*QUARTER_HOURS_PER_DAY]}
+        # Define which lag variables to use from the dependent/independent timeseries. Also define the training windows
+        CM_estimator_config = {'dep_lags': list(range(96, 3*96,     4)),    'indep_lags': list(range(96, 3*96,      4)), 'training_window': [-30*QUARTER_HOURS_PER_DAY, -1*QUARTER_HOURS_PER_DAY]}
+        AM_estimator_config = {'dep_lags': list(range(96, 3*96 + 0, 4)),    'indep_lags': list(range(96, 3*96 + 0,  4)), 'training_window': [-30*QUARTER_HOURS_PER_DAY, -1*QUARTER_HOURS_PER_DAY]}
         # AM_estimator_config = {'dep_lags': list(range(1,4)),      'indep_lags': list(range(1,4))}
 
         self.CM = BalancingMarket(settings, 'Capacity Market',   self.CM_data_full_set, data_resolution = 24, estimator_config = CM_estimator_config)

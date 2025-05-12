@@ -565,7 +565,7 @@ class PlantModel:
 
         U_nom = U_nom.reshape((1,-1))                                                  # Ensure correct dimension
 
-        lb_B_prices = ca.DM.zeros(2, N)
+        lb_B_prices = - 1000 * ca.DM.ones(2, N)
         ub_B_prices = ca.vertcat(balancing_market.bid_price_limit * ca.DM.ones((1, N)),  # Bid price up
                                  balancing_market.bid_price_limit * ca.DM.ones((1, N)))  # Bid price down
         

@@ -729,7 +729,7 @@ def get_DLI(X):
 
     for k in range(0, N):
         if k < QUARTER_HOURS_PER_DAY:
-            DLI[:,k] = X[2,QUARTER_HOURS_PER_DAY]
+            DLI[:,k] = (X[2,k] - X[2,0])
         else:
             LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
             DLI[:,k] = LI
@@ -1101,5 +1101,47 @@ def plot_balancing_market_earnings_upper_bounds():
 
 
 
+def rmse(a, b, axis):
+    return np.sqrt(np.mean(np.square(np.array(a) - np.array(b)), axis=axis))
 
+
+
+def check_violated_constraints(opti, tol=1e-6):
+    """
+    Checks for violated constraints in a failed CasADi Opti solve.
+
+    Parameters:
+        opti : casadi.Opti
+            The Opti object after a failed solve attempt (with debug info).
+        tol : float
+            Tolerance for considering a constraint violated.
+
+    Returns:
+        List of tuples: [(i, residual, constraint_expr)] for violated constraints
+    """
+    violations = []
     
+    constraints = opti.g
+    lb = opti.lbg
+    ub = opti.ubg
+    values = opti.debug.value(constraints)
+
+    constraints_split = ca.vertsplit(constraints)
+
+    for i, constr in enumerate(constraints_split):
+        val = float(values[i])
+        lb_i = float(lb[i])
+        ub_i = float(ub[i])
+
+        if val < lb_i - tol or val > ub_i + tol:
+            residual = max(val - ub_i, lb_i - val)
+            violations.append({
+                "index": i,
+                "value": val,
+                "lower_bound": lb_i,
+                "upper_bound": ub_i,
+                "residual": residual,
+                "expr": constr,
+            })
+
+    return violations

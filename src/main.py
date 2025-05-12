@@ -10,7 +10,7 @@ from simulator import Simulator
 from utils import vertigrow_calculate_energy_consumption, plot_balancing_market_earnings_upper_bounds
 
 SIM_NAME            = "complete_mpc_test_7"
-SIMULATION_LENGTH   = 7
+SIMULATION_LENGTH   = 5
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
 SIMULATION_DATE     = '2024-10-10'
@@ -19,7 +19,7 @@ OPTIMISTIC          = 1
 SEARCH_CACHE        = 0
 SEARCH_PLOT_CACHE   = 0
 
-MPC_TIMEHORIZON     = 3
+MPC_TIMEHORIZON     = 2
 MPC_STEPLENGTH      = 1/2
 
 DISCRETIZATION      = 'fe'
@@ -54,6 +54,9 @@ def main():
     ''' ANALYSIS '''
     # market.calculate_balancing_market_earnings_upper_bound(AM=True, CM=True)
     # market.nordic_markets_overview(output=True)
+
+    market.AM.get_predicted_clearing_prices('2024-10-22', controller.mpc_N_horizon, plot=True)
+    market.CM.get_predicted_clearing_prices('2024-10-22', controller.mpc_N_horizon, plot=True)
 
 
     ''' OPTIMIZAION '''

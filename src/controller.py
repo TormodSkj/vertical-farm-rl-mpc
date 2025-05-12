@@ -876,6 +876,14 @@ class Controller():
                             Eps_opt_CM          = opti_CM_copy.debug.value(opt_vars_CM['Eps'])
                             Eps_nom_opt_CM      = opti_CM_copy.debug.value(opt_vars_CM['Eps_nom'])
 
+                            violations = check_violated_constraints(opti_CM_copy)
+                            for v in violations:
+                                print(f"[Constraint #{v['index']}] Violation by {v['residual']:.2e}")
+                                print(f"  Expr:        {v['expr']}")
+                                print(f"  Value:       {v['value']:.4f}")
+                                print(f"  Lower Bound: {v['lower_bound']}")
+                                print(f"  Upper Bound: {v['upper_bound']}\n")
+
                         # Store solution
 
                         # Apply CM bids to CM market
@@ -907,8 +915,8 @@ class Controller():
 
                     AM_B_volumes_min = CM_activated_volumes[:,qh:]
 
-                    max_prices_reserved     = np.vstack(AM.get_estimated_clearing_prices(start_date=current_MTU, n_data = N_TH))
-                    max_prices_not_reserved = max_prices_reserved + 1.96*np.vstack(np.sqrt(AM.get_estimated_clearing_price_variances()))
+                    max_prices_reserved     = np.vstack(AM.get_estimated_clearing_prices(start_date=current_MTU, n_data = AM_N_horizon))
+                    max_prices_not_reserved = max_prices_reserved + 0*np.vstack(np.sqrt(AM.get_estimated_clearing_price_variances()))
                     # AM_B_prices_max  = np.where(CM_activations[:,qh:], self.market.AM.bid_price_limit/2, self.market.AM.bid_price_limit) # TODO Define a proper upper bound for the bidding price
                     AM_B_prices_max  = np.where(CM_activations[:,qh:], max_prices_reserved, max_prices_not_reserved) # TODO Define a proper upper bound for the bidding price
 
@@ -939,13 +947,25 @@ class Controller():
                         AM_bid_prices_opt = opti_AM_copy.debug.value(opt_vars_AM['B_prices'])[:, :AM_N_horizon]
                         Eps_opt_AM = opti_AM_copy.debug.value(opt_vars_AM['Eps'])
 
+                        # violations = check_violated_constraints(opti_AM_copy)
+                        # for violation in violations: print(f"{violation[0]} Violation of {violation[1]} by {violation[2]}")
+                                                
+                        violations = check_violated_constraints(opti_AM_copy)
+                        for v in violations:
+                            print(f"[Constraint #{v['index']}] Violation by {v['residual']:.2e}")
+                            print(f"  Expr:        {v['expr']}")
+                            print(f"  Value:       {v['value']:.4f}")
+                            print(f"  Lower Bound: {v['lower_bound']}")
+                            print(f"  Upper Bound: {v['upper_bound']}\n")
+
+
                     # Apply bid activations
                     # Evaluate activations
                     AM_activations, AM_activated_volumes, AM_earnings = market.AM.subject_bids_to_market_data(current_MTU, AM_bid_volumes_opt, AM_bid_prices_opt)
 
 
-                    AM_extract_solution_slice = slice(0,     min(N_iter, AM_N_horizon))
-                    AM_store_data_slice       = slice(k, k + min(N_iter, AM_N_horizon))
+                    AM_extract_solution_slice = slice(0,     min(N_iter, AM_N_horizon)) if not terminate_simulation else slice(0,     AM_N_horizon)
+                    AM_store_data_slice       = slice(k, k + min(N_iter, AM_N_horizon)) if not terminate_simulation else slice(k, k + AM_N_horizon)
 
                     AM_activated_volumes_up    = AM_activated_volumes[0,:]
                     AM_activated_volumes_down  = AM_activated_volumes[1,:]
@@ -959,7 +979,9 @@ class Controller():
 
                     # Integrate states
                     # X[:,k:k+1+min(N_iter, N_horizon)] = x_opt_bid[:,:1+min(N_iter, N_horizon)]
-                    for i in range(k, k+min(N_iter, AM_N_horizon)):
+
+                    iteration_range = range(k, k+min(N_iter, AM_N_horizon)) if not terminate_simulation else range(k, k + AM_N_horizon)
+                    for i in iteration_range:
                         X_log[:,i+1] = np.array(F(X_log[:,i], np.array([U_log[:,i]]))).reshape(1, -1)
 
                     past_X[:,-min(QUARTER_HOURS_PER_DAY, min(N_iter, AM_N_horizon)):] = X_log[:,k:k+min(QUARTER_HOURS_PER_DAY, min(N_iter, AM_N_horizon))]

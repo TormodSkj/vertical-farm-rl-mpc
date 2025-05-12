@@ -171,17 +171,6 @@ class BalancingMarket:
 
     def get_estimated_clearing_prices(self, spot_prices = None, start_date=None, end_date=None, n_data = None, zone = None):
 
-        # if spot_prices is None: 
-        #     data = self.get_market_data(start_date=start_date, end_date = end_date, n_days=n_days, zone=zone, 
-        #                                 times=True, spot_prices=True, clearing_prices=True)
-        #     spot_prices = np.array(data[f'{zone} Spot Price'])
-
-        # expected_clearing_prices_up  , _ = conditional_expectation(spot_prices, self.price_stats[self.bidding_zone]['Up']['means'],    self.price_stats[self.bidding_zone]['Up']['cov'])
-        # expected_clearing_prices_down, _ = conditional_expectation(spot_prices, self.price_stats[self.bidding_zone]['Down']['means'],  self.price_stats[self.bidding_zone]['Down']['cov'])
-
-
-        # TODO use EstimatorDF values instead. Found in self.expected_prices_data
-
         if start_date == None: start_date = self.date
         if n_data     == None: n_data     = self.N
         if end_date   == None: end_date   = pd.to_datetime(start_date, format='%Y-%m-%d') + pd.DateOffset(seconds = n_data*self.dt)
@@ -197,21 +186,72 @@ class BalancingMarket:
             (est_prices_full_set['Start Time']   <  end_date) 
             ]
         
-        # keywords = []
-        # if times            or all: keywords += ['Start Time']
-        # if spot_prices      or all: keywords += ['spot']
-        # if clearing_prices  or all: keywords += ['up price', 'down price']
-        # if volumes          or all: keywords += ['volume']
-        # if activations      or all: keywords += ['activated']
-        # columns = [col for col in est_prices_working_set.columns if any([keyword.lower() in col.lower() for keyword in keywords])]
-
-        # est_prices_working_set = est_prices_working_set[columns].copy()
-        # est_prices_working_set.fillna(est_prices_working_set.mean(), inplace=True)
-
         estimated_clearing_prices_up   = np.array(est_prices_working_set[f'{zone} Up Price']).reshape((1,-1))
         estimated_clearing_prices_down = np.array(est_prices_working_set[f'{zone} Down Price']).reshape((1,-1))
 
         return estimated_clearing_prices_up, estimated_clearing_prices_down
+
+    def get_predicted_clearing_prices(self, current_MTU=None, n_data = None, zone = None, plot = False):
+
+        if current_MTU == None: current_MTU = self.date
+        if n_data     == None: n_data     = self.N
+        # if end_date   == None: end_date   = pd.to_datetime(start_date, format='%Y-%m-%d') + pd.DateOffset(seconds = n_data*self.dt)
+        if zone       == None: zone       = self.bidding_zone
+
+        current_MTU = pd.to_datetime(current_MTU, format='%Y-%m-%d')
+
+
+        max_xlag = self.clearing_price_estimator.max_xlag
+        max_ylag = self.clearing_price_estimator.max_ylag
+        max_lag = self.clearing_price_estimator.max_lag
+
+        
+        start_date  = current_MTU - pd.DateOffset(seconds = self.dt * max_lag)
+        end_date    = current_MTU + pd.DateOffset(seconds = self.dt * n_data)
+        # prev_MTU    = current_MTU - pd.DateOffset(seconds = self.dt)
+
+        past_clearing_prices = self.get_market_data(start_date=start_date, end_date=current_MTU, zone=zone, 
+                                     times= False, clearing_prices=True)
+        past_and_future_spot_prices = self.get_market_data(start_date=start_date, end_date=end_date, zone=zone, 
+                                     times= False, spot_prices=True)
+        true_clearing_prices = self.get_market_data(start_date=current_MTU, end_date=end_date, zone=zone, 
+                                     times= False, clearing_prices=True)
+
+        predicted_prices = self.clearing_price_estimator.calculate_future_prediction(true_clearing_prices, past_clearing_prices, past_and_future_spot_prices)
+
+        predicted_prices_up   = np.array(predicted_prices[f'{zone} Up Price']).reshape((1,-1))
+        predicted_prices_down = np.array(predicted_prices[f'{zone} Down Price']).reshape((1,-1))
+
+        if plot:
+            previous_prices_up      = np.array(past_clearing_prices[f'{zone} Up Price']).reshape((1,-1))
+            previous_prices_down    = np.array(past_clearing_prices[f'{zone} Down Price']).reshape((1,-1))
+
+            actual_prices_up    =  np.array(true_clearing_prices[f'{zone} Up Price']).reshape((1,-1))
+            actual_prices_down  =  np.array(true_clearing_prices[f'{zone} Down Price']).reshape((1,-1))
+
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8), sharex=True)
+
+
+            t = np.arange(len(previous_prices_up.flatten())+len(actual_prices_up.flatten()))
+
+            ax1.step(t, np.hstack((previous_prices_up, actual_prices_up)).flatten(),      label='True Up Price',        color='slategray', alpha=1, where='post')
+            ax1.step(t, np.hstack((previous_prices_up, predicted_prices_up)).flatten(),   label='Predicted Up Price',   color='blue',      alpha=1, where='post')
+            ax1.axvline(x=len(previous_prices_up.flatten()), linestyle=':', alpha=0.5)
+
+            ax2.step(t, np.hstack((previous_prices_down, actual_prices_down)).flatten(),    label='True Down Price',      color='slategray', alpha=1, where='post')
+            ax2.step(t, np.hstack((previous_prices_down, predicted_prices_down)).flatten(), label='Predicted Down Price', color='red',       alpha=1, where='post')
+            ax2.axvline(x=len(previous_prices_up.flatten()), linestyle=':', alpha=0.5)
+
+            ax1.set_title(f"Clearing prices up")
+            ax2.set_title(f"Clearing prices down")
+            fig.suptitle(f"{self.market_type} Price prediction performances")
+
+            plt.show()
+
+
+
+        return predicted_prices_up, predicted_prices_down
+
 
 
     def get_estimated_clearing_price_variances(self, zone = None):
@@ -288,6 +328,7 @@ class BalancingMarket:
         
         self.estimated_price_variances = estimated_price_variances
     
+        self.clearing_price_estimator = clearing_price_estimator
         clearing_price_estimator.show_estimator_profile()
         clearing_price_estimator.measure_performance()
 
