@@ -846,6 +846,7 @@ class Controller():
                     if qh == 0:     # Start of every day only
 
                         # At 00:00 every day
+                        # Bid on CM for the COMING day
 
                         # Update BL-CM optimizer
                         opti_CM_copy = self.update_optimizer_CM_bids(
@@ -876,13 +877,8 @@ class Controller():
                             Eps_opt_CM          = opti_CM_copy.debug.value(opt_vars_CM['Eps'])
                             Eps_nom_opt_CM      = opti_CM_copy.debug.value(opt_vars_CM['Eps_nom'])
 
-                            violations = check_violated_constraints(opti_CM_copy)
-                            for v in violations:
-                                print(f"[Constraint #{v['index']}] Violation by {v['residual']:.2e}")
-                                print(f"  Expr:        {v['expr']}")
-                                print(f"  Value:       {v['value']:.4f}")
-                                print(f"  Lower Bound: {v['lower_bound']}")
-                                print(f"  Upper Bound: {v['upper_bound']}\n")
+                            if not self.surpress_output: check_violated_constraints(opti_CM_copy)
+                            
 
                         # Store solution
 
@@ -907,8 +903,6 @@ class Controller():
                         if terminate_simulation: break
                         # End if qh == 0
                         
-                    # qh_slice = ()
-
                     # AM_N_horizon    = min(QUARTER_HOURS_PER_DAY - qh, N_horizon)
                     AM_N_horizon    = min(N_TH - qh, N_horizon)
                     AM_iter_slice   = slice(start_iter, start_iter + AM_N_horizon)
@@ -916,9 +910,7 @@ class Controller():
                     AM_B_volumes_min = CM_activated_volumes[:,qh:]
 
                     max_prices_reserved     = np.vstack(AM.get_estimated_clearing_prices(start_date=current_MTU, n_data = AM_N_horizon))
-                    max_prices_not_reserved = max_prices_reserved + 0*np.vstack(np.sqrt(AM.get_estimated_clearing_price_variances()))
-                    # AM_B_prices_max  = np.where(CM_activations[:,qh:], self.market.AM.bid_price_limit/2, self.market.AM.bid_price_limit) # TODO Define a proper upper bound for the bidding price
-                    AM_B_prices_max  = np.where(CM_activations[:,qh:], max_prices_reserved, max_prices_not_reserved) # TODO Define a proper upper bound for the bidding price
+                    AM_B_prices_max  = np.where(CM_activations[:,qh:], max_prices_reserved, AM.bid_price_limit) # TODO Define a proper upper bound for the bidding price
 
                     # Update AM bid optimizer
                     opti_AM_copy = self.update_optimizer_AM_bids(
@@ -946,17 +938,8 @@ class Controller():
                         AM_bid_volumes_opt = opti_AM_copy.debug.value(opt_vars_AM['B_volumes'])[:, :AM_N_horizon]
                         AM_bid_prices_opt = opti_AM_copy.debug.value(opt_vars_AM['B_prices'])[:, :AM_N_horizon]
                         Eps_opt_AM = opti_AM_copy.debug.value(opt_vars_AM['Eps'])
-
-                        # violations = check_violated_constraints(opti_AM_copy)
-                        # for violation in violations: print(f"{violation[0]} Violation of {violation[1]} by {violation[2]}")
                                                 
-                        violations = check_violated_constraints(opti_AM_copy)
-                        for v in violations:
-                            print(f"[Constraint #{v['index']}] Violation by {v['residual']:.2e}")
-                            print(f"  Expr:        {v['expr']}")
-                            print(f"  Value:       {v['value']:.4f}")
-                            print(f"  Lower Bound: {v['lower_bound']}")
-                            print(f"  Upper Bound: {v['upper_bound']}\n")
+                        if not self.surpress_output: check_violated_constraints(opti_AM_copy)
 
 
                     # Apply bid activations

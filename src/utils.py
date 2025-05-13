@@ -1144,4 +1144,11 @@ def check_violated_constraints(opti, tol=1e-6):
                 "expr": constr,
             })
 
-    return violations
+    for v in violations:
+        print(f"[Constraint #{v['index']}] Violation by {v['residual']:.2e}")
+        print(f"  Expr:        {v['expr']}")
+        print(f"  Value:       {v['value']:.4f}")
+        print(f"  Lower Bound: {v['lower_bound']}")
+        print(f"  Upper Bound: {v['upper_bound']}\n")
+
+    return

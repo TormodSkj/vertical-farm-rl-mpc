@@ -34,7 +34,8 @@ class Settings():
                          OUTLIER_DIST_LIMIT  = 3,
                          BID_PRICE_LIMIT     = 100,
                          AM_ACTIVATION_RATE  = 0.25,
-                         CM_ACTIVATION_RATE  = 0.25
+                         CM_ACTIVATION_RATE  = 0.25,
+                         EXACT_ESTIMATION    = False
                          )
 
         # Model settings

@@ -421,6 +421,10 @@ class EstimatorDF:
     def calculate_estimate(self):
         if self.exact:
             self.estimated_df.loc[self.indices_truth] = self.x_df.loc[self.indices_truth]
+            self.estimated_data = np.array(self.x_df.loc[self.indices_truth]).transpose()
+            self.conditional_covariance = np.zeros_like(self.Pxx)
+            self.conditional_variance = {col: self.conditional_covariance[i,i] for i, col in enumerate(self.x_df.columns)}
+            self.rmse_scores = 0
             return
 
         selected_vars   = self.selected_vars

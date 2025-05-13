@@ -380,6 +380,8 @@ class Plotter():
             ax1.set_ylabel("Price Up (€/MW)")
             ax1.set_xlabel("Time (days)")
             ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+            ax1_yspan = np.abs(max(clearing_prices_up) - min(clearing_prices_up))
+            ax1.set_ylim([min(clearing_prices_up) - 0.05*ax1_yspan, max(clearing_prices_up) + 0.05*ax1_yspan])
 
             ax2.fill_between(t, 0, np.where(activations_down > 0,     clearing_prices_down, 0), color='limegreen', alpha=0.4, label="Available Activations", step='post')
             ax2.fill_between(t, 0, np.where(bid_activations_down > 0, clearing_prices_down, 0), color='red', label="Activated Bids", alpha=0.4, step='post')
@@ -389,7 +391,9 @@ class Plotter():
             ax2.set_ylabel("Price Down (€/MW)")
             ax2.set_xlabel("Time (days)")
             ax2.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
-
+            ax2_yspan = np.abs(max(clearing_prices_down) - min(clearing_prices_down))
+            ax2.set_ylim([min(clearing_prices_down) - 0.05*ax2_yspan, max(clearing_prices_down) + 0.05*ax2_yspan])
+            
             fig.suptitle(f"{run_id} Expected vs recorded clearing prices. ({controller.market.date}, {controller.market.bidding_zone})\nExpectations made based on price covariances")
             ax1.set_title(market_type)
             fig.tight_layout()

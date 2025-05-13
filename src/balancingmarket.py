@@ -42,6 +42,7 @@ class BalancingMarket:
         self.optimistic         = self.market_settings['OPTIMISTIC']
         self.bid_price_limit    = self.market_settings['BID_PRICE_LIMIT']
         self.seed               = self.market_settings['SEED']
+        self.exact_estimation   = self.market_settings['EXACT_ESTIMATION']
         self.N = self.T * QUARTER_HOURS_PER_DAY
 
         self.market_type        = market_type
@@ -310,7 +311,7 @@ class BalancingMarket:
                                                    spot_prices=True)
 
 
-        clearing_price_estimator = EstimatorDF(f"{self.market_type} Clearing Price Estimator", dependent_true_data, dependent_training_data, independent_input_data, independent_training_data, dep_lags, indep_lags)
+        clearing_price_estimator = EstimatorDF(f"{self.market_type} Clearing Price Estimator", dependent_true_data, dependent_training_data, independent_input_data, independent_training_data, dep_lags, indep_lags, exact=self.exact_estimation)
 
         estimated_data = pd.concat([timeslots, clearing_price_estimator.estimated_df], axis=1).dropna().round(1)
         self.estimated_prices_data = estimated_data
