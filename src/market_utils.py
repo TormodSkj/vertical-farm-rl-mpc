@@ -1,21 +1,13 @@
-import matplotlib.pyplot as plt
-from tabulate import tabulate
 import os
 import numpy as np
-import json
-import hashlib
 import pandas as pd
-import casadi as ca
-import scipy as sp
 from globals import *
 import requests
 from bs4 import BeautifulSoup
-import csv
 import time
 from collections import defaultdict
 from tqdm import tqdm
 from datetime import datetime, timedelta
-import sys
 from utils import *
 
 

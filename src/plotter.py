@@ -3,13 +3,13 @@ from config import Config
 from settings import Settings
 from controller import Controller
 from model import *
-from market import Market
+# from market import Market
 from simulator import Simulator
 from utils import *
 import scipy.stats as stats
 from matplotlib.backends.backend_pdf import PdfPages
 import os
-from typing import List
+# from typing import List
 from tqdm import tqdm
 import shutil
 import time

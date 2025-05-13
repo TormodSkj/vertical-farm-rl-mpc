@@ -1,7 +1,6 @@
 import numpy as np
 import casadi as ca
 from market import Market
-from bid import Bid
 from globals import *
 from settings import Settings
 from balancingmarket import BalancingMarket

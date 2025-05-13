@@ -1,7 +1,5 @@
 import numpy as np
 import pandas as pd
-import casadi as ca
-import scipy as sp
 from globals import *
 from utils import *
 from tqdm import tqdm

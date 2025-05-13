@@ -1,12 +1,10 @@
 import numpy as np
 import pandas as pd
 import casadi as ca
-import scipy as sp
 from globals import *
 from utils import *
-from estimator import Estimator, EstimatorDF
+from estimator import EstimatorDF
 from market_utils import *
-from config import Config
 from settings import Settings
 
 class BalancingMarket:
