@@ -10,9 +10,9 @@
 ### Link:
  https://transparency.entsoe.eu/balancing/r3/cbmpsForAfrrStandardProduct/show
 ### Created:
- 2025-02-07
+ 2025-05-21
 ### Modified:
- 2025-02-07
+ 2025-05-21
 ### Columns:
  ISP (CET/CEST),Area,Reserve Type,Source,Type of Product,Price Type,Price Up (EUR/MWh),Price Down (EUR/MWh)
 
@@ -30,9 +30,9 @@
 ### Link:
  https://transparency.entsoe.eu/balancing/r3/cbmpsForAfrrStandardProduct/show
 ### Created:
- 2025-02-07
+ 2025-05-21
 ### Modified:
- 2025-02-07
+ 2025-05-21
 ### Columns:
  ISP (CET/CEST),Area,Reserve Type,Source,Type of Product,Price Type,Price Up (EUR/MWh),Price Down (EUR/MWh)
 
@@ -50,9 +50,9 @@
 ### Link:
  https://transparency.entsoe.eu/balancing/r3/cbmpsForAfrrStandardProduct/show
 ### Created:
- 2025-02-07
+ 2025-05-21
 ### Modified:
- 2025-02-07
+ 2025-05-21
 ### Columns:
  ISP (CET/CEST),Area,Reserve Type,Source,Type of Product,Price Type,Price Up (EUR/MWh),Price Down (EUR/MWh)
 
@@ -70,9 +70,9 @@
 ### Link:
  https://transparency.entsoe.eu/balancing/r3/cbmpsForAfrrStandardProduct/show
 ### Created:
- 2025-02-07
+ 2025-05-21
 ### Modified:
- 2025-02-07
+ 2025-05-21
 ### Columns:
  ISP (CET/CEST),Area,Reserve Type,Source,Type of Product,Price Type,Price Up (EUR/MWh),Price Down (EUR/MWh)
 
@@ -90,9 +90,9 @@
 ### Link:
  https://transparency.entsoe.eu/balancing/r3/cbmpsForAfrrStandardProduct/show
 ### Created:
- 2025-02-07
+ 2025-05-21
 ### Modified:
- 2025-02-07
+ 2025-05-21
 ### Columns:
  ISP (CET/CEST),Area,Reserve Type,Source,Type of Product,Price Type,Price Up (EUR/MWh),Price Down (EUR/MWh)
 
@@ -110,9 +110,9 @@
 ### Link:
  https://transparency.entsoe.eu/balancing/r3/cbmpsForAfrrStandardProduct/show
 ### Created:
- 2025-02-07
+ 2025-05-21
 ### Modified:
- 2025-02-07
+ 2025-05-21
 ### Columns:
  ISP (CET/CEST),Area,Reserve Type,Source,Type of Product,Price Type,Price Up (EUR/MWh),Price Down (EUR/MWh)
 

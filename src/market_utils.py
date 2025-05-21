@@ -730,7 +730,7 @@ def load_mfrr_CM_data(data_folder) -> pd.DataFrame:
     # Generate a complete time range
     full_time_range = pd.DataFrame({'Start Time': pd.date_range(start=merged_data['Start Time'].min(),
                                                                 end=merged_data['Start Time'].max(),
-                                                                freq='H')})
+                                                                freq='h')})
 
     # Merge while keeping all time slots and filling missing values with 0
     merged_data = full_time_range.merge(merged_data, on='Start Time', how='left').fillna(0)

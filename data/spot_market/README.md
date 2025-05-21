@@ -10,9 +10,9 @@
 ### Link:
  https://www.energy-charts.info/charts/price_spot_market/chart.htm?l=en&c=DK&interval=year&year=2024
 ### Created:
- 2025-03-10
+ 2025-05-21
 ### Modified:
- 2025-03-10
+ 2025-05-21
 ### Columns:
  Date (GMT+1), Non-Renewable, Renewable, Day Ahead Auction (DK1), Day Ahead Auction (DK2)
 
@@ -30,9 +30,9 @@
 ### Link:
  https://www.energy-charts.info/charts/price_spot_market/chart.htm?l=en&c=DK&interval=year&year=2025
 ### Created:
- 2025-03-10
+ 2025-05-21
 ### Modified:
- 2025-03-10
+ 2025-05-21
 ### Columns:
  Date (GMT+1), Non-Renewable, Renewable, Day Ahead Auction (DK1), Day Ahead Auction (DK2)
 
@@ -50,9 +50,9 @@
 ### Link:
  https://www.energy-charts.info/charts/price_spot_market/chart.htm?l=en&c=FI&interval=year&year=2024
 ### Created:
- 2025-03-10
+ 2025-05-21
 ### Modified:
- 2025-03-10
+ 2025-05-21
 ### Columns:
  Date (GMT+2), Nuclear, Non-Renewable, Renewable, Day Ahead Auction (FI)
 
@@ -70,9 +70,9 @@
 ### Link:
  https://www.energy-charts.info/charts/price_spot_market/chart.htm?l=en&c=FI&interval=year&year=2025
 ### Created:
- 2025-03-10
+ 2025-05-21
 ### Modified:
- 2025-03-10
+ 2025-05-21
 ### Columns:
  Date (GMT+2), Nuclear, Non-Renewable, Renewable, Day Ahead Auction (FI)
 
@@ -90,9 +90,9 @@
 ### Link:
  https://www.energy-charts.info/charts/price_spot_market/chart.htm?l=en&c=NO&interval=year&year=2024
 ### Created:
- 2025-03-10
+ 2025-05-21
 ### Modified:
- 2025-03-10
+ 2025-05-21
 ### Columns:
  Date (GMT+1), Non-Renewable, Renewable, Day Ahead Auction (NO1), Day Ahead Auction (NO2), Day Ahead Auction (NO2NSL), Day Ahead Auction (NO3), Day Ahead Auction (NO4), Day Ahead Auction (NO5)
 
@@ -110,9 +110,9 @@
 ### Link:
  https://www.energy-charts.info/charts/price_spot_market/chart.htm?l=en&c=NO&interval=year&year=2025
 ### Created:
- 2025-03-10
+ 2025-05-21
 ### Modified:
- 2025-03-10
+ 2025-05-21
 ### Columns:
  Date (GMT+1), Non-Renewable, Renewable, Day Ahead Auction (NO1), Day Ahead Auction (NO2), Day Ahead Auction (NO2NSL), Day Ahead Auction (NO3), Day Ahead Auction (NO4), Day Ahead Auction (NO5)
 
@@ -130,9 +130,9 @@
 ### Link:
  https://www.energy-charts.info/charts/price_spot_market/chart.htm?l=en&c=SE&interval=year&year=2024
 ### Created:
- 2025-03-10
+ 2025-05-21
 ### Modified:
- 2025-03-10
+ 2025-05-21
 ### Columns:
  Date (GMT+1), Nuclear, Non-Renewable, Renewable, Day Ahead Auction (SE1), Day Ahead Auction (SE2), Day Ahead Auction (SE3), Day Ahead Auction (SE4)
 
@@ -150,9 +150,9 @@
 ### Link:
  https://www.energy-charts.info/charts/price_spot_market/chart.htm?l=en&c=SE&interval=year&year=2025
 ### Created:
- 2025-03-10
+ 2025-05-21
 ### Modified:
- 2025-03-10
+ 2025-05-21
 ### Columns:
  Date (GMT+1), Nuclear, Non-Renewable, Renewable, Day Ahead Auction (SE1), Day Ahead Auction (SE2), Day Ahead Auction (SE3), Day Ahead Auction (SE4)
 

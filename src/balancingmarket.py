@@ -293,7 +293,7 @@ class BalancingMarket:
         end_date    = date + pd.DateOffset(self.T)
 
         training_start_date =  date + pd.DateOffset(minutes= 15 * training_window[0])
-        training_end_date =  date + pd.DateOffset(minutes= 15 * training_window[1])
+        training_end_date   =  date + pd.DateOffset(minutes= 15 * training_window[1])
 
 
         timeslots           = self.get_market_data(start_date = start_date, end_date = end_date, zone = self.bidding_zone,
@@ -331,6 +331,8 @@ class BalancingMarket:
         clearing_price_estimator.show_estimator_profile()
         clearing_price_estimator.measure_performance()
 
+        return
+
 
     def generate_activation_times(self, activation_chance=1, hourly_roll=False):
         dataset = self.market_data_full_set.copy()
@@ -354,14 +356,14 @@ class BalancingMarket:
 
                 if hourly_roll:
                     # Roll once per hour, but only where volume > 0
-                    hours = dataset[time_col].dt.floor('H')
+                    hours = dataset[time_col].dt.floor('h')
                     dataset['__hour'] = hours  # Temporary helper column
                     eligible_hours = hours[eligible]
                     unique_eligible_hours = eligible_hours.unique()
                     hour_randoms = {
                         hour: np.random.rand() < activation_chance for hour in unique_eligible_hours
                     }
-                    random_activation = hours.map(hour_randoms).fillna(False).astype(int)
+                    random_activation = hours.map(lambda h: hour_randoms.get(h, False)).astype(int)
                     activation = random_activation * eligible.astype(int)
                     dataset.drop(columns='__hour', inplace=True)  # Clean up
                 else:
@@ -427,10 +429,10 @@ class BalancingMarket:
         data = data.sort_values(by='Start Time')  # Ensure proper ordering
         inferred_freq = pd.infer_freq(data['Start Time'].iloc[:5])  # Check first few rows
 
-        if inferred_freq in ["H", "60T"]:  # If data is hourly, resample to 15-minute intervals
+        if inferred_freq in ["h", "60min"]:  # If data is hourly, resample to 15-minute intervals
             new_index = pd.date_range(start=data['Start Time'].min(), 
                                     end=data['Start Time'].max() + pd.Timedelta(hours=1) - pd.Timedelta(minutes=15),  
-                                    freq="15T")
+                                    freq="15min")
             data = data.set_index('Start Time').reindex(new_index, method='ffill').reset_index()
             data.rename(columns={'index': 'Start Time'}, inplace=True)
 

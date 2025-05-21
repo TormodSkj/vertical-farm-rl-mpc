@@ -324,7 +324,7 @@ class PlantModel:
         
         return g_eq, g_ineq
 
-    def get_bidding_constraints(self, g_bounded, N, U_nom, balancing_market: BalancingMarket, B_volumes = None, B_prices=None, B_volumes_lower_bound = None, B_prices_upper_bound = None):
+    def get_bidding_constraints(self, opti: ca.Opti, N, U_nom, balancing_market: BalancingMarket, B_volumes = None, B_prices=None, B_volumes_lower_bound = None, B_prices_upper_bound = None):
 
         lb_B_volumes, ub_B_volumes, lb_B_prices, ub_B_prices = self.get_bidding_bounds(N, U_nom, balancing_market)
         lb_B_volumes = lb_B_volumes if B_volumes_lower_bound is None else B_volumes_lower_bound
@@ -340,8 +340,11 @@ class PlantModel:
                     # g_bounded.append([lb_B_volumes[bid_param,k], B_volumes[bid_param,k], ub_B_volumes[bid_param,k]])
                     # g_bounded.append([lb_B_volumes[bid_param,k], B_volumes[bid_param,k], ub_B_volumes[bid_param,k]])
 
-                    g_bounded.append([0, B_volumes[bid_param,k] - lb_B_volumes[bid_param,k],   ca.inf, f"Lower bound on bid volumes at k = {k}"])
-                    g_bounded.append([0, - B_volumes[bid_param,k] + ub_B_volumes[bid_param,k], ca.inf, f"Upper bound on bid volumes at k = {k}"])
+                    # g_bounded.append([0, B_volumes[bid_param,k] - lb_B_volumes[bid_param,k],   ca.inf, f"Lower bound on bid volumes at k = {k}"])
+                    # g_bounded.append([0, - B_volumes[bid_param,k] + ub_B_volumes[bid_param,k], ca.inf, f"Upper bound on bid volumes at k = {k}"])
+                    
+                    opti.subject_to(opti.bounded(0, B_volumes[bid_param,k] - lb_B_volumes[bid_param,k],   ca.inf))
+                    opti.subject_to(opti.bounded(0, - B_volumes[bid_param,k] + ub_B_volumes[bid_param,k], ca.inf))
 
         if B_prices is not None:
             for k in range(N):
@@ -352,10 +355,10 @@ class PlantModel:
                     # g_bounded.append([lb_B_prices[bid_param,k], B_prices[bid_param,k], ub_B_prices[bid_param,k]])
                     # g_bounded.append([lb_B_prices[bid_param,k], B_prices[bid_param,k], ub_B_prices[bid_param,k]])
 
-                    g_bounded.append([0, B_prices[bid_param,k] - lb_B_prices[bid_param,k],   ca.inf, f"Lower bound on bid prices at k = {k}"])
-                    g_bounded.append([0, - B_prices[bid_param,k] + ub_B_prices[bid_param,k], ca.inf, f"Upper bound on bid prices at k = {k}"])
+                    opti.subject_to(opti.bounded(0, B_prices[bid_param,k] - lb_B_prices[bid_param,k],   ca.inf))
+                    opti.subject_to(opti.bounded(0, - B_prices[bid_param,k] + ub_B_prices[bid_param,k], ca.inf))
 
-        return g_bounded
+        return
     
 
     def get_process_constraints(self, controller, g_eq, g_ineq, X, U, Eps):
@@ -398,7 +401,7 @@ class PlantModel:
 
         return g_eq, g_ineq
     
-    def get_static_process_constraints(self, g_eq, g_bounded, N, dt, X, x0, U, Eps):
+    def get_static_process_constraints(self, opti: ca.Opti, N, dt, X, x0, U, Eps):
         '''Creates list of constraints for the mpc optimization problem'''
 
         U = U.reshape((1,-1))
@@ -408,10 +411,10 @@ class PlantModel:
         # Define the dynamic and control constraints
         for k in range(0,N):
             x_next = F(X[:, k], U[:,k])    
-            g_eq.append([X[:, k+1] - x_next, f"Model dynamics for k = {k}"])
+            opti.subject_to(X[:, k+1] - x_next == 0)
 
         # Initial state constraint
-        g_eq.append([X[:,0] - x0, f"Initial state constraint"])
+        opti.subject_to(X[:,0] - x0 == 0)
 
         ''' Inequality constraints: g_ineq[k] > 0 for all k '''
 
@@ -428,9 +431,9 @@ class PlantModel:
             # g_ineq.append(self.PPFD_max - U[:,k])
             # g_ineq.append(X[:,k])
 
-        return g_eq, g_bounded
+        return
     
-    def get_static_variable_bounds(self, g_bounded, N, dt, X, x0, U, Eps):
+    def get_static_variable_bounds(self, opti: ca.Opti, N, dt, X, x0, U, Eps):
 
         # slack_freshweight   = Eps[0]
         # slack_max_DLI       = Eps[1]
@@ -440,9 +443,9 @@ class PlantModel:
         # g_bounded.append([0, slack_max_DLI,     np.inf])
         # g_bounded.append([0, slack_min_DLI,     np.inf])
 
-        g_bounded.append([0, X,   ca.inf,           f"Bounds on X vector"])
-        g_bounded.append([0, Eps, ca.inf,           f"Bounds on Eps"])
-        g_bounded.append([0, U,   self.PPFD_max,    f"Bounds on U vector"])
+        opti.subject_to(opti.bounded(0, X,   ca.inf))
+        opti.subject_to(opti.bounded(0, Eps, ca.inf))
+        opti.subject_to(opti.bounded(0, U,   self.PPFD_max))
 
 
         # for k in range(U.shape[1]):
@@ -455,18 +458,19 @@ class PlantModel:
         #     g_bounded.append([0, X[:,k], ca.inf])
         #     # g_bounds.append([0,np.inf])
 
-        return g_bounded
+        return
 
 
 
-    def get_dynamic_process_constraints(self, g_eq, g_ineq, N, X, Eps, ref_weight, past_X = None):
+    def get_dynamic_process_constraints(self, opti: ca.Opti, N, X, Eps, ref_weight, past_X = None):
         '''Creates list of constraints for the mpc optimization problem'''
 
         slack_freshweight = Eps[0]
         slack_max_DLI = Eps[1]
         slack_min_DLI = Eps[2]
 
-        g_ineq.append([self.freshweight(X[:,N+1]) + slack_freshweight - ref_weight, f"Final freshweight constraint"])
+        # g_ineq.append([self.freshweight(X[:,N]) + slack_freshweight - ref_weight, f"Final freshweight constraint"])
+        opti.subject_to(0 <= self.freshweight(X[:,N]) + slack_freshweight - ref_weight)
 
         # DLI constraint
         if past_X is None:
@@ -475,8 +479,8 @@ class PlantModel:
                     # k = 96 +24, +48, +72 ...
                     LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
                     
-                    g_ineq.append([slack_max_DLI + self.DLI_max - LI, f"DLI constraint max for k = {k}"])
-                    g_ineq.append([slack_min_DLI + LI - self.DLI_min, f"DLI constraint min for k = {k}"])
+                    opti.subject_to(0 <= slack_max_DLI + self.DLI_max - LI)
+                    opti.subject_to(0 <= slack_min_DLI + LI - self.DLI_min)
         else:
             for k in range(N+1+past_X.shape[1]):
                 combined_X = ca.horzcat(past_X, X)
@@ -484,10 +488,10 @@ class PlantModel:
                     # k = 96 +24, +48, +72 ...
                     LI = (combined_X[2,k] - combined_X[2,k-QUARTER_HOURS_PER_DAY])
                     
-                    g_ineq.append([slack_max_DLI + self.DLI_max - LI, f"DLI constraint max for k = {k}"])
-                    g_ineq.append([slack_min_DLI + LI - self.DLI_min, f"DLI constraint min for k = {k}"])
+                    opti.subject_to(0 <= slack_max_DLI + self.DLI_max - LI)
+                    opti.subject_to(0 <= slack_min_DLI + LI - self.DLI_min)
 
-        return g_eq, g_ineq
+        return
 
     # def get_dynamic_bidding_constraints(self, g_eq, g_ineq, N_TH, B_volumes, B_prices, submitted_bids):
     #     '''Creates list of constraints for the mpc optimization problem'''

@@ -20,7 +20,7 @@ from matplotlib.patches import Patch
 
 
 
-import geopandas as gpd
+# import geopandas as gpd
 
 
 class Plotter():

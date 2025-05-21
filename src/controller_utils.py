@@ -70,7 +70,7 @@ class MPCSimulation():
         self.target_weight   = self.model.freshweight(self.target_X)
 
 
-        self.optimization_schedule_df = pd.DataFrame(columns=['day', 'qh', 'optimizer'] + [k+1 for k in range(self.N)], index=range(1, 2 + int(self.T) + int(np.ceil(self.N/self.N_iter)))).fillna(0)
+        self.optimization_schedule_df = pd.DataFrame(columns=['day', 'qh', 'optimizer'] + [k+1 for k in range(self.N)], index=range(1, 2 + int(self.T) + int(np.ceil(self.N/self.N_iter))), dtype=float).fillna(0)
         self.n_schedule_entries = 0
 
         return
@@ -221,7 +221,7 @@ class MPCSimulation():
             print(f"\nCM Solver failed, using last known values.\n{e}")
             self.terminate_simulation = True
             sol_CM              = opti_CM_copy.debug
-            if not self.surpress_output: check_violated_constraints(opti_CM_copy, opt_vars_CM)
+            if not self.surpress_output: sol_CM.show_infeasibilities()
         
         
         self.x_opt_CM            = sol_CM.value(opt_vars_CM['X'])
@@ -271,7 +271,7 @@ class MPCSimulation():
             print(f"\nAM Solver failed, using last known values.\n{e}")
             self.terminate_simulation   = True
             sol_AM                      = opti_AM_copy.debug
-            if not self.surpress_output: check_violated_constraints(opti_AM_copy, opt_vars_AM)
+            if not self.surpress_output: sol_AM.show_infeasibilities()
     
         self.x_opt_AM               = sol_AM.value(opt_vars_AM['X'])
         self.AM_bid_volumes_opt     = sol_AM.value(opt_vars_AM['B_volumes'])[:,:AM_N_horizon]
@@ -375,7 +375,7 @@ class MPCSimulation():
             print(f"\nCM Solver failed, using last known values.\n{e}")
             self.terminate_simulation = True
             sol_CM              = opti_CM_copy.debug
-            if not self.surpress_output: check_violated_constraints(opti_CM_copy, opt_vars_CM)
+            if not self.surpress_output: sol_CM.show_infeasibilities()
         
         
         self.x_opt_CM            = sol_CM.value(opt_vars_CM['X'])
@@ -503,7 +503,7 @@ class MPCSimulation():
             print(f"\nAM Solver failed, using last known values.\n{e}")
             self.terminate_simulation   = True
             sol_AM                      = opti_AM_copy.debug
-            if not self.surpress_output: check_violated_constraints(opti_AM_copy, opt_vars_AM)
+            if not self.surpress_output: sol_AM.show_infeasibilities()
     
         self.x_opt_AM               = sol_AM.value(opt_vars_AM['X'])
         self.AM_bid_volumes_opt     = sol_AM.value(opt_vars_AM['B_volumes'])[:,:self.AM_N_horizon]
@@ -730,18 +730,17 @@ def set_constraints(controller, market: Market, model: PlantModel, opti: ca.Opti
     CM_est_prices  = opt_vars['CM_est_prices']
     AM_est_prices  = opt_vars['AM_est_prices']
             
-    g_eq, g_bounded = [], []
 
     if opt_vars['opti_type'] == 'AM':
         U_nom       = opt_vars['U_nom']
         Req_volumes = opt_vars['Req_volumes']
         Max_prices  = opt_vars['Max_prices']
         U = model.get_u(N_TH, N_bids, U_nom=U_nom, B_volumes=B_volumes, B_prices=B_prices, spot_prices=spot_prices, balancing_market=market.AM, clearing_prices = AM_est_prices).reshape((1,-1))
-        g_eq, g_bounded = model.get_static_process_constraints(g_eq, g_bounded, N_TH, controller.dt, X, x0, U, Eps)
-        g_bounded = model.get_bidding_constraints(g_bounded, N_bids, U_nom, market.AM, B_prices = B_prices, B_volumes=B_volumes, 
-                                                                    B_volumes_lower_bound=Req_volumes, B_prices_upper_bound=Max_prices)
+        model.get_static_process_constraints(opti, N_TH, controller.dt, X, x0, U, Eps)
+        model.get_bidding_constraints(opti, N_bids, U_nom, market.AM, B_prices = B_prices, B_volumes=B_volumes, 
+                                        B_volumes_lower_bound=Req_volumes, B_prices_upper_bound=Max_prices)
         
-        g_bounded = model.get_static_variable_bounds(g_bounded, N_TH, controller.dt, X, x0, U, Eps)
+        model.get_static_variable_bounds(opti, N_TH, controller.dt, X, x0, U, Eps)
 
 
     elif opt_vars['opti_type'] == 'CM':
@@ -749,39 +748,15 @@ def set_constraints(controller, market: Market, model: PlantModel, opti: ca.Opti
         X_nom   = opt_vars['X_nom']
         Eps_nom = opt_vars['Eps_nom']
         U = model.get_u_CM(N_TH, N_bids, U_nom=U_nom, CM_B_volumes=B_volumes, CM_B_prices=B_prices, spot_prices=spot_prices, CM=market.CM, AM=market.AM, CM_clearing_prices=CM_est_prices).reshape((1,-1))
-        g_eq, g_bounded = model.get_static_process_constraints(g_eq, g_bounded, N_TH, controller.dt, X_nom, x0, U_nom, Eps_nom)
-        g_eq, g_bounded = model.get_static_process_constraints(g_eq, g_bounded, N_TH, controller.dt, X, x0, U, Eps)
-        g_bounded = model.get_bidding_constraints(g_bounded, N_bids, U_nom, market.CM, B_volumes = B_volumes, B_prices = B_prices)
+        model.get_static_process_constraints(opti, N_TH, controller.dt, X_nom, x0, U_nom, Eps_nom)
+        model.get_static_process_constraints(opti, N_TH, controller.dt, X, x0, U, Eps)
+        model.get_bidding_constraints(opti, N_bids, U_nom, market.CM, B_volumes = B_volumes, B_prices = B_prices)
     
-        g_bounded = model.get_static_variable_bounds(g_bounded, N_TH, controller.dt, X_nom, x0, U_nom, Eps_nom)
-        g_bounded = model.get_static_variable_bounds(g_bounded, N_TH, controller.dt, X, x0, U, Eps)
+        model.get_static_variable_bounds(opti, N_TH, controller.dt, X_nom, x0, U_nom, Eps_nom)
+        model.get_static_variable_bounds(opti, N_TH, controller.dt, X, x0, U, Eps)
 
     else:
         assert False, f'Inconsistent opti_type: {opt_vars["opti_type"]}'
-
-
-    # [opti.subject_to(equality_constraint == 0) for equality_constraint in g_eq]
-    # [opti.subject_to(inequality_constraint >= 0) for inequality_constraint in g_ineq]
-
-    g_labels = []
-
-    with tqdm(total=len(g_eq), desc=f"    MPC {opt_vars['opti_type']}: Adding equality constraints") as pbar:
-        for equality_constraint, label in g_eq:
-            opti.subject_to(equality_constraint == 0)
-            g_labels.append(label)
-            pbar.update(1)
-    
-    # with tqdm(total=len(g_ineq), desc=f"    MPC {opt_vars['opti_type']}: Adding inequality constraints") as pbar:
-    #     for inequality_constraint in g_ineq:
-    #         opti.subject_to(inequality_constraint >= 0)
-    #         pbar.update(1)
-
-    with tqdm(total=len(g_bounded), desc=f"    MPC {opt_vars['opti_type']}: Adding variable bounds") as pbar:
-        for lb, expr, ub, label in g_bounded:
-            # opti.subject_to(lb <= expr <= ub)
-            opti.subject_to(opti.bounded(lb,expr,ub))
-            g_labels.append(label)
-            pbar.update(1)
 
     return opti
 
@@ -804,17 +779,9 @@ def update_optimizer_CM_bids(controller, market: Market, model: PlantModel, opti
     CM_prices_up, CM_prices_down = market.CM.get_estimated_clearing_prices(start_date = MTU, n_data = N_TH)
     CM_prices = np.vstack((CM_prices_up, CM_prices_down))
 
-    g_eq, g_ineq = [], []
-    g_eq, g_ineq = model.get_dynamic_process_constraints(g_eq, g_ineq, N_TH, X,     Eps,     ref_weight, past_X = past_X)
-    g_eq, g_ineq = model.get_dynamic_process_constraints(g_eq, g_ineq, N_TH, X_nom, Eps_nom, ref_weight, past_X = past_X)
-    # g_eq, g_ineq = model.get_dynamic_bidding_constraints(g_eq, g_ineq, N_TH, B_volumes, B_prices, submitted_bids)
-    for equality_constraint, label   in g_eq:   
-        opti.subject_to(equality_constraint   == 0)
-        # opti.g_labels.append(label)
-    for inequality_constraint, label in g_ineq: 
-        opti.subject_to(inequality_constraint >= 0)
-        # opti.g_labels.append(label)
-
+    model.get_dynamic_process_constraints(opti, N_TH, X,     Eps,     ref_weight, past_X = past_X)
+    model.get_dynamic_process_constraints(opti, N_TH, X_nom, Eps_nom, ref_weight, past_X = past_X)
+    
     U = model.get_u_CM(N_TH, N_bids, U_nom, B_volumes, B_prices, spot_prices, CM = market.CM, AM = market.AM, CM_clearing_prices=Est_prices)
     
     # U = self.model.get_u(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market.CM)
@@ -864,16 +831,8 @@ def update_optimizer_AM_bids(controller, market: Market, model: PlantModel, opti
 
     N_bids = min(N_bids, N_TH)
 
-    g_eq, g_ineq = [], []
-    g_eq, g_ineq = model.get_dynamic_process_constraints(g_eq, g_ineq, N_TH, X, Eps, ref_weight, past_X = past_X)
-    # g_eq, g_ineq = model.get_dynamic_bidding_constraints(g_eq, g_ineq, N_TH, B_volumes, B_prices, submitted_bids)
-    for equality_constraint, label in g_eq:   
-        opti.subject_to(equality_constraint   == 0) 
-        # opti.g_labels.append(label)  
-    for inequality_constraint, label in g_ineq: 
-        opti.subject_to(inequality_constraint >= 0) 
-        # opti.g_labels.append(label)
-
+    model.get_dynamic_process_constraints(opti, N_TH, X, Eps, ref_weight, past_X = past_X)
+    
     U = model.get_u(N_TH, N_bids, U_nom, B_volumes, B_prices, spot_prices, market.AM, clearing_prices=Est_prices)
     J = model.elcost_obj_function(N_TH, spot_prices, U)\
         + model.AM_bidding_obj_function(N_bids, spot_prices, B_volumes, B_prices, market.AM, MTU_start=MTU)\

@@ -37,7 +37,7 @@ def main():
     settings.update_setting(SIM_NAME = SIM_NAME)
     settings.add_setting('controller', SEARCH_SIM_CACHE = SEARCH_CACHE, IMPORT_FILE = 'mfrr_experiment_1.json')
     settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH,
-                         CM_N_BIDS = 96, AM_N_BIDS = 48)
+                         CM_N_BIDS = 96, AM_N_BIDS = 0)
     settings.add_setting('market', SIMULATION_DATE = SIMULATION_DATE, OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE, 
                          AM_ACTIVATION_RATE  = 0.1, CM_ACTIVATION_RATE  = 0.1, EXACT_ESTIMATION = True)
     settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT, DLI_RESOLUTION = 2, DISCRETIZATION = DISCRETIZATION)
