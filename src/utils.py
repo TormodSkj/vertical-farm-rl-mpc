@@ -729,7 +729,8 @@ def get_DLI(X):
 
     for k in range(0, N):
         if k < QUARTER_HOURS_PER_DAY:
-            DLI[:,k] = (X[2,k] - X[2,0])
+            # DLI[:,k] = (X[2,k] - X[2,0])
+            DLI[:,k] = np.nan
         else:
             LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
             DLI[:,k] = LI

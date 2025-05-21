@@ -14,6 +14,11 @@ from tqdm import tqdm
 import shutil
 import time
 
+import matplotlib.colors as mcolors
+import seaborn as sns
+from matplotlib.patches import Patch
+
+
 
 import geopandas as gpd
 
@@ -255,6 +260,7 @@ class Plotter():
 
             self.plot_bidding_analysis  (run_id=run_id, pdf=pdf)
             self.plot_market_report     (run_id=run_id, pdf=pdf)
+            self.plot_mpc_iterations    (run_id=run_id, pdf=pdf)
             self.plot_spot_prices       (run_id=run_id, pdf=pdf)
 
         self.update_plot_log(run_id, dependencies)
@@ -902,6 +908,73 @@ class Plotter():
         self.update_plot_log(plot_name, self.common_dependencies)
 
 
+    def plot_mpc_iterations(self, plot_name='mpc_iterations', run_id=None, pdf=None):
+   
+        controller = self.controller
+        schedule_df = controller.mpc_schedules[run_id].fillna(0)
+
+        # Extract time slot columns
+        slot_cols = [col for col in schedule_df.columns if isinstance(col, int)]
+        opt_matrix = schedule_df[slot_cols].astype(int)
+
+        # Create color map and legend labels
+        legend_labels = {
+            0: "Not relevant",
+            1: "In optimization window",
+            2: "Submitting bid",
+            3: "Previously submitted (unresolved)",
+        }
+        colors = ["white", "#a6cee3", "#1f78b4", "#b2df8a"]
+        cmap = mcolors.ListedColormap(colors)
+        bounds = [-0.5, 0.5, 1.5, 2.5, 3.5]
+        norm = mcolors.BoundaryNorm(bounds, len(colors))
+
+        # Create figure
+        # fig, ax = plt.subplots(figsize=(max(10, len(slot_cols) * 0.5), max(4, len(opt_matrix) * 0.4)))
+        fig, ax = plt.subplots(figsize=self.aspect_ratio)
+
+        sns.heatmap(
+            opt_matrix,
+            cmap=cmap,
+            norm=norm,
+            cbar=False,  # Remove gradient colorbar
+            linewidths=0.5,
+            linecolor='gray',
+            xticklabels=slot_cols,
+            yticklabels=[
+                f"D-{int(schedule_df.loc[i, 'day']):02d}, QH-{int(schedule_df.loc[i, 'qh']):02d} {str(schedule_df.loc[i, 'optimizer']):>16}"
+                for i in schedule_df.index
+            ],
+            ax=ax
+        )
+
+        # Simplify x-axis: only show every Nth tick
+        show_every = max(1, len(slot_cols) // 20)
+        for idx, label in enumerate(ax.get_xticklabels()):
+            if idx % show_every != 0:
+                label.set_visible(False)
+            # else:
+                # label.set_rotation(45)
+
+        # Labels
+        ax.set_xlabel("Time Slot")
+        ax.set_ylabel("Optimization Step (Day-QH Optimizer)")
+        fig.suptitle("MPC Optimization Schedule")
+
+        # Custom legend (horizontal, on top)
+        legend_patches = [Patch(facecolor=cmap(i), edgecolor='black', label=legend_labels[i]) for i in legend_labels]
+        ax.legend(
+            handles=legend_patches,
+            loc='upper center',
+            bbox_to_anchor=(0.5, 1.1),
+            ncol=len(legend_labels),
+            frameon=False
+        )
+
+        fig.tight_layout()
+
+        self.save_plot(plot_name, fig=fig, run_id=run_id, pdf=pdf)
+        self.update_plot_log(plot_name, self.common_dependencies)
 
     def plot_spot_prices(self, run_id = None, pdf = None):
         

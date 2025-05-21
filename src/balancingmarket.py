@@ -460,7 +460,7 @@ class BalancingMarket:
 
 
     def subject_bids_to_market_data(self, MTU_start, Bid_volumes, Bid_prices, zone = None):
-        """
+        '''
         Submit time-indexed bids to the market and determine activations and earnings.
 
         Args:
@@ -472,7 +472,7 @@ class BalancingMarket:
             activations (np.ndarray): [2, N] array of 1s and 0s indicating when a bid was activated
             activated_volumes (np.ndarray): [2, N] array of activated volumes.
             earnings (np.ndarray): [2, N] array of earnings.
-        """
+        '''
 
         # Default values
         if zone     == None: zone   = self.bidding_zone

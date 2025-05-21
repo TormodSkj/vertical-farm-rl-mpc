@@ -68,7 +68,9 @@ class Settings():
         # MPC settings
         self.add_setting('mpc', 
                          MPC_TIMEHORIZON    = 1, 
-                         MPC_STEPLENGTH     = 0.5
+                         MPC_STEPLENGTH     = 0.5,
+                         CM_N_BIDS          = np.inf,
+                         AM_N_BIDS          = np.inf
                          )
 
         # Plotter settings

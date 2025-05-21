@@ -77,7 +77,7 @@ class Market:
         # AM_estimator_config = {'dep_lags': list(range(1,4)),      'indep_lags': list(range(1,4))}
 
         self.CM = BalancingMarket(settings, 'Capacity Market',   self.CM_data_full_set, data_resolution = 24, estimator_config = CM_estimator_config)
-        self.AM = BalancingMarket(settings, 'Activation Market', self.AM_data_full_set, data_resolution = 96, estimator_config = AM_estimator_config)
+        self.AM = BalancingMarket(settings, 'Activation Market', self.AM_data_full_set, data_resolution = 96, estimator_config= AM_estimator_config)
         self.balancing_markets['Capacity Market']   = self.CM
         self.balancing_markets['Activation Market'] = self.AM
 

@@ -98,7 +98,7 @@ class Controller():
 
         self.settings_data = {
             'general'    : settings.get_settings_group('general'),
-            'controller' : settings.get_settings_group('controller'),
+            'controller' : settings.get_settings_group('controller', 'mpc'),
             'model'      : settings.get_settings_group('plantmodel'),
             'market'     : settings.get_settings_group('market')
         }
@@ -130,6 +130,8 @@ class Controller():
 
         # Generate freshweight for the mpc bidding controller to use as reference trajectory
         self.fixed_light_schedule()   
+
+        self.mpc_schedules = {}
         
 
 
@@ -815,6 +817,8 @@ class Controller():
 
 
         end_time = time.time()
+
+        self.mpc_schedules[run_id] = sim.optimization_schedule_df
 
         CM_bid_volumes      = np.array(sim.CM_bids_log[:2, :]).reshape((2, -1))
         CM_bid_prices       = np.array(sim.CM_bids_log[2:4,:]).reshape((2, -1))

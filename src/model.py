@@ -324,7 +324,7 @@ class PlantModel:
         
         return g_eq, g_ineq
 
-    def get_bidding_constraints(self, g_eq, g_ineq, N, U_nom, balancing_market: BalancingMarket, B_volumes = None, B_prices=None, B_volumes_lower_bound = None, B_prices_upper_bound = None):
+    def get_bidding_constraints(self, g_bounded, N, U_nom, balancing_market: BalancingMarket, B_volumes = None, B_prices=None, B_volumes_lower_bound = None, B_prices_upper_bound = None):
 
         lb_B_volumes, ub_B_volumes, lb_B_prices, ub_B_prices = self.get_bidding_bounds(N, U_nom, balancing_market)
         lb_B_volumes = lb_B_volumes if B_volumes_lower_bound is None else B_volumes_lower_bound
@@ -333,16 +333,29 @@ class PlantModel:
         if B_volumes is not None:
             for k in range(N):
                 for bid_param in range(2):
-                    g_ineq.append(B_volumes[bid_param,k] - lb_B_volumes[bid_param,k])
-                    g_ineq.append(- B_volumes[bid_param,k] + ub_B_volumes[bid_param,k])
+                    # g_ineq.append(B_volumes[bid_param,k] - lb_B_volumes[bid_param,k])
+                    # g_ineq.append(- B_volumes[bid_param,k] + ub_B_volumes[bid_param,k])
+
+                    # g_bounded.append()
+                    # g_bounded.append([lb_B_volumes[bid_param,k], B_volumes[bid_param,k], ub_B_volumes[bid_param,k]])
+                    # g_bounded.append([lb_B_volumes[bid_param,k], B_volumes[bid_param,k], ub_B_volumes[bid_param,k]])
+
+                    g_bounded.append([0, B_volumes[bid_param,k] - lb_B_volumes[bid_param,k],   ca.inf, f"Lower bound on bid volumes at k = {k}"])
+                    g_bounded.append([0, - B_volumes[bid_param,k] + ub_B_volumes[bid_param,k], ca.inf, f"Upper bound on bid volumes at k = {k}"])
 
         if B_prices is not None:
             for k in range(N):
                 for bid_param in range(2):
-                    g_ineq.append(B_prices[bid_param,k] - lb_B_prices[bid_param,k])
-                    g_ineq.append(- B_prices[bid_param,k] + ub_B_prices[bid_param,k])
+                    # g_ineq.append(B_prices[bid_param,k] - lb_B_prices[bid_param,k])
+                    # g_ineq.append(- B_prices[bid_param,k] + ub_B_prices[bid_param,k])
 
-        return g_eq, g_ineq
+                    # g_bounded.append([lb_B_prices[bid_param,k], B_prices[bid_param,k], ub_B_prices[bid_param,k]])
+                    # g_bounded.append([lb_B_prices[bid_param,k], B_prices[bid_param,k], ub_B_prices[bid_param,k]])
+
+                    g_bounded.append([0, B_prices[bid_param,k] - lb_B_prices[bid_param,k],   ca.inf, f"Lower bound on bid prices at k = {k}"])
+                    g_bounded.append([0, - B_prices[bid_param,k] + ub_B_prices[bid_param,k], ca.inf, f"Upper bound on bid prices at k = {k}"])
+
+        return g_bounded
     
 
     def get_process_constraints(self, controller, g_eq, g_ineq, X, U, Eps):
@@ -385,12 +398,9 @@ class PlantModel:
 
         return g_eq, g_ineq
     
-    def get_static_process_constraints(self, g_eq, g_ineq, N, dt, X, x0, U, Eps):
+    def get_static_process_constraints(self, g_eq, g_bounded, N, dt, X, x0, U, Eps):
         '''Creates list of constraints for the mpc optimization problem'''
 
-        slack_freshweight = Eps[0]
-        slack_max_DLI = Eps[1]
-        slack_min_DLI = Eps[2]
         U = U.reshape((1,-1))
 
         F = self.casadi_function(dt=dt)
@@ -398,25 +408,55 @@ class PlantModel:
         # Define the dynamic and control constraints
         for k in range(0,N):
             x_next = F(X[:, k], U[:,k])    
-            g_eq.append(X[:, k+1] - x_next)
+            g_eq.append([X[:, k+1] - x_next, f"Model dynamics for k = {k}"])
 
         # Initial state constraint
-        g_eq.append(X[:,0] - x0)
+        g_eq.append([X[:,0] - x0, f"Initial state constraint"])
 
         ''' Inequality constraints: g_ineq[k] > 0 for all k '''
 
-        g_ineq.append(slack_freshweight)
-        g_ineq.append(slack_max_DLI)
-        g_ineq.append(slack_min_DLI)
+        # slack_freshweight = Eps[0]
+        # slack_max_DLI = Eps[1]
+        # slack_min_DLI = Eps[2]
+        # g_ineq.append(slack_freshweight)
+        # g_ineq.append(slack_max_DLI)
+        # g_ineq.append(slack_min_DLI)
 
         # Upper and lower bounds on X and U
-        for k in range(N):
-            g_ineq.append(U[k])
-            g_ineq.append(self.PPFD_max - U[:,k])
-            g_ineq.append(X[:,k])
+        # for k in range(N):
+            # g_ineq.append(U[k])
+            # g_ineq.append(self.PPFD_max - U[:,k])
+            # g_ineq.append(X[:,k])
 
-        return g_eq, g_ineq
+        return g_eq, g_bounded
     
+    def get_static_variable_bounds(self, g_bounded, N, dt, X, x0, U, Eps):
+
+        # slack_freshweight   = Eps[0]
+        # slack_max_DLI       = Eps[1]
+        # slack_min_DLI       = Eps[2]
+
+        # g_bounded.append([0, slack_freshweight, np.inf])
+        # g_bounded.append([0, slack_max_DLI,     np.inf])
+        # g_bounded.append([0, slack_min_DLI,     np.inf])
+
+        g_bounded.append([0, X, ca.inf,         f"Bounds on X vector"])
+        g_bounded.append([0, Eps, ca.inf,       f"Bounds on Eps"])
+
+        for k in range(U.shape[1]):
+            g_bounded.append([0, U[:,k], self.PPFD_max,  f"Bounds on U for k = {k}"])
+
+        # # Upper and lower bounds on X and U
+        # for k in range(N):
+        #     g_bounded.append([0, U[k], self.PPFD_max])
+        #     # g_bounded.append(self.PPFD_max - U[:,k])
+        #     g_bounded.append([0, X[:,k], ca.inf])
+        #     # g_bounds.append([0,np.inf])
+
+        return g_bounded
+
+
+
     def get_dynamic_process_constraints(self, g_eq, g_ineq, N, X, Eps, ref_weight, past_X = None):
         '''Creates list of constraints for the mpc optimization problem'''
 
@@ -424,7 +464,7 @@ class PlantModel:
         slack_max_DLI = Eps[1]
         slack_min_DLI = Eps[2]
 
-        g_ineq.append(self.freshweight(X[:,N]) + slack_freshweight - ref_weight)
+        g_ineq.append([self.freshweight(X[:,N]) + slack_freshweight - ref_weight, f"Final freshweight constraint"])
 
         # DLI constraint
         if past_X is None:
@@ -433,8 +473,8 @@ class PlantModel:
                     # k = 96 +24, +48, +72 ...
                     LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
                     
-                    g_ineq.append(slack_max_DLI + self.DLI_max - LI)
-                    g_ineq.append(slack_min_DLI + LI - self.DLI_min)
+                    g_ineq.append([slack_max_DLI + self.DLI_max - LI, f"DLI constraint max for k = {k}"])
+                    g_ineq.append([slack_min_DLI + LI - self.DLI_min, f"DLI constraint min for k = {k}"])
         else:
             for k in range(N+1+past_X.shape[1]):
                 combined_X = ca.horzcat(past_X, X)
@@ -442,10 +482,24 @@ class PlantModel:
                     # k = 96 +24, +48, +72 ...
                     LI = (combined_X[2,k] - combined_X[2,k-QUARTER_HOURS_PER_DAY])
                     
-                    g_ineq.append(slack_max_DLI + self.DLI_max - LI)
-                    g_ineq.append(slack_min_DLI + LI - self.DLI_min)
+                    g_ineq.append([slack_max_DLI + self.DLI_max - LI, f"DLI constraint max for k = {k}"])
+                    g_ineq.append([slack_min_DLI + LI - self.DLI_min, f"DLI constraint min for k = {k}"])
 
         return g_eq, g_ineq
+
+    # def get_dynamic_bidding_constraints(self, g_eq, g_ineq, N_TH, B_volumes, B_prices, submitted_bids):
+    #     '''Creates list of constraints for the mpc optimization problem'''
+
+    #     submitted_volumes   = submitted_bids[:2, :]
+    #     submitted_prices    = submitted_bids[2:4,:]
+
+    #     for k in range(submitted_bids.shape[1]):
+    #         for bid_param in range(2):
+    #             g_eq.append(B_volumes[bid_param,k] - submitted_volumes[bid_param,k])
+    #             g_eq.append(B_prices[bid_param,k] - submitted_prices[bid_param,k])
+
+
+    #     return g_eq, g_ineq
     
 
     def simulate_growth(self, x0, u):
@@ -464,8 +518,8 @@ class PlantModel:
 
 
     
-    def get_u(self, N, U_nom, B_volumes, B_prices, spot_prices, balancing_market: BalancingMarket, clearing_prices = None):
 
+    def get_u(self, N, N_bids, U_nom, B_volumes, B_prices, spot_prices, balancing_market: BalancingMarket, clearing_prices = None):
         U = np.zeros(N, type(U_nom))
         
         clearing_prices_up   = None if clearing_prices is None else clearing_prices[0,:].reshape((1,-1))
@@ -476,10 +530,15 @@ class PlantModel:
     
         for k in range(N):
 
-            P_tilde = B_volumes[1,k]*balancing_market.activation_prob_down(B_prices[1,k], spot_prices[k], clearing_prices_down[:,k], clearing_price_variance_down)\
-                    - B_volumes[0,k]*balancing_market.activation_prob_up(B_prices[0,k], spot_prices[k], clearing_prices_up[:,k], clearing_price_variance_up)
-            
-            u_tilde = 1000/self.C_conv_PPFD * P_tilde
+            if k < N_bids:
+
+                P_tilde = B_volumes[1,k]*balancing_market.activation_prob_down(B_prices[1,k], spot_prices[k], clearing_prices_down[:,k], clearing_price_variance_down)\
+                        - B_volumes[0,k]*balancing_market.activation_prob_up(B_prices[0,k], spot_prices[k], clearing_prices_up[:,k], clearing_price_variance_up)
+                
+                u_tilde = 1000/self.C_conv_PPFD * P_tilde
+
+            else:
+                u_tilde = 0
 
             U[k] = U_nom[:,k] + u_tilde
 
@@ -495,40 +554,103 @@ class PlantModel:
         return ca.vertcat(*U).reshape((1,-1))
     
     
-    def get_u_CM(self, N, U_nom, CM_B_volumes, CM_B_prices, spot_prices, CM: BalancingMarket, AM: BalancingMarket, CM_clearing_prices = None):
+    def get_u_CM(self, N, N_bids, U_nom, CM_B_volumes, CM_B_prices, spot_prices, CM: BalancingMarket, AM: BalancingMarket, CM_clearing_prices = None):
 
         assert CM_B_prices.shape[0] == CM_B_volumes.shape[0], 'Inconsitent sizes of bid arrays'
         assert CM_B_prices.shape[1] == CM_B_volumes.shape[1], 'Inconsitent sizes of bid arrays'
         U = np.zeros(N, type(U_nom))
     
-        CM_clearing_prices_up   = None if CM_clearing_prices is None else CM_clearing_prices[0,:].reshape((1,-1))
-        CM_clearing_prices_down = None if CM_clearing_prices is None else CM_clearing_prices[1,:].reshape((1,-1))
-        CM_clearing_price_variance_up, CM_clearing_price_variance_down = CM.get_estimated_clearing_price_variances()
-
-        # AM_clearing_prices_up   = None if AM_clearing_prices is None else AM_clearing_prices[0,:]
-        # AM_clearing_prices_down = None if AM_clearing_prices is None else AM_clearing_prices[1,:]
-        # AM_clearing_price_variance_up   = AM.estimated_price_variances[AM.bidding_zone]['Up']
-        # AM_clearing_price_variance_down = AM.estimated_price_variances[AM.bidding_zone]['Down']
-
-
         for k in range(N):
-            
-            CM_Activation_chance_up     = CM.activation_prob_up(CM_B_prices[0,k], spot_prices[k],   CM_clearing_prices_up[:,k],   CM_clearing_price_variance_up)
-            CM_Activation_chance_down   = CM.activation_prob_down(CM_B_prices[1,k], spot_prices[k], CM_clearing_prices_down[:,k], CM_clearing_price_variance_down)
-            CM_Volume_up                = CM_B_volumes[0,k]
-            CM_Volume_down              = CM_B_volumes[1,k]
 
-            AM_Demand_up     = AM.demand_prob_up(spot_prices[k])   # * 0.5 
-            AM_Demand_down   = AM.demand_prob_down(spot_prices[k]) # * 0.5
-    
-            P_tilde = CM_Activation_chance_down * AM_Demand_down * CM_Volume_down \
-                    - CM_Activation_chance_up   * AM_Demand_up   * CM_Volume_up
+            if k < N_bids:
+
+                CM_Volume_up     = CM_B_volumes[0,k]
+                CM_Volume_down   = CM_B_volumes[1,k]
+                AM_Demand_up     = AM.demand_prob_up(spot_prices[k])   # * 0.5 
+                AM_Demand_down   = AM.demand_prob_down(spot_prices[k]) # * 0.5
+        
+                # Activatio market participation does not require CM participation. 
+                # So chances of activation is not affected by CM_Activation_chance_up or CM_Activation_chance_down
+                P_tilde = AM_Demand_down * CM_Volume_down \
+                        - AM_Demand_up   * CM_Volume_up
+                                    
+
+                u_tilde = 1000/self.C_conv_PPFD * P_tilde
             
-            u_tilde = 1000/self.C_conv_PPFD * P_tilde
+            else:
+                u_tilde = 0
+
 
             U[k] = U_nom[:,k] + u_tilde
 
         return ca.vertcat(*U).reshape((1,-1))
+
+
+    # def get_u_hat(self, N, U_nom, CM_B_volumes, CM_B_prices, AM_B_volumes, AM_B_prices, spot_prices, CM: BalancingMarket, AM: BalancingMarket):
+    def get_u_hat(self, N, U_nom, CM_B_volumes, CM_B_prices, AM_B_volumes, AM_B_prices, CM_activations, AM_activations, spot_prices, CM_clearing_prices, AM_clearing_prices, CM: BalancingMarket, AM: BalancingMarket):
+
+        U = np.array([])
+    
+        for k in range(N):
+
+            # If AM market has been cleared for time k. We then KNOW u
+            if k < AM_activations.shape[1]:
+
+                volume_up   = AM_B_volumes[0,k]
+                volume_down = AM_B_volumes[1,k]
+
+                activation_chance_up    = AM_activations[0,k]
+                activation_chance_down  = AM_activations[1,k]
+
+            # If AM bids have been submitted for time k. We then calculate most likely u
+            elif k < AM_B_volumes.shape[1]:
+
+                volume_up   = AM_B_volumes[0,k]
+                volume_down = AM_B_volumes[1,k]
+        
+                bid_price_up   = AM_B_prices[0,k]
+                bid_price_down = AM_B_prices[1,k]
+                
+                activation_chance_up    = AM.activation_prob_up(bid_price_up,   spot_prices[k], AM_clearing_prices[0,k])
+                activation_chance_down  = AM.activation_prob_up(bid_price_down, spot_prices[k], AM_clearing_prices[1,k])
+
+
+            # If only CM market has been cleared.
+            elif k < CM_B_volumes.shape[1]:
+
+                volume_up   = CM_B_volumes[0,k]
+                volume_down = CM_B_volumes[1,k]
+                
+                activation_chance_up    = AM.demand_prob_up(spot_prices[k])
+                activation_chance_down  = AM.demand_prob_down(spot_prices[k])
+            
+            # This last one should never occur
+            else:
+                assert False, 'get_u_hat calculation failed. Calculation requested for time step without CM or AM bid submissions'
+
+
+            
+            # CM_A_up     = CM.activation_prob_up(spot_prices[k], CM_B_prices[0,k])
+            # CM_A_down   = CM.activation_prob_down(spot_prices[k], CM_B_prices[1,k])
+            # CM_Volume_up     = CM_B_volumes[0,k]
+            # CM_Volume_down   = CM_B_volumes[1,k]
+
+            # AM_A_up     = AM.activation_prob_up(spot_prices[k], AM_B_prices[0,k])
+            # AM_A_down   = AM.activation_prob_down(spot_prices[k], AM_B_prices[1,k])
+            # AM_Volume_up     = AM_B_volumes[0,k]
+            # AM_Volume_down   = AM_B_volumes[1,k]
+            
+            # P_tilde = AM_A_down*(CM_A_down * casadi_max(CM_Volume_down, AM_Volume_down) + (1-CM_A_down)*AM_Volume_down) \
+            #         - AM_A_up*(CM_A_up * casadi_max(CM_Volume_up, AM_Volume_up) + (1-CM_A_up)*AM_Volume_up)
+            P_tilde = volume_down * activation_chance_down - volume_up * activation_chance_up
+
+            u_tilde = 1000*P_tilde/self.C_conv_PPFD
+
+            U = np.append(U, U_nom[:,k] + u_tilde)
+
+        return ca.vertcat(*U).reshape((1,-1))
+
+
 
     def get_u_CM_AM(self, N, U_nom, CM_B_volumes, CM_B_prices, AM_B_volumes, AM_B_prices, spot_prices, CM: BalancingMarket, AM: BalancingMarket):
 
