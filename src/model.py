@@ -440,11 +440,13 @@ class PlantModel:
         # g_bounded.append([0, slack_max_DLI,     np.inf])
         # g_bounded.append([0, slack_min_DLI,     np.inf])
 
-        g_bounded.append([0, X, ca.inf,         f"Bounds on X vector"])
-        g_bounded.append([0, Eps, ca.inf,       f"Bounds on Eps"])
+        g_bounded.append([0, X,   ca.inf,           f"Bounds on X vector"])
+        g_bounded.append([0, Eps, ca.inf,           f"Bounds on Eps"])
+        g_bounded.append([0, U,   self.PPFD_max,    f"Bounds on U vector"])
 
-        for k in range(U.shape[1]):
-            g_bounded.append([0, U[:,k], self.PPFD_max,  f"Bounds on U for k = {k}"])
+
+        # for k in range(U.shape[1]):
+        #     g_bounded.append([0, U[:,k], self.PPFD_max,  f"Bounds on U for k = {k}"])
 
         # # Upper and lower bounds on X and U
         # for k in range(N):
@@ -464,7 +466,7 @@ class PlantModel:
         slack_max_DLI = Eps[1]
         slack_min_DLI = Eps[2]
 
-        g_ineq.append([self.freshweight(X[:,N]) + slack_freshweight - ref_weight, f"Final freshweight constraint"])
+        g_ineq.append([self.freshweight(X[:,N+1]) + slack_freshweight - ref_weight, f"Final freshweight constraint"])
 
         # DLI constraint
         if past_X is None:

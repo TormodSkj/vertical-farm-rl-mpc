@@ -937,8 +937,8 @@ class Plotter():
             opt_matrix,
             cmap=cmap,
             norm=norm,
-            cbar=False,  # Remove gradient colorbar
-            linewidths=0.5,
+            cbar=False,
+            linewidths=0.0,
             linecolor='gray',
             xticklabels=slot_cols,
             yticklabels=[
