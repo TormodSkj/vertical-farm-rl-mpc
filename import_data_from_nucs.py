@@ -1,7 +1,6 @@
 import os
 import numpy as np
 import pandas as pd
-from globals import *
 import requests
 from bs4 import BeautifulSoup
 import time

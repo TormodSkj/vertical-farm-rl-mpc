@@ -14,6 +14,7 @@ from datetime import datetime
 from tqdm import tqdm
 from typing import List
 from controller_utils import *
+import re
 
 class Controller():
     """
@@ -132,7 +133,8 @@ class Controller():
         self.fixed_light_schedule()   
 
         self.mpc_schedules = {}
-        
+
+        os.environ['IPO PT_IGNORE_STARTUP_BANNER'] = 'yes'
 
 
     def optimize_mfrr(self, run_id, refrun_id = 'fixed', plot_run = False):
@@ -617,8 +619,11 @@ class Controller():
     def setup_AM_optimizer(self, nx, nu, neps, N_horizon, opti_type: str):
         '''Creates opti variables. Creates opt_vars dictionaries containing opti symbolic optimization variables'''
 
+        surpress_banner = 'yes' if self.surpress_output else 'no'
+
         opti = ca.Opti()
-        opts = {'ipopt.print_level':0, 'print_time':0}
+        opts = {'ipopt': {'print_level': 0, 'sb': surpress_banner},
+                'print_time': False}
         opti.solver('ipopt', opts)
 
         X = opti.variable(nx, N_horizon+1)
@@ -851,7 +856,7 @@ class Controller():
             'AM': build_market_participation(AM_bid_volumes, AM_bid_prices, AM_bid_activations)
         }
         
-        self.store_run(run_id, dependencies, sol, X_log, U_log, U_nom=U_nom_log, refrun_id = target_run_id, market_data=market_data, plot_run=plot_run)
+        self.store_run(run_id, dependencies, sol, X_log, U_log, U_nom=U_nom_log, refrun_id = target_run_id, market_data=market_data, plot_run=plot_run, terminated_early=sim.terminate_simulation)
 
         if not self.surpress_output: 
             if sim.terminate_simulation: print(f'{run_id} | Terminated MPC simulation prematurely')
@@ -913,7 +918,7 @@ class Controller():
 
 
     def store_run(self, run_id, dependencies, sol, x, u, market_data: dict = {}, 
-                  U_nom = None, refrun_id = 'None', plot_run = False):
+                  U_nom = None, refrun_id = 'None', plot_run = False, terminated_early = False):
         '''
         Takes in run specifics and stores them as well as metrics in the `optimization_results` dictionary.
         If bids are specified, a balancingmarket must be given as well.
@@ -922,6 +927,8 @@ class Controller():
 
         run_id:
             - reference run: 
+            - metrics:
+                ...
             - markets:
                 - [CM/AM]:
                     - Bids:
@@ -954,9 +961,11 @@ class Controller():
         eps     = float(sol['eps'])
 
         metrics_data = {
-            'elapsed_time'  : sol['elapsed_time'],
-            'f'             : f,
-            'eps'           : eps
+            'elapsed_time'          : sol['elapsed_time'],
+            'f'                     : f,
+            'Ran Successfully'      : not terminated_early,
+            'Reached Weightgoal'    : eps < 1e-6,
+            'eps'                   : eps
         }
         
         metrics_data = self.model.get_metrics(metrics_data, self, run_id, x, u)
@@ -1813,7 +1822,48 @@ class Controller():
             json.dump(intensity_schedule, json_file, indent=4)
 
 
-        
+
+    def save_performance_to_csv(self, filename, run_id='all'):
+        output_directory = self.config.output_path
+        full_filename = f"{filename}.csv"
+        full_path = os.path.join(output_directory, full_filename)
+
+        if run_id == 'all': 
+            runs = list(self.optimization_results['runs'].keys())
+        else:
+            runs = [run_id]
+
+        all_entries = []
+
+        for run in runs:
+            sim_name = self.optimization_results['name']
+            sim_datetime = self.optimization_results['timestamp']  # when sim ran
+            sim_day = self.settings.market['SIMULATION_DATE']     # day being simulated
+            bidding_zone = self.settings.market['BIDDING_ZONE']
+
+            metrics_dict = self.optimization_results['runs'][run]['metrics']
+            row = {
+                'sim_name': sim_name,
+                'sim_date': sim_datetime,
+                'simulation_day': sim_day,
+                'bidding_zone': bidding_zone,
+                'run_id': run,
+            }
+            row.update(metrics_dict)
+            all_entries.append(row)
+
+        df_new = pd.DataFrame(all_entries)
+
+        # Append or create file
+        if os.path.exists(full_path):
+            df_existing = pd.read_csv(full_path)
+            df_combined = pd.concat([df_existing, df_new], ignore_index=True)
+        else:
+            df_combined = df_new
+
+        df_combined.to_csv(full_path, index=False)
+        for run in runs:
+            print(f"Rundata from sim:{self.sim_name} run: {run} saved to {full_path}")
 
 
     def status_report(self):

@@ -31,7 +31,7 @@ class BalancingMarket:
         
         self.settings       = settings
 
-        self.market_settings = settings.get_settings_group('general', 'market')
+        self.market_settings = settings.get_settings_group('options', 'general', 'market')
 
         self.T                  = self.market_settings['SIMULATION_LENGTH']
         self.dt                 = self.market_settings['SIM_TIMEDELTA']
@@ -41,6 +41,7 @@ class BalancingMarket:
         self.bid_price_limit    = self.market_settings['BID_PRICE_LIMIT']
         self.seed               = self.market_settings['SEED']
         self.exact_estimation   = self.market_settings['EXACT_ESTIMATION']
+        self.surpress_output    = self.market_settings['SURPRESS_OUTPUT']
         self.N = self.T * QUARTER_HOURS_PER_DAY
 
         self.market_type        = market_type
@@ -160,6 +161,7 @@ class BalancingMarket:
     
 
     def get_clearing_prices(self, date=None, n_days = None, zone = None):
+        # TODO Standardize function with updated input format
         if zone     == None: zone   = self.bidding_zone
 
         data = self.get_market_data(start_date=date, n_days=n_days, zone=zone, 
@@ -185,11 +187,12 @@ class BalancingMarket:
             (est_prices_full_set['Start Time']   <  end_date) 
             ]
         
-        estimated_clearing_prices_up   = np.array(est_prices_working_set[f'{zone} Up Price']).reshape((1,-1))
-        estimated_clearing_prices_down = np.array(est_prices_working_set[f'{zone} Down Price']).reshape((1,-1))
+        estimated_clearing_prices_up   = np.clip(np.array(est_prices_working_set[f'{zone} Up Price']).reshape((1,-1)), -self.bid_price_limit, self.bid_price_limit)
+        estimated_clearing_prices_down = np.clip(np.array(est_prices_working_set[f'{zone} Down Price']).reshape((1,-1)), -self.bid_price_limit, self.bid_price_limit)
 
         return estimated_clearing_prices_up, estimated_clearing_prices_down
 
+    '''
     def get_predicted_clearing_prices(self, current_MTU=None, n_data = None, zone = None, plot = False):
 
         if current_MTU == None: current_MTU = self.date
@@ -250,7 +253,7 @@ class BalancingMarket:
 
 
         return predicted_prices_up, predicted_prices_down
-
+    '''
 
 
     def get_estimated_clearing_price_variances(self, zone = None):
@@ -308,8 +311,11 @@ class BalancingMarket:
         independent_training_data    = self.get_market_data(start_date = training_start_date, end_date = training_end_date, zone = self.bidding_zone,
                                                    spot_prices=True)
 
+        if not self.exact_estimation:
+            assert not dependent_training_data.empty and not independent_training_data.empty,   f"{self.market_type} Estimator training sets are empty. Likely missing data from {training_start_date} to {training_end_date}"
+            assert not dependent_true_data.empty and not independent_input_data.empty,          f"{self.market_type} Estimator reference sets are empty. Likely missing data from {start_date} to {end_date}"
 
-        clearing_price_estimator = EstimatorDF(f"{self.market_type} Clearing Price Estimator", dependent_true_data, dependent_training_data, independent_input_data, independent_training_data, dep_lags, indep_lags, exact=self.exact_estimation)
+        clearing_price_estimator = EstimatorDF(f"{self.market_type} Clearing Price Estimator", dependent_true_data, dependent_training_data, independent_input_data, independent_training_data, dep_lags, indep_lags, exact=self.exact_estimation, surpress_output=self.surpress_output)
 
         estimated_data = pd.concat([timeslots, clearing_price_estimator.estimated_df], axis=1).dropna().round(1)
         self.estimated_prices_data = estimated_data
@@ -328,8 +334,10 @@ class BalancingMarket:
         self.estimated_price_variances = estimated_price_variances
     
         self.clearing_price_estimator = clearing_price_estimator
-        clearing_price_estimator.show_estimator_profile()
-        clearing_price_estimator.measure_performance()
+        
+        if not self.surpress_output: 
+            clearing_price_estimator.show_estimator_profile()
+            clearing_price_estimator.measure_performance()
 
         return
 

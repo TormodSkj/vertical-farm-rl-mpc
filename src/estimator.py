@@ -305,7 +305,7 @@ class EstimatorDF:
     estimated_data: np.ndarray
 
     def __init__(self, name, x_truth_df: pd.DataFrame, x_training_df: pd.DataFrame, y_input_df: pd.DataFrame = None,  y_training_df: pd.DataFrame = None,
-                 xlags=None, ylags=None, exact=False, show_output = False):
+                 xlags=None, ylags=None, exact=False, surpress_output = False):
         assert isinstance(x_truth_df, pd.DataFrame), "x_df must be a pandas DataFrame"
         assert isinstance(x_training_df, pd.DataFrame), "x_df must be a pandas DataFrame"
         if y_input_df is not None:
@@ -338,10 +338,12 @@ class EstimatorDF:
         self.rmse_scores = None
 
         self.name = name
-        self.show_output = show_output
+        self.surpress_output = surpress_output
 
-        self.update_covariances()
-        self.build_stable_covariances()
+        if not self.exact:
+            self.update_covariances()
+            self.build_stable_covariances()
+            
         self.calculate_estimate()
 
     def build_lagged_matrix(self, df, lags, prefix):
@@ -379,7 +381,8 @@ class EstimatorDF:
         selected_lags = []
 
 
-        with tqdm(total = total_vars - nx, desc=f"Estimator {self.name} Building stable covariance matrix") as pbar:
+        progress_bar = tqdm if not self.surpress_output else dummy_tqdm
+        with progress_bar(total = total_vars - nx, desc=f"Estimator {self.name} Building stable covariance matrix") as pbar:
             for i in range(nx, total_vars):
                 if Pyy.size == 0:
                     candidate = np.array([[self.covariance_matrix[i, i]]])

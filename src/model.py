@@ -189,8 +189,10 @@ class PlantModel:
 
         '''Calculate freshweight based on plant dry weight'''
 
-        x_sdw  = x[0]
-        x_nsdw = x[1]
+        x = x.reshape((self.nx, -1))
+
+        x_sdw  = x[0,:]
+        x_nsdw = x[1,:]
 
         x_dw = x_sdw + x_nsdw
         x_dw_plant = x_dw/self.PCD
@@ -327,21 +329,12 @@ class PlantModel:
     def get_bidding_constraints(self, opti: ca.Opti, N, U_nom, balancing_market: BalancingMarket, B_volumes = None, B_prices=None, B_volumes_lower_bound = None, B_prices_upper_bound = None):
 
         lb_B_volumes, ub_B_volumes, lb_B_prices, ub_B_prices = self.get_bidding_bounds(N, U_nom, balancing_market)
-        lb_B_volumes = lb_B_volumes if B_volumes_lower_bound is None else B_volumes_lower_bound
-        ub_B_prices = ub_B_prices   if B_prices_upper_bound  is None else B_prices_upper_bound
+        if B_volumes_lower_bound is not None :   lb_B_volumes    = B_volumes_lower_bound
+        if B_prices_upper_bound  is not None:    ub_B_prices     = B_prices_upper_bound
 
         if B_volumes is not None:
             for k in range(N):
                 for bid_param in range(2):
-                    # g_ineq.append(B_volumes[bid_param,k] - lb_B_volumes[bid_param,k])
-                    # g_ineq.append(- B_volumes[bid_param,k] + ub_B_volumes[bid_param,k])
-
-                    # g_bounded.append()
-                    # g_bounded.append([lb_B_volumes[bid_param,k], B_volumes[bid_param,k], ub_B_volumes[bid_param,k]])
-                    # g_bounded.append([lb_B_volumes[bid_param,k], B_volumes[bid_param,k], ub_B_volumes[bid_param,k]])
-
-                    # g_bounded.append([0, B_volumes[bid_param,k] - lb_B_volumes[bid_param,k],   ca.inf, f"Lower bound on bid volumes at k = {k}"])
-                    # g_bounded.append([0, - B_volumes[bid_param,k] + ub_B_volumes[bid_param,k], ca.inf, f"Upper bound on bid volumes at k = {k}"])
                     
                     opti.subject_to(opti.bounded(0, B_volumes[bid_param,k] - lb_B_volumes[bid_param,k],   ca.inf))
                     opti.subject_to(opti.bounded(0, - B_volumes[bid_param,k] + ub_B_volumes[bid_param,k], ca.inf))
@@ -349,11 +342,6 @@ class PlantModel:
         if B_prices is not None:
             for k in range(N):
                 for bid_param in range(2):
-                    # g_ineq.append(B_prices[bid_param,k] - lb_B_prices[bid_param,k])
-                    # g_ineq.append(- B_prices[bid_param,k] + ub_B_prices[bid_param,k])
-
-                    # g_bounded.append([lb_B_prices[bid_param,k], B_prices[bid_param,k], ub_B_prices[bid_param,k]])
-                    # g_bounded.append([lb_B_prices[bid_param,k], B_prices[bid_param,k], ub_B_prices[bid_param,k]])
 
                     opti.subject_to(opti.bounded(0, B_prices[bid_param,k] - lb_B_prices[bid_param,k],   ca.inf))
                     opti.subject_to(opti.bounded(0, - B_prices[bid_param,k] + ub_B_prices[bid_param,k], ca.inf))
@@ -693,7 +681,7 @@ class PlantModel:
         U_nom = U_nom.reshape((1,-1))                                                  # Ensure correct dimension
 
         lb_B_prices = - balancing_market.bid_price_limit * ca.DM.ones(2, N)
-        ub_B_prices = balancing_market.bid_price_limit * ca.DM.ones(2, N) # Bid price up
+        ub_B_prices = balancing_market.bid_price_limit * ca.DM.ones(2, N)
         
         lb_B_volumes = ca.DM.zeros(2, N)
         ub_B_volumes = ca.vertcat(self.C_conv_PPFD * U_nom/1000,                       # Bid vol up

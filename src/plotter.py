@@ -273,6 +273,7 @@ class Plotter():
         t           = self.controller.t
         N           = self.controller.N
         spot_prices = self.controller.spot_prices
+        t_ticks     = np.arange(int(max(t)+1))
 
         subplots = {}
         markets = list(controller.optimization_results['runs'][run_id]['markets'].keys())
@@ -339,18 +340,21 @@ class Plotter():
             ax1.set_xlabel("Time (days)")
             ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
             ax1.set_ylim([-1.1*controller.model.P_cap_max, 1.1*controller.model.P_cap_max])
+            ax1.set_xticks(t_ticks)
 
             ax2.fill_between(t, 0, filtered_bid_prices_up, color='grey', label="Submitted", alpha=0.4, step='post')
             ax2.fill_between(t, 0, bid_prices_up_activated, color='blue', label="Activated", alpha=0.4, step='post')
             ax2.set_ylabel("Bid Price Up (€/MW)")
             ax2.set_xlabel("Time (days)")
             ax2.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+            ax2.set_xticks(t_ticks)
 
             ax3.fill_between(t, 0, filtered_bid_prices_down, color='grey', label="Submitted", alpha=0.4, step='post')
             ax3.fill_between(t, 0, bid_prices_down_activated, color='red', label="Activated", alpha=0.4, step='post')
             ax3.set_ylabel("Bid Price Down (€/MW)")
             ax3.set_xlabel("Time (days)")
             ax3.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+            ax3.set_xticks(t_ticks)
 
             fig.suptitle(f"{run_id} activated prices and volumes. ({controller.market.date}, {controller.market.bidding_zone})")
             ax1.set_title(market_type)
@@ -386,8 +390,9 @@ class Plotter():
             ax1.set_ylabel("Price Up (€/MW)")
             ax1.set_xlabel("Time (days)")
             ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
-            ax1_yspan = np.abs(max(clearing_prices_up) - min(clearing_prices_up))
+            ax1_yspan = max(np.abs(max(clearing_prices_up) - min(clearing_prices_up)), 100)
             ax1.set_ylim([min(clearing_prices_up) - 0.05*ax1_yspan, max(clearing_prices_up) + 0.05*ax1_yspan])
+            ax1.set_xticks(t_ticks)
 
             ax2.fill_between(t, 0, np.where(activations_down > 0,     clearing_prices_down, 0), color='limegreen', alpha=0.4, label="Available Activations", step='post')
             ax2.fill_between(t, 0, np.where(bid_activations_down > 0, clearing_prices_down, 0), color='red', label="Activated Bids", alpha=0.4, step='post')
@@ -397,8 +402,9 @@ class Plotter():
             ax2.set_ylabel("Price Down (€/MW)")
             ax2.set_xlabel("Time (days)")
             ax2.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
-            ax2_yspan = np.abs(max(clearing_prices_down) - min(clearing_prices_down))
+            ax2_yspan = max(np.abs(max(clearing_prices_down) - min(clearing_prices_down)), 100)
             ax2.set_ylim([min(clearing_prices_down) - 0.05*ax2_yspan, max(clearing_prices_down) + 0.05*ax2_yspan])
+            ax2.set_xticks(t_ticks)
             
             fig.suptitle(f"{run_id} Expected vs recorded clearing prices. ({controller.market.date}, {controller.market.bidding_zone})\nExpectations made based on price covariances")
             ax1.set_title(market_type)
@@ -553,6 +559,8 @@ class Plotter():
             ax1.set_xlabel("Time (days)")
             ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
             ax1.set_ylim([-controller.model.PPFD_max*0.10, controller.model.PPFD_max*1.10])
+            ax1.set_xticks(np.arange(np.floor(t[0]), np.ceil(t[-1]) + 1, 1))
+            ax1.set_xticks(t_ticks)
 
             fig.suptitle(f"{run_id} Light schedule before and after activations ({controller.market.date}, {controller.market.bidding_zone})\nExpectations made based on price covariances")
             ax1.set_title(market_type)
@@ -577,6 +585,7 @@ class Plotter():
         N           = self.controller.N
         spot_prices = self.controller.spot_prices
         zone        = market.bidding_zone
+        t_ticks     = np.arange(int(max(t)+1))
 
 
         subplots = {}
@@ -636,6 +645,7 @@ class Plotter():
             ax1.set_ylabel("Power (MW)")
             ax1.set_xlabel("Time")
             ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+            ax1.set_xticks(t_ticks)
 
             fig.suptitle(f"{run_id} volumes in MW ({controller.market.date}, {controller.market.bidding_zone})")
             ax1.set_title(market_type)
@@ -659,6 +669,7 @@ class Plotter():
             ax1.set_ylabel("Bidding Price (€/MW)")
             ax1.tick_params(axis='y')
             ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+            ax1.set_xticks(t_ticks)
 
             fig.suptitle(f"{run_id} Bidding Prices and Spot Prices in €/MW ({controller.market.date}, {controller.market.bidding_zone})")
             ax1.set_title(market_type)
@@ -687,6 +698,8 @@ class Plotter():
             ax2.set_xlabel("Time (days)")
             ax1.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
             ax2.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+            ax1.set_xticks(t_ticks)
+            ax2.set_xticks(t_ticks)
 
             fig.suptitle(f"{run_id} Activation Chances ({controller.market.date}, {controller.market.bidding_zone}) \nBar heights indicate expected activation probabilities per bid. Activated bids are highlighted in dark.")
             ax1.set_title(market_type)
@@ -744,6 +757,7 @@ class Plotter():
             ax1.set_ylabel("Expected Bid impact (MW)")
             ax1.set_xlabel("Time (days)")
             ax1.legend(title = 'Direction', loc='center left', bbox_to_anchor=(1.0, 0.5))
+            ax1.set_xticks(t_ticks)
 
             title = f"{run_id} Expected consumption impact of bids (MW) ({controller.market.date}, {controller.market.bidding_zone})"
             
@@ -919,14 +933,21 @@ class Plotter():
 
         # Create color map and legend labels
         legend_labels = {
-            0: "Not relevant",
-            1: "In optimization window",
-            2: "Submitting bid",
-            3: "Previously submitted (unresolved)",
+            0:  "Not relevant",
+            10: "In CM optimization window",
+            11: "CM bid submissions",
+            12: "Planned CM bids",
+            13: "Previously submitted CM bid (Unresolved)",
+            20: "In AM optimization window",
+            21: "AM bid submissions",
+            22: "Planned AM bids",
+            23: "Previously submitted AM bid (Unresolved)"
         }
-        colors = ["white", "#a6cee3", "#1f78b4", "#b2df8a"]
+        # colors = ["white", "#a6cee3", "#1f78b4", "#b2df8a"]
+        colors = ["white", "lightgray", "navy", "lightskyblue", "#b2df8a", "lightgray", "maroon", "coral", "#b2df8a"]
         cmap = mcolors.ListedColormap(colors)
-        bounds = [-0.5, 0.5, 1.5, 2.5, 3.5]
+        state_values = sorted(legend_labels.keys())
+        bounds = [val - 0.5 for val in state_values] + [state_values[-1] + 0.5]
         norm = mcolors.BoundaryNorm(bounds, len(colors))
 
         # Create figure
@@ -942,27 +963,31 @@ class Plotter():
             linecolor='gray',
             xticklabels=slot_cols,
             yticklabels=[
-                f"D-{int(schedule_df.loc[i, 'day']):02d}, QH-{int(schedule_df.loc[i, 'qh']):02d} {str(schedule_df.loc[i, 'optimizer']):>16}"
+                f"D-{int(schedule_df.loc[i, 'day']):02d}, QH-{int(schedule_df.loc[i, 'qh']):02d} {str(schedule_df.loc[i, 'optimizer']):<14}"
                 for i in schedule_df.index
             ],
             ax=ax
         )
 
         # Simplify x-axis: only show every Nth tick
-        show_every = max(1, len(slot_cols) // 20)
+        show_every = 16
         for idx, label in enumerate(ax.get_xticklabels()):
             if idx % show_every != 0:
                 label.set_visible(False)
-            # else:
-                # label.set_rotation(45)
 
         # Labels
+        # ax.set_aspect(self.aspect_ratio[0]/self.aspect_ratio[1])
         ax.set_xlabel("Time Slot")
         ax.set_ylabel("Optimization Step (Day-QH Optimizer)")
         fig.suptitle("MPC Optimization Schedule")
 
         # Custom legend (horizontal, on top)
-        legend_patches = [Patch(facecolor=cmap(i), edgecolor='black', label=legend_labels[i]) for i in legend_labels]
+        state_to_color_idx = {val: idx for idx, val in enumerate(state_values)}
+        legend_patches = [
+            Patch(facecolor=cmap(state_to_color_idx[i]), edgecolor='black', label=legend_labels[i])
+            for i in legend_labels
+        ]
+
         ax.legend(
             handles=legend_patches,
             loc='upper center',

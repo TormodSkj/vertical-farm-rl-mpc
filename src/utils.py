@@ -9,6 +9,13 @@ import casadi as ca
 import scipy as sp
 from globals import *
 from datetime import datetime
+from contextlib import contextmanager
+
+
+@contextmanager
+def dummy_tqdm(*args, **kwargs):
+    yield type('', (), {'update': lambda self, n: None})()
+
 
 
 def plotting(t, timeseries, filename, folder = 'plots'):

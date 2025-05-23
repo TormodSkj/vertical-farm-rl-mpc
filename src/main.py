@@ -7,20 +7,22 @@ from plotter import Plotter
 import numpy as np
 from globals import *
 from simulator import Simulator
+from datetime import datetime, timedelta
+
 # from utils import vertigrow_calculate_energy_consumption, plot_balancing_market_earnings_upper_bounds
 
-SIM_NAME            = "Full_MPC_7_day_2"
-SIMULATION_LENGTH   = 6
+SIM_NAME            = "Crash_test_DK1_2024-12-16"
+SIMULATION_LENGTH   = 7
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
-SIMULATION_DATE     = '2024-10-13'
-BIDDING_ZONE        = 'SE1'
+SIMULATION_DATE     = '2024-12-16'
+BIDDING_ZONE        = 'DK1'
 OPTIMISTIC          = 1
 SEARCH_CACHE        = 0
 SEARCH_PLOT_CACHE   = 0
 
 MPC_TIMEHORIZON     = 3
-MPC_STEPLENGTH      = 16/96
+MPC_STEPLENGTH      = 12/96
 
 DISCRETIZATION      = 'fe'
 
@@ -34,12 +36,12 @@ def main():
 
     ''' CREATING OBJECTS '''
     settings = Settings('general', SIMULATION_LENGTH = SIMULATION_LENGTH)
-    settings.update_setting(SIM_NAME = SIM_NAME)
+    settings.update_setting(SIM_NAME = SIM_NAME, SURPRESS_OUTPUT = False)
     settings.add_setting('controller', SEARCH_SIM_CACHE = SEARCH_CACHE, IMPORT_FILE = 'mfrr_experiment_1.json')
     settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH,
-                         CM_N_BIDS = 96, AM_N_BIDS = 0)
+                         CM_N_BIDS = 96, AM_N_BIDS = 48)
     settings.add_setting('market', SIMULATION_DATE = SIMULATION_DATE, OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE, 
-                         AM_ACTIVATION_RATE  = 0.1, CM_ACTIVATION_RATE  = 0.1, EXACT_ESTIMATION = True)
+                         AM_ACTIVATION_RATE  = 1, CM_ACTIVATION_RATE  = 1, EXACT_ESTIMATION = False)
     settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT, DLI_RESOLUTION = 2, DISCRETIZATION = DISCRETIZATION)
     settings.add_setting('plotter', SEARCH_PLOT_CACHE = SEARCH_PLOT_CACHE, PLOT_EXPORT_TYPE='pdf', FILTER_BIDS = True, PLOT_ASPECT_RATIO = (14, 6))
 
@@ -63,54 +65,15 @@ def main():
     ''' OPTIMIZAION '''
     
     # '''
-    # controller.import_light_schedule('imported', plot_run = True)
-
-    # controller.generate_true_optimum_BL_CM_AM('MARI_opt', plot_run = True)
     controller.optimize_MPC_complete('complete_MPC', 'fixed', plot_run = True)
-    # simulator.apply_mfrr_clearing_prices('complete_MPC_applied', 'complete_MPC', plot_run = True)
-
-
-    # controller.optimize_spotprice('spot_opt', 'None')         #
-    # controller.optimize_mfrr('mfrr_opt', 'spot_opt', plot_run=True)  #
-    # simulator.apply_mfrr_clearing_prices('mfrr_applied', 'mfrr_opt', plot_run=True)
-    
-    # controller.optimize_AM_mpc('mfrr_mpc')
-    # simulator.apply_mfrr_clearing_prices('apply_prices_mpc', 'mfrr_mpc')
-
-    # controller.optimize_AM_mpc('mfrr_mpc_spot', 'spot_opt')
-    # simulator.apply_mfrr_clearing_prices('apply_prices_mpc_spot', 'mfrr_mpc_spot')
-
-    # controller.generate_true_optimum_AM('abs_opt', 'spot_opt')
-    # simulator.apply_mfrr_clearing_prices('abs_applied', 'abs_opt')
-
-    # controller.generate_true_optimum_CM('optimal_CM', plot_run=True)
-    # controller.generate_true_optimum_AM('optimal_AM', 'optimal_CM', plot_run = True)
-    # simulator.apply_mfrr_clearing_prices('abs_applied', 'abs_opt')
-
-    # controller.generate_true_optimum_BL_CM_AM('MARI_opt', plot_run = True)
-    # controller.generate_true_optimum_CM_AM('MARI_opt', refrun_id='spot_opt', plot_run = True)
-
-    # controller.co_optimize_CM_AM('co_opt_1')
-    # simulator.apply_mfrr_clearing_prices('co_opt_1_applied', 'co_opt_1_CM')
-    # controller.optimize_mfrr('co_opt_2', 'co_opt_1_nom')  #
-    # simulator.apply_mfrr_clearing_prices('co_opt_2_applied', 'co_opt_2')
-
-    # controller.optimize_mfrr('mfrr_fixed', 'fixed')
-    # simulator.apply_mfrr_clearing_prices('mfrr_fixed_applied', 'mfrr_fixed')
 
     # '''
     
     '''Status report'''
     # controller.status_report()
     controller.save_to_json()
+    # controller.save_performance_to_csv('batch_simulations', run_id='complete_MPC')
     ''''''
-
-    # run_ids = ['mfrr_opt', 'abs_opt']
-    # for run_id in run_ids: print(f"Upper CM participation earnings limit for {run_id}: {market.calculate_CM_earnings_upper_limit(controller, run_id)}")
-          
-    # market.estimate_prices()
-    # market.price_estimation(plot_estimates=True)
-
     
     # 
     ''' PLOTTING '''
@@ -123,8 +86,34 @@ def main():
 
     # controller.export_intensity_to_json('abs_applied')
 
-    # target_file = config.mfrr_CM_data_path + 'CM_data_NO_DK_SE_FI.csv'
-    # fetch_CM_data_nucs(target_file, "01-10-2024", "02-10-2024")
+
+def repeat_main():
+    start_date = datetime.strptime("2024-05-06", "%Y-%m-%d")
+    end_date = datetime.strptime("2025-02-01", "%Y-%m-%d")
+    # end_date = datetime.strptime("2024-04-28", "%Y-%m-%d")
+    delta = timedelta(days=7)
+    bidding_zones = ["NO2", "SE1", "DK1", "FI"]
+    # bidding_zones = ["NO2", "SE1"]
+
+    current_date = start_date
+    while current_date <= end_date:
+        date_str = current_date.strftime("%Y-%m-%d")
+        sim_suffix = current_date.strftime("%Y_%m_%d")
+        
+        for zone in bidding_zones:
+            sim_name = f"Batch_MPC_7day_{sim_suffix}_{zone}_est"
+            
+            # Set globals (you could refactor main() to accept arguments instead)
+            globals()["SIM_NAME"] = sim_name
+            globals()["SIMULATION_DATE"] = date_str
+            globals()["BIDDING_ZONE"] = zone
+            
+            print(f"\n=== Running Simulation: {sim_name} ===")
+            main()
+        
+        current_date += delta
+
 
 if __name__ == "__main__":
     main()
+    # repeat_main()
