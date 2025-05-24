@@ -923,7 +923,7 @@ class Plotter():
 
 
     def plot_mpc_iterations(self, plot_name='mpc_iterations', run_id=None, pdf=None):
-   
+
         controller = self.controller
         schedule_df = controller.mpc_schedules[run_id].fillna(0)
 
@@ -931,7 +931,6 @@ class Plotter():
         slot_cols = [col for col in schedule_df.columns if isinstance(col, int)]
         opt_matrix = schedule_df[slot_cols].astype(int)
 
-        # Create color map and legend labels
         legend_labels = {
             0:  "Not relevant",
             10: "In CM optimization window",
@@ -943,16 +942,23 @@ class Plotter():
             22: "Planned AM bids",
             23: "Previously submitted AM bid (Unresolved)"
         }
-        # colors = ["white", "#a6cee3", "#1f78b4", "#b2df8a"]
         colors = ["white", "lightgray", "navy", "lightskyblue", "#b2df8a", "lightgray", "maroon", "coral", "#b2df8a"]
         cmap = mcolors.ListedColormap(colors)
         state_values = sorted(legend_labels.keys())
         bounds = [val - 0.5 for val in state_values] + [state_values[-1] + 0.5]
         norm = mcolors.BoundaryNorm(bounds, len(colors))
 
+
         # Create figure
         # fig, ax = plt.subplots(figsize=(max(10, len(slot_cols) * 0.5), max(4, len(opt_matrix) * 0.4)))
         fig, ax = plt.subplots(figsize=self.aspect_ratio)
+
+
+        # # Determine figure size dynamically
+        # n_rows, n_cols = opt_matrix.shape
+        # fig_width = max(10, n_cols * 0.3)
+        # fig_height = max(6, n_rows * 0.4)
+        # fig, ax = plt.subplots(figsize=(fig_width, fig_height))
 
         sns.heatmap(
             opt_matrix,
@@ -966,7 +972,8 @@ class Plotter():
                 f"D-{int(schedule_df.loc[i, 'day']):02d}, QH-{int(schedule_df.loc[i, 'qh']):02d} {str(schedule_df.loc[i, 'optimizer']):<14}"
                 for i in schedule_df.index
             ],
-            ax=ax
+            ax=ax,
+            square=False
         )
 
         # Simplify x-axis: only show every Nth tick
@@ -975,28 +982,28 @@ class Plotter():
             if idx % show_every != 0:
                 label.set_visible(False)
 
-        # Labels
-        # ax.set_aspect(self.aspect_ratio[0]/self.aspect_ratio[1])
         ax.set_xlabel("Time Slot")
         ax.set_ylabel("Optimization Step (Day-QH Optimizer)")
         fig.suptitle("MPC Optimization Schedule")
 
-        # Custom legend (horizontal, on top)
+        # --- Legend Fix: wrap across multiple rows ---
+        max_items_per_row = 4
+        ncol = min(len(legend_labels), max_items_per_row)
         state_to_color_idx = {val: idx for idx, val in enumerate(state_values)}
+        filtered_keys = [k for k in legend_labels if k != 0]
         legend_patches = [
             Patch(facecolor=cmap(state_to_color_idx[i]), edgecolor='black', label=legend_labels[i])
-            for i in legend_labels
+            for i in filtered_keys
         ]
-
         ax.legend(
             handles=legend_patches,
             loc='upper center',
-            bbox_to_anchor=(0.5, 1.1),
-            ncol=len(legend_labels),
+            bbox_to_anchor=(0.5, 1.20),
+            ncol=ncol,
             frameon=False
         )
 
-        fig.tight_layout()
+        fig.tight_layout(rect=[0, 0, 1, 0.95])  # Make room for title + legend
 
         self.save_plot(plot_name, fig=fig, run_id=run_id, pdf=pdf)
         self.update_plot_log(plot_name, self.common_dependencies)
