@@ -1112,3 +1112,20 @@ def plot_balancing_market_earnings_upper_bounds():
 def rmse(a, b, axis):
     return np.sqrt(np.mean(np.square(np.array(a) - np.array(b)), axis=axis))
 
+
+def casadi_upsample(array: ca.MX, repeats, axis=1):
+    if axis == 0: return ca.vertcat(*(array[i,:] for i in np.arange(array.shape[axis]).repeat(repeats)))
+    if axis == 1: return ca.horzcat(*(array[:,i] for i in np.arange(array.shape[axis]).repeat(repeats)))
+
+def casadi_upsample(array: ca.DM, repeats, axis=1):
+    if axis == 0: return ca.vertcat(*(array[i,:] for i in np.arange(array.shape[axis]).repeat(repeats)))
+    if axis == 1: return ca.horzcat(*(array[:,i] for i in np.arange(array.shape[axis]).repeat(repeats)))
+
+
+def casadi_downsample(array: ca.MX, reduction, axis=1):
+    if axis == 0: return ca.vertcat(*(array[i,:] for i in range(0, array.shape[axis], reduction)))
+    if axis == 1: return ca.horzcat(*(array[:,i] for i in range(0, array.shape[axis], reduction)))
+
+def casadi_downsample(array: ca.DM, reduction, axis=1):
+    if axis == 0: return ca.vertcat(*(array[i,:] for i in range(0, array.shape[axis], reduction)))
+    if axis == 1: return ca.horzcat(*(array[:,i] for i in range(0, array.shape[axis], reduction)))

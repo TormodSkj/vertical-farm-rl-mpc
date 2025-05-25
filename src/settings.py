@@ -70,7 +70,8 @@ class Settings():
                          MPC_TIMEHORIZON    = 1, 
                          MPC_STEPLENGTH     = 0.5,
                          CM_N_BIDS          = np.inf,
-                         AM_N_BIDS          = np.inf
+                         AM_N_BIDS          = np.inf,
+                         CHECK_FEASIBILITY  = False
                          )
 
         # Plotter settings
