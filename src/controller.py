@@ -14,7 +14,6 @@ from datetime import datetime
 from tqdm import tqdm
 from typing import List
 from controller_utils import *
-import re
 
 class Controller():
     """
@@ -75,6 +74,7 @@ class Controller():
 
         self.sim_name           = self.controller_settings['SIM_NAME']
         self.surpress_output    = self.controller_settings['SURPRESS_OUTPUT']
+        self.opti_print_level   = self.controller_settings['OPTI_PRINT_LEVEL']
         self.warm_start         = self.controller_settings['WARM_START']
         self.calculate_fw       = self.controller_settings['CALCULATE_FW']
         self.T                  = self.controller_settings['SIMULATION_LENGTH'] 
@@ -133,8 +133,6 @@ class Controller():
         self.fixed_light_schedule()   
 
         self.mpc_schedules = {}
-
-        os.environ['IPO PT_IGNORE_STARTUP_BANNER'] = 'yes'
 
 
     def optimize_mfrr(self, run_id, refrun_id = 'fixed', plot_run = False):
@@ -856,7 +854,7 @@ class Controller():
             'AM': build_market_participation(AM_bid_volumes, AM_bid_prices, AM_bid_activations)
         }
         
-        self.store_run(run_id, dependencies, sol, X_log, U_log, U_nom=U_nom_log, refrun_id = target_run_id, market_data=market_data, plot_run=plot_run, terminated_early=sim.terminate_simulation)
+        self.store_run(run_id, dependencies, sol, X_log, U_log, U_nom=U_nom_log, refrun_id = target_run_id, market_data=market_data, plot_run=plot_run, terminated_early=sim.terminate_simulation, termination_message = sim.error_msg.replace('\n', ''))
 
         if not self.surpress_output: 
             if sim.terminate_simulation: print(f'{run_id} | Terminated MPC simulation prematurely')
@@ -918,7 +916,7 @@ class Controller():
 
 
     def store_run(self, run_id, dependencies, sol, x, u, market_data: dict = {}, 
-                  U_nom = None, refrun_id = 'None', plot_run = False, terminated_early = False):
+                  U_nom = None, refrun_id = 'None', plot_run = False, terminated_early = False, termination_message=''):
         '''
         Takes in run specifics and stores them as well as metrics in the `optimization_results` dictionary.
         If bids are specified, a balancingmarket must be given as well.
@@ -964,6 +962,7 @@ class Controller():
             'elapsed_time'          : sol['elapsed_time'],
             'f'                     : f,
             'Ran Successfully'      : not terminated_early,
+            'Termination Message'   : termination_message,
             'Reached Weightgoal'    : eps < 1e-6,
             'eps'                   : eps
         }
@@ -1838,8 +1837,8 @@ class Controller():
         for run in runs:
             sim_name = self.optimization_results['name']
             sim_datetime = self.optimization_results['timestamp']  # when sim ran
-            sim_day = self.settings.market['SIMULATION_DATE']     # day being simulated
-            bidding_zone = self.settings.market['BIDDING_ZONE']
+            sim_day = self.controller_settings['SIMULATION_DATE']     # day being simulated
+            bidding_zone = self.controller_settings['BIDDING_ZONE']
 
             metrics_dict = self.optimization_results['runs'][run]['metrics']
             row = {
@@ -1853,6 +1852,10 @@ class Controller():
             all_entries.append(row)
 
         df_new = pd.DataFrame(all_entries)
+
+        if 'Termination Message' in df_new.columns:
+            cols = [col for col in df_new.columns if col != 'Termination Message'] + ['Termination Message']
+            df_new = df_new[cols]
 
         # Append or create file
         if os.path.exists(full_path):

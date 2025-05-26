@@ -342,9 +342,9 @@ class EstimatorDF:
 
     def calculate_estimate(self):
         if self.exact:
-            self.estimated_df.loc[self.indices_truth] = self.x_df.loc[self.indices_truth]
-            self.estimated_data = np.array(self.x_df.loc[self.indices_truth]).transpose()
-            self.conditional_covariance = np.zeros_like(self.Pxx)
+            self.estimated_df = self.x_df
+            self.estimated_data = np.array(self.x_df).transpose()
+            self.conditional_covariance = 5 * np.ones((self.nx, self.nx))
             self.conditional_variance = {col: self.conditional_covariance[i,i] for i, col in enumerate(self.x_df.columns)}
             self.rmse_scores = 0
             return
@@ -469,11 +469,16 @@ class EstimatorDF:
     def show_estimator_profile(self, n_vars = 10):
         print(f"\n{self.name} estimator profile:")
         
-        selected_vars = self.selected_vars
+        if self.exact:
+            for timeseries in self.conditional_variance:
+                print(f"{timeseries} \tEstimator is exact")
+            return
+        
         
         for timeseries in self.conditional_variance:
             print(f"{timeseries} \tEstimator standard deviation: {np.sqrt(self.conditional_variance[timeseries])}")
 
+        selected_vars = self.selected_vars
         for i, col in enumerate(self.x_df.columns):
             
             weights = self.weights

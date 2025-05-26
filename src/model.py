@@ -467,19 +467,47 @@ class PlantModel:
                     # k = 96 +24, +48, +72 ...
                     LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
                     
-                    opti.subject_to(0 <= slack_max_DLI + self.DLI_max - LI)
-                    opti.subject_to(0 <= slack_min_DLI + LI - self.DLI_min)
+                    # opti.subject_to(0 <= slack_max_DLI + self.DLI_max - LI)
+                    # opti.subject_to(0 <= slack_min_DLI + LI - self.DLI_min)
+                    opti.subject_to(LI - slack_max_DLI <= self.DLI_max)
+                    opti.subject_to(self.DLI_min <= LI + slack_min_DLI)
         else:
-            for k in range(N+1+past_X.shape[1]):
-                combined_X = ca.horzcat(past_X, X)
+
+            prev_LI = past_X[2,:].reshape((1,-1))
+            # prev_LI_relative = prev_LI - prev_LI[:,-1]
+
+            combined_LI = ca.horzcat(prev_LI, X[2,:].reshape((1,-1)))
+            for k in range(past_X.shape[1] + N+1):
                 if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
                     # k = 96 +24, +48, +72 ...
-                    LI = (combined_X[2,k] - combined_X[2,k-QUARTER_HOURS_PER_DAY])
+                    LI = (combined_LI[:,k] - combined_LI[:,k-QUARTER_HOURS_PER_DAY])
                     
-                    opti.subject_to(0 <= slack_max_DLI + self.DLI_max - LI)
-                    opti.subject_to(0 <= slack_min_DLI + LI - self.DLI_min)
+                    # opti.subject_to(0 <= slack_max_DLI + self.DLI_max - LI)
+                    opti.subject_to(LI - slack_max_DLI <= self.DLI_max)
+                    opti.subject_to(self.DLI_min <= LI + slack_min_DLI)
+                    # opti.subject_to(0 <= slack_min_DLI + LI - self.DLI_min)
 
         return
+    
+
+    def get_hourly_bids_contraint(self, opti: ca.Opti, N_TH, B_volumes, B_prices):
+
+        for i in range(0,N_TH, QUARTER_HOURS_PER_HOUR):
+            # 0, 4, 8, ... N_TH
+            for j in range(1, QUARTER_HOURS_PER_HOUR):
+                opti.subject_to(opti.bounded(-1e-4, B_volumes[:, i] - B_volumes[:, i+j], 1e-4))
+                # opti.subject_to(B_volumes[1, i+j] - B_volumes[1, i+j+1] == 0)
+                opti.subject_to(opti.bounded(-1e-4, B_prices[:, i]  - B_prices[:, i+j], 1e-4))
+                # opti.subject_to(B_prices[1, i+j]  - B_prices[1, i+j+1] == 0)
+
+        # for i in range(0, N_TH, QUARTER_HOURS_PER_HOUR):
+        #     for j in range(1, QUARTER_HOURS_PER_HOUR):
+        #         opti.subject_to(B_volumes[:, i + j] == B_volumes[:, i + j - 1])
+        #         opti.subject_to(B_prices[:,  i + j] == B_prices[:,  i + j - 1])
+
+        return
+
+
 
     # def get_dynamic_bidding_constraints(self, g_eq, g_ineq, N_TH, B_volumes, B_prices, submitted_bids):
     #     '''Creates list of constraints for the mpc optimization problem'''
@@ -509,6 +537,50 @@ class PlantModel:
             X[:,k+1] = F(X[:,k], u[:,k])
 
         return X
+
+
+    def get_eps(self, N_TH, ref_weight, X, past_X: None):
+
+        '''Creates list of constraints for the mpc optimization problem'''
+
+        # g_ineq.append([self.freshweight(X[:,N]) + slack_freshweight - ref_weight, f"Final freshweight constraint"])
+        slack_freshweight = float(max(0, ref_weight - self.freshweight(X[:,N_TH])))
+
+        min_dlis = []
+        max_dlis = []
+
+        # DLI constraint
+        if past_X is None:
+            for k in range(N_TH+1):
+                if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
+                    # k = 96 +24, +48, +72 ...
+                    LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
+                    max_dlis.append(max(0, LI - self.DLI_max))
+                    min_dlis.append(max(0, self.DLI_min - LI))
+        else:
+            prev_LI = past_X[2,:].reshape((1,-1))
+
+            combined_LI = ca.horzcat(prev_LI, X[2,:].reshape((1,-1)))
+            for k in range(past_X.shape[1] + N_TH+1):
+                if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
+                    # k = 96 +24, +48, +72 ...
+                    LI = (combined_LI[:,k] - combined_LI[:,k-QUARTER_HOURS_PER_DAY])
+                    max_dlis.append(max(0, LI - self.DLI_max))
+                    min_dlis.append(max(0, self.DLI_min - LI))
+
+
+        slack_max_DLI = float(max(max_dlis))
+        slack_min_DLI = float(max(min_dlis))
+
+        Eps = np.array([slack_freshweight, slack_max_DLI, slack_min_DLI]).reshape((1,-1))
+
+
+        return  Eps
+
+
+
+
+
 
 
     

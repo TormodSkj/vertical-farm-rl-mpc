@@ -11,7 +11,8 @@ class Settings():
 
         self.add_setting('options',
                          SIM_NAME           = "placeholder_name",  # Name of simulation used for plotting and archiving
-                         SURPRESS_OUTPUT    = False
+                         SURPRESS_OUTPUT    = False,
+                         OPTI_PRINT_LEVEL   = 0
                          )
 
 

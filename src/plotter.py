@@ -92,6 +92,7 @@ class Plotter():
 
         start_time = time.time()
 
+        self.config.ensure_dirs(self.config.current_sim_plot_path)
 
         # COMMON PLOTS
         runs = self.controller.optimization_results['runs']
@@ -932,6 +933,7 @@ class Plotter():
         opt_matrix = schedule_df[slot_cols].astype(int)
 
         legend_labels = {
+            -1: "Salvaged solution (did not converge)",
             0:  "Not relevant",
             10: "In CM optimization window",
             11: "CM bid submissions",
@@ -942,23 +944,16 @@ class Plotter():
             22: "Planned AM bids",
             23: "Previously submitted AM bid (Unresolved)"
         }
-        colors = ["white", "lightgray", "navy", "lightskyblue", "#b2df8a", "lightgray", "maroon", "coral", "#b2df8a"]
+
+        # colors = ["crimson", "white", "lightgray", "navy", "lightskyblue", "#b2df8a", "lightgray", "maroon", "coral", "#b2df8a"]
+        # colors = ["#c0a98f", "#ffffff", "#adbabd", "#6d98cf", "#80c5da", "#b2df8a", "#adbabd", "#aa474c", "#d8777f", "#b2df8a"]
+        colors = ["#DD948B", "#ffffff", "#DDDDDD", "#405697", "#94B7FF", "#BFDF8A", "#DDDDDD", "#A55049", "#E08A82", "#BFDF8A"]
         cmap = mcolors.ListedColormap(colors)
         state_values = sorted(legend_labels.keys())
         bounds = [val - 0.5 for val in state_values] + [state_values[-1] + 0.5]
         norm = mcolors.BoundaryNorm(bounds, len(colors))
 
-
-        # Create figure
-        # fig, ax = plt.subplots(figsize=(max(10, len(slot_cols) * 0.5), max(4, len(opt_matrix) * 0.4)))
         fig, ax = plt.subplots(figsize=self.aspect_ratio)
-
-
-        # # Determine figure size dynamically
-        # n_rows, n_cols = opt_matrix.shape
-        # fig_width = max(10, n_cols * 0.3)
-        # fig_height = max(6, n_rows * 0.4)
-        # fig, ax = plt.subplots(figsize=(fig_width, fig_height))
 
         sns.heatmap(
             opt_matrix,
@@ -976,6 +971,21 @@ class Plotter():
             square=False
         )
 
+        # # # --- Clean Y-axis Labels: Day + Time (compact) ---
+        # def format_qh_label(timestep):
+        #     day = int(schedule_df.loc[timestep, 'day'])
+        #     qh = int(schedule_df.loc[timestep, 'qh'])
+        #     hour = (qh * 15) // 60
+        #     minute = (qh * 15) % 60
+        #     return f"D{day}-{hour:02}:{minute:02}"
+
+        # step = 24  # Show every 6 hours (24 * 15min)
+        # yticks = list(range(0, len(schedule_df), step))
+        # yticklabels = [format_qh_label(i) for i in yticks]
+        # ax.set_yticks(yticks)
+        # ax.set_yticklabels(yticklabels)
+        # ax.set_ylabel("Time (Day-Hour)")
+
         # Simplify x-axis: only show every Nth tick
         show_every = 16
         for idx, label in enumerate(ax.get_xticklabels()):
@@ -983,7 +993,6 @@ class Plotter():
                 label.set_visible(False)
 
         ax.set_xlabel("Time Slot")
-        ax.set_ylabel("Optimization Step (Day-QH Optimizer)")
         fig.suptitle("MPC Optimization Schedule")
 
         # --- Legend Fix: wrap across multiple rows ---
@@ -1820,7 +1829,7 @@ class Plotter():
         t           = self.controller.t
         spot_prices = self.controller.spot_prices
                 
-
+        self.config.ensure_dirs(self.config.current_sim_plot_path)
 
         costs           = [controller.optimization_results['runs'][run]['metrics']['Costs']             for run in controller.optimization_results['runs']]
         totals          = [controller.optimization_results['runs'][run]['metrics']['Total']             for run in controller.optimization_results['runs']]

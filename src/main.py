@@ -11,20 +11,22 @@ from datetime import datetime, timedelta
 
 # from utils import vertigrow_calculate_energy_consumption, plot_balancing_market_earnings_upper_bounds
 
-SIM_NAME            = "Crash_test_DK1_2024-12-16"
-SIMULATION_LENGTH   = 7
+SIM_NAME            = "MPC_18day_SE1_2024_05_26_est_actrate010"
+SIMULATION_LENGTH   = 18
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
-SIMULATION_DATE     = '2024-12-16'
-BIDDING_ZONE        = 'DK1'
+SIMULATION_DATE     = '2024-10-20'
+BIDDING_ZONE        = 'SE1'
 OPTIMISTIC          = 1
 SEARCH_CACHE        = 0
 SEARCH_PLOT_CACHE   = 0
+SURPRESS_OUTPUT     = False
 
 MPC_TIMEHORIZON     = 3
 MPC_STEPLENGTH      = 12/96
 
 DISCRETIZATION      = 'fe'
+SAVE_TO_CSV         = False
 
 def main():
 
@@ -36,12 +38,12 @@ def main():
 
     ''' CREATING OBJECTS '''
     settings = Settings('general', SIMULATION_LENGTH = SIMULATION_LENGTH)
-    settings.update_setting(SIM_NAME = SIM_NAME, SURPRESS_OUTPUT = False)
+    settings.update_setting(SIM_NAME = SIM_NAME, SURPRESS_OUTPUT = SURPRESS_OUTPUT, OPTI_PRINT_LEVEL = 0)
     settings.add_setting('controller', SEARCH_SIM_CACHE = SEARCH_CACHE, IMPORT_FILE = 'mfrr_experiment_1.json')
     settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH,
-                         CM_N_BIDS = 24, AM_N_BIDS = 48, CHECK_FEASIBILITY = False)
+                         CM_N_BIDS = 96, AM_N_BIDS = 48, CHECK_FEASIBILITY = False)
     settings.add_setting('market', SIMULATION_DATE = SIMULATION_DATE, OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE, 
-                         AM_ACTIVATION_RATE  = 1, CM_ACTIVATION_RATE  = 1, EXACT_ESTIMATION = False)
+                         AM_ACTIVATION_RATE  = 0.1, CM_ACTIVATION_RATE  = 0.1, EXACT_ESTIMATION = True)
     settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT, DLI_RESOLUTION = 2, DISCRETIZATION = DISCRETIZATION)
     settings.add_setting('plotter', SEARCH_PLOT_CACHE = SEARCH_PLOT_CACHE, PLOT_EXPORT_TYPE='pdf', FILTER_BIDS = True, PLOT_ASPECT_RATIO = (14, 6))
 
@@ -72,13 +74,13 @@ def main():
     '''Status report'''
     # controller.status_report()
     controller.save_to_json()
-    # controller.save_performance_to_csv('batch_simulations', run_id='complete_MPC')
+    if SAVE_TO_CSV: controller.save_performance_to_csv('simbatch_4', run_id='complete_MPC')
     ''''''
     
     # 
     ''' PLOTTING '''
-    plotter.save_ocp_plots()
-    plotter.plot_financial_report()
+    if not SAVE_TO_CSV: plotter.save_ocp_plots()
+    if not SAVE_TO_CSV: plotter.plot_financial_report()
 
     # plotter.plot_spot_mfrr_prices() 
     # plotter.plot_CM_data() 
@@ -87,13 +89,16 @@ def main():
     # controller.export_intensity_to_json('abs_applied')
 
 
-def repeat_main():
-    start_date = datetime.strptime("2024-05-06", "%Y-%m-%d")
+def repeat_main(surpress_output):
+    start_date = datetime.strptime("2024-04-01", "%Y-%m-%d")
     end_date = datetime.strptime("2025-02-01", "%Y-%m-%d")
     # end_date = datetime.strptime("2024-04-28", "%Y-%m-%d")
     delta = timedelta(days=7)
     bidding_zones = ["NO2", "SE1", "DK1", "FI"]
     # bidding_zones = ["NO2", "SE1"]
+
+    globals()["SURPRESS_OUTPUT"]    = surpress_output
+    globals()['SAVE_TO_CSV']        = True
 
     current_date = start_date
     while current_date <= end_date:
@@ -101,7 +106,7 @@ def repeat_main():
         sim_suffix = current_date.strftime("%Y_%m_%d")
         
         for zone in bidding_zones:
-            sim_name = f"Batch_MPC_7day_{sim_suffix}_{zone}_est"
+            sim_name = f"Batch4_MPC_7day_{sim_suffix}_{zone}_est_actrate1"
             
             # Set globals (you could refactor main() to accept arguments instead)
             globals()["SIM_NAME"] = sim_name
@@ -116,4 +121,4 @@ def repeat_main():
 
 if __name__ == "__main__":
     main()
-    # repeat_main()
+    # repeat_main(surpress_output=True)

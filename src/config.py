@@ -42,8 +42,7 @@ class Config():
         self.spotprices_data_path        = os.path.join(self.data_path, self.config_settings['SPOTPRICES_PATH'])
         self.spotprice_data_path        = os.path.join(self.spotprices_data_path, self.config_settings['SPOTPRICES_NORWAY'])
 
-        self.ensure_dirs(self.current_sim_plot_path,
-                         self.plots_path,
+        self.ensure_dirs(self.plots_path,
                          self.simulations_path,
                          self.data_path,
                          self.data_analysis_path,
