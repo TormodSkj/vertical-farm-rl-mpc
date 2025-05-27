@@ -279,44 +279,45 @@ class PlantModel:
 
 
 
-    def running_cost(self, market: Market, k: int, N: int, Eps):
-        '''
-        First draft of running cost for MPC optimizer. 
-        Attempts to make mpc optimizer aware of market states outside its opt-window
-        '''
+    # YET TO BE PROPERLY IMPLEMENTED
+    # def running_cost(self, market: Market, k: int, N: int, Eps):
+    #     '''
+    #     First draft of running cost for MPC optimizer. 
+    #     Attempts to make mpc optimizer aware of market states outside its opt-window
+    #     '''
 
 
-        spot_prices = market.get_spotprice()
-        spot_prices_integral = np.array([sum(spot_prices[:k]) for k in range(len(spot_prices))])
-        spot_prices_avg_curve = np.linspace(0, spot_prices_integral[-1], N)
+    #     spot_prices = market.get_spotprice()
+    #     spot_prices_integral = np.array([sum(spot_prices[:k]) for k in range(len(spot_prices))])
+    #     spot_prices_avg_curve = np.linspace(0, spot_prices_integral[-1], N)
         
-        clearing_prices_up, clearing_prices_down = market.AM.get_clearing_prices()
-        activations_up, activations_down = market.AM.get_activations()
-        market_potencies_up         = np.multiply(clearing_prices_up, activations_up)
-        market_potencies_down       = np.multiply(clearing_prices_down, activations_down)
-        market_potencies_net      = market_potencies_down - market_potencies_up
-        market_potencies_integral   = np.array([sum(market_potencies_net[:k]) for k in range(len(market_potencies_net))])
-        market_potencies_net_avg_curve = np.linspace(0, market_potencies_integral[-1], N)
+    #     clearing_prices_up, clearing_prices_down = market.AM.get_clearing_prices()
+    #     activations_up, activations_down = market.AM.get_activations()
+    #     market_potencies_up         = np.multiply(clearing_prices_up, activations_up)
+    #     market_potencies_down       = np.multiply(clearing_prices_down, activations_down)
+    #     market_potencies_net      = market_potencies_down - market_potencies_up
+    #     market_potencies_integral   = np.array([sum(market_potencies_net[:k]) for k in range(len(market_potencies_net))])
+    #     market_potencies_net_avg_curve = np.linspace(0, market_potencies_integral[-1], N)
 
-        spot_status = spot_prices_integral[k] - spot_prices_avg_curve[k]
-        market_potency_status = market_potencies_integral[k] - market_potencies_net_avg_curve[k]
+    #     spot_status = spot_prices_integral[k] - spot_prices_avg_curve[k]
+    #     market_potency_status = market_potencies_integral[k] - market_potencies_net_avg_curve[k]
 
-        Q_weight = 1
-        Q_spot = 1
-        Q_potency = 1
-        Q_factor = 1e4
+    #     Q_weight = 1
+    #     Q_spot = 1
+    #     Q_potency = 1
+    #     Q_factor = 1e4
 
-        # Punish lower freshweight than the reference trajectory
-        # Alleviate weight punishment if spot prices have been above average
-        #   - Also applies an additional penalty to weight discrepancy if spot prices have been lower than average
-        # Alleviate weight punishment if mfrr market potency indicates high frequency of down-activations
-        #   - Also applies an additional penalty to weight discrepancy the market potency indicates that only up-activations are due
+    #     # Punish lower freshweight than the reference trajectory
+    #     # Alleviate weight punishment if spot prices have been above average
+    #     #   - Also applies an additional penalty to weight discrepancy if spot prices have been lower than average
+    #     # Alleviate weight punishment if mfrr market potency indicates high frequency of down-activations
+    #     #   - Also applies an additional penalty to weight discrepancy the market potency indicates that only up-activations are due
 
-        running_cost = Q_factor * (Q_weight     * Eps\
-                                    - Q_spot    * spot_status \
-                                    + Q_potency * market_potency_status)
+    #     running_cost = Q_factor * (Q_weight     * Eps\
+    #                                 - Q_spot    * spot_status \
+    #                                 + Q_potency * market_potency_status)
 
-        return running_cost
+    #     return running_cost
 
     def get_initial_bid_constraints(self, controller, g_eq, g_ineq, B):
         # Enforce initial bids
@@ -406,45 +407,13 @@ class PlantModel:
 
         ''' Inequality constraints: g_ineq[k] > 0 for all k '''
 
-        # slack_freshweight = Eps[0]
-        # slack_max_DLI = Eps[1]
-        # slack_min_DLI = Eps[2]
-        # g_ineq.append(slack_freshweight)
-        # g_ineq.append(slack_max_DLI)
-        # g_ineq.append(slack_min_DLI)
-
-        # Upper and lower bounds on X and U
-        # for k in range(N):
-            # g_ineq.append(U[k])
-            # g_ineq.append(self.PPFD_max - U[:,k])
-            # g_ineq.append(X[:,k])
-
         return
     
     def get_static_variable_bounds(self, opti: ca.Opti, N, dt, X, x0, U, Eps):
 
-        # slack_freshweight   = Eps[0]
-        # slack_max_DLI       = Eps[1]
-        # slack_min_DLI       = Eps[2]
-
-        # g_bounded.append([0, slack_freshweight, np.inf])
-        # g_bounded.append([0, slack_max_DLI,     np.inf])
-        # g_bounded.append([0, slack_min_DLI,     np.inf])
-
         opti.subject_to(opti.bounded(0, X,   ca.inf))
         opti.subject_to(opti.bounded(0, Eps, ca.inf))
         opti.subject_to(opti.bounded(0, U,   self.PPFD_max))
-
-
-        # for k in range(U.shape[1]):
-        #     g_bounded.append([0, U[:,k], self.PPFD_max,  f"Bounds on U for k = {k}"])
-
-        # # Upper and lower bounds on X and U
-        # for k in range(N):
-        #     g_bounded.append([0, U[k], self.PPFD_max])
-        #     # g_bounded.append(self.PPFD_max - U[:,k])
-        #     g_bounded.append([0, X[:,k], ca.inf])
-        #     # g_bounds.append([0,np.inf])
 
         return
 
@@ -467,14 +436,11 @@ class PlantModel:
                     # k = 96 +24, +48, +72 ...
                     LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
                     
-                    # opti.subject_to(0 <= slack_max_DLI + self.DLI_max - LI)
-                    # opti.subject_to(0 <= slack_min_DLI + LI - self.DLI_min)
                     opti.subject_to(LI - slack_max_DLI <= self.DLI_max)
                     opti.subject_to(self.DLI_min <= LI + slack_min_DLI)
         else:
 
             prev_LI = past_X[2,:].reshape((1,-1))
-            # prev_LI_relative = prev_LI - prev_LI[:,-1]
 
             combined_LI = ca.horzcat(prev_LI, X[2,:].reshape((1,-1)))
             for k in range(past_X.shape[1] + N+1):
@@ -482,10 +448,8 @@ class PlantModel:
                     # k = 96 +24, +48, +72 ...
                     LI = (combined_LI[:,k] - combined_LI[:,k-QUARTER_HOURS_PER_DAY])
                     
-                    # opti.subject_to(0 <= slack_max_DLI + self.DLI_max - LI)
                     opti.subject_to(LI - slack_max_DLI <= self.DLI_max)
                     opti.subject_to(self.DLI_min <= LI + slack_min_DLI)
-                    # opti.subject_to(0 <= slack_min_DLI + LI - self.DLI_min)
 
         return
     
@@ -496,33 +460,9 @@ class PlantModel:
             # 0, 4, 8, ... N_TH
             for j in range(1, QUARTER_HOURS_PER_HOUR):
                 opti.subject_to(opti.bounded(-1e-4, B_volumes[:, i] - B_volumes[:, i+j], 1e-4))
-                # opti.subject_to(B_volumes[1, i+j] - B_volumes[1, i+j+1] == 0)
                 opti.subject_to(opti.bounded(-1e-4, B_prices[:, i]  - B_prices[:, i+j], 1e-4))
-                # opti.subject_to(B_prices[1, i+j]  - B_prices[1, i+j+1] == 0)
 
-        # for i in range(0, N_TH, QUARTER_HOURS_PER_HOUR):
-        #     for j in range(1, QUARTER_HOURS_PER_HOUR):
-        #         opti.subject_to(B_volumes[:, i + j] == B_volumes[:, i + j - 1])
-        #         opti.subject_to(B_prices[:,  i + j] == B_prices[:,  i + j - 1])
-
-        return
-
-
-
-    # def get_dynamic_bidding_constraints(self, g_eq, g_ineq, N_TH, B_volumes, B_prices, submitted_bids):
-    #     '''Creates list of constraints for the mpc optimization problem'''
-
-    #     submitted_volumes   = submitted_bids[:2, :]
-    #     submitted_prices    = submitted_bids[2:4,:]
-
-    #     for k in range(submitted_bids.shape[1]):
-    #         for bid_param in range(2):
-    #             g_eq.append(B_volumes[bid_param,k] - submitted_volumes[bid_param,k])
-    #             g_eq.append(B_prices[bid_param,k] - submitted_prices[bid_param,k])
-
-
-    #     return g_eq, g_ineq
-    
+        return    
 
     def simulate_growth(self, x0, u):
         
@@ -608,15 +548,6 @@ class PlantModel:
 
             U[k] = U_nom[:,k] + u_tilde
 
-        # for k in range(N):
-
-        #     P_tilde = B_volumes[1,k]*balancing_market.activation_prob_down(spot_prices[k], B_prices[1,k])\
-        #             - B_volumes[0,k]*balancing_market.activation_prob_up(spot_prices[k], B_prices[0,k])
-            
-        #     u_tilde = 1000/self.C_conv_PPFD * P_tilde
-
-        #     U[k] = U_nom[:,k] + u_tilde
-
         return ca.vertcat(*U).reshape((1,-1))
     
     
@@ -652,7 +583,6 @@ class PlantModel:
         return ca.vertcat(*U).reshape((1,-1))
 
 
-    # def get_u_hat(self, N, U_nom, CM_B_volumes, CM_B_prices, AM_B_volumes, AM_B_prices, spot_prices, CM: BalancingMarket, AM: BalancingMarket):
     def get_u_hat(self, N, U_nom, CM_B_volumes, CM_B_prices, AM_B_volumes, AM_B_prices, CM_activations, AM_activations, spot_prices, CM_clearing_prices, AM_clearing_prices, CM: BalancingMarket, AM: BalancingMarket):
 
         U = np.array([])
@@ -664,7 +594,6 @@ class PlantModel:
 
                 volume_up   = AM_B_volumes[0,k]
                 volume_down = AM_B_volumes[1,k]
-
                 activation_chance_up    = AM_activations[0,k]
                 activation_chance_down  = AM_activations[1,k]
 
@@ -673,7 +602,6 @@ class PlantModel:
 
                 volume_up   = AM_B_volumes[0,k]
                 volume_down = AM_B_volumes[1,k]
-        
                 bid_price_up   = AM_B_prices[0,k]
                 bid_price_down = AM_B_prices[1,k]
                 
@@ -695,23 +623,8 @@ class PlantModel:
                 assert False, 'get_u_hat calculation failed. Calculation requested for time step without CM or AM bid submissions'
 
 
-            
-            # CM_A_up     = CM.activation_prob_up(spot_prices[k], CM_B_prices[0,k])
-            # CM_A_down   = CM.activation_prob_down(spot_prices[k], CM_B_prices[1,k])
-            # CM_Volume_up     = CM_B_volumes[0,k]
-            # CM_Volume_down   = CM_B_volumes[1,k]
-
-            # AM_A_up     = AM.activation_prob_up(spot_prices[k], AM_B_prices[0,k])
-            # AM_A_down   = AM.activation_prob_down(spot_prices[k], AM_B_prices[1,k])
-            # AM_Volume_up     = AM_B_volumes[0,k]
-            # AM_Volume_down   = AM_B_volumes[1,k]
-            
-            # P_tilde = AM_A_down*(CM_A_down * casadi_max(CM_Volume_down, AM_Volume_down) + (1-CM_A_down)*AM_Volume_down) \
-            #         - AM_A_up*(CM_A_up * casadi_max(CM_Volume_up, AM_Volume_up) + (1-CM_A_up)*AM_Volume_up)
             P_tilde = volume_down * activation_chance_down - volume_up * activation_chance_up
-
             u_tilde = 1000*P_tilde/self.C_conv_PPFD
-
             U = np.append(U, U_nom[:,k] + u_tilde)
 
         return ca.vertcat(*U).reshape((1,-1))
@@ -723,9 +636,6 @@ class PlantModel:
         U = np.array([])
     
         for k in range(N):
-            # if(k<controller.market.n_given_activations):
-            #     u_tilde = 1000*(B[1,k]*controller.A_down[k] - B[0,k]*controller.A_up[k])/self.C_conv_PPFD
-            # else:
             
             CM_A_up     = CM.activation_prob_up(spot_prices[k], CM_B_prices[0,k])
             CM_A_down   = CM.activation_prob_down(spot_prices[k], CM_B_prices[1,k])
@@ -784,8 +694,6 @@ class PlantModel:
     
 
     def get_metrics(self, metrics_data, controller, run_id, x, u):
-
-        # DLI = [np.sum(u[int(k):int(k)+QUARTER_HOURS_PER_DAY])*1e-6*SECONDS_PER_QUARTER_HOUR for k in np.linspace(0, controller.N - QUARTER_HOURS_PER_DAY, controller.T*self.DLI_res)]
 
         DLI = []
 
