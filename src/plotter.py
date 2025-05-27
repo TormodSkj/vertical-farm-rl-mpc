@@ -924,37 +924,56 @@ class Plotter():
 
 
     def plot_mpc_iterations(self, plot_name='mpc_iterations', run_id=None, pdf=None):
-
         controller = self.controller
         schedule_df = controller.mpc_schedules[run_id].fillna(0)
 
-        # Extract time slot columns
         slot_cols = [col for col in schedule_df.columns if isinstance(col, int)]
         opt_matrix = schedule_df[slot_cols].astype(int)
 
+        # --- X-axis labels (only show at day boundaries) ---
+        # x_labels = [
+        #     f"Day {col // 96}" if isinstance(col, int) and col % 96 == 0 else ''
+        #     for col in schedule_df.columns
+        # ]
+        x_labels = [
+            col // 96 for col in schedule_df.columns if isinstance(col, int) and col%96 == 0
+        ]
+
+        # --- Y-axis labels (only show at start of day) ---
+        y_labels = [
+            f"D-{int(schedule_df.loc[i, 'day']):02d}"
+            if 'cm' in schedule_df.loc[i, 'optimizer'].lower() else ''
+            for i in schedule_df.index
+        ]
+
+        # --- Legend and colormap setup ---
         legend_labels = {
             -1: "Salvaged solution (did not converge)",
             0:  "Not relevant",
-            10: "In CM optimization window",
+            10: "In optimization window",
             11: "CM bid submissions",
             12: "Planned CM bids",
             13: "Previously submitted CM bid (Unresolved)",
-            20: "In AM optimization window",
+            20: "In optimization window",
             21: "AM bid submissions",
             22: "Planned AM bids",
             23: "Previously submitted AM bid (Unresolved)"
         }
 
+
         # colors = ["crimson", "white", "lightgray", "navy", "lightskyblue", "#b2df8a", "lightgray", "maroon", "coral", "#b2df8a"]
         # colors = ["#c0a98f", "#ffffff", "#adbabd", "#6d98cf", "#80c5da", "#b2df8a", "#adbabd", "#aa474c", "#d8777f", "#b2df8a"]
-        colors = ["#DD948B", "#ffffff", "#DDDDDD", "#405697", "#94B7FF", "#BFDF8A", "#DDDDDD", "#A55049", "#E08A82", "#BFDF8A"]
+        # colors = ["#DD948B", "#ffffff", "#DDDDDD", "#405697", "#94B7FF", "#BFDF8A", "#DDDDDD", "#A55049", "#E08A82", "#BFDF8A"]
+
+        colors = ["slategray", "white", "lightgray", "navy", "lightskyblue",
+                "#b2df8a", "lightgray", "maroon", "coral", "#b2df8a"]
+        
         cmap = mcolors.ListedColormap(colors)
         state_values = sorted(legend_labels.keys())
         bounds = [val - 0.5 for val in state_values] + [state_values[-1] + 0.5]
         norm = mcolors.BoundaryNorm(bounds, len(colors))
 
         fig, ax = plt.subplots(figsize=self.aspect_ratio)
-
         sns.heatmap(
             opt_matrix,
             cmap=cmap,
@@ -962,44 +981,30 @@ class Plotter():
             cbar=False,
             linewidths=0.0,
             linecolor='gray',
-            xticklabels=slot_cols,
-            yticklabels=[
-                f"D-{int(schedule_df.loc[i, 'day']):02d}, QH-{int(schedule_df.loc[i, 'qh']):02d} {str(schedule_df.loc[i, 'optimizer']):<14}"
-                for i in schedule_df.index
-            ],
+            xticklabels=x_labels,
+            yticklabels=y_labels,
             ax=ax,
             square=False
         )
 
-        # # # --- Clean Y-axis Labels: Day + Time (compact) ---
-        # def format_qh_label(timestep):
-        #     day = int(schedule_df.loc[timestep, 'day'])
-        #     qh = int(schedule_df.loc[timestep, 'qh'])
-        #     hour = (qh * 15) // 60
-        #     minute = (qh * 15) % 60
-        #     return f"D{day}-{hour:02}:{minute:02}"
+        # --- Simplify x-axis by hiding most tick labels ---
+        # show_every = 16
+        # for idx, label in enumerate(ax.get_xticklabels()):
+        #     if idx % show_every != 0:
+        #         label.set_visible(False)
 
-        # step = 24  # Show every 6 hours (24 * 15min)
-        # yticks = list(range(0, len(schedule_df), step))
-        # yticklabels = [format_qh_label(i) for i in yticks]
-        # ax.set_yticks(yticks)
-        # ax.set_yticklabels(yticklabels)
-        # ax.set_ylabel("Time (Day-Hour)")
-
-        # Simplify x-axis: only show every Nth tick
-        show_every = 16
-        for idx, label in enumerate(ax.get_xticklabels()):
-            if idx % show_every != 0:
-                label.set_visible(False)
-
-        ax.set_xlabel("Time Slot")
+        ax.set_xlabel("Simulation day")
+        ax.set_ylabel("Optimization Step")
+        ax.set_xticks(range(0, len(slot_cols), 96))
+        ax.set_xticklabels(x_labels, rotation=0)
         fig.suptitle("MPC Optimization Schedule")
 
-        # --- Legend Fix: wrap across multiple rows ---
+        # --- Add custom legend ---
         max_items_per_row = 4
         ncol = min(len(legend_labels), max_items_per_row)
         state_to_color_idx = {val: idx for idx, val in enumerate(state_values)}
-        filtered_keys = [k for k in legend_labels if k != 0]
+        # filtered_keys = [-1, 10, 11, 12, 13, 20, 21, 22, 23]
+        filtered_keys = [11, 12, 21, 22, 10, -1, 23]
         legend_patches = [
             Patch(facecolor=cmap(state_to_color_idx[i]), edgecolor='black', label=legend_labels[i])
             for i in filtered_keys
@@ -1012,7 +1017,7 @@ class Plotter():
             frameon=False
         )
 
-        fig.tight_layout(rect=[0, 0, 1, 0.95])  # Make room for title + legend
+        fig.tight_layout(rect=[0, 0, 1, 0.95])  # Leave space for title and legend
 
         self.save_plot(plot_name, fig=fig, run_id=run_id, pdf=pdf)
         self.update_plot_log(plot_name, self.common_dependencies)
