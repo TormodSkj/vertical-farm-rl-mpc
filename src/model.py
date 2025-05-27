@@ -512,7 +512,7 @@ class PlantModel:
         slack_max_DLI = float(max(max_dlis))
         slack_min_DLI = float(max(min_dlis))
 
-        Eps = np.array([slack_freshweight, slack_max_DLI, slack_min_DLI]).reshape((1,-1))
+        Eps = np.array([slack_freshweight, slack_max_DLI, slack_min_DLI]).reshape((-1,1))
 
 
         return  Eps
