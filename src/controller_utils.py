@@ -782,7 +782,7 @@ def update_optimizer_CM_bids(controller, market: Market, model: PlantModel, opti
     
     # U = self.model.get_u(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market.CM)
     obj = model.elcost_obj_function(N_TH, spot_prices, U) \
-        + model.CM_bidding_obj_function(N_bids, spot_prices, B_volumes, B_prices, market.CM, MTU_start = MTU)\
+        + model.Bidding_obj_function(N_bids, spot_prices, B_volumes, B_prices, market.CM, MTU_start = MTU)\
         + model.terminal_cost(controller, X, U, Eps)\
         + model.terminal_cost(controller, X_nom, U_nom, Eps_nom)
 
@@ -838,7 +838,7 @@ def update_optimizer_AM_bids(controller, market: Market, model: PlantModel, opti
     
     U = model.get_u(N_TH, N_bids, U_nom, B_volumes, B_prices, spot_prices, market.AM, clearing_prices=Est_prices)
     obj_fun = model.elcost_obj_function(N_TH, spot_prices, U)\
-            + model.AM_bidding_obj_function(N_bids, spot_prices, B_volumes, B_prices, market.AM, MTU_start=MTU)\
+            + model.Bidding_obj_function(N_bids, spot_prices, B_volumes, B_prices, market.AM, MTU_start=MTU)\
             + model.terminal_cost(controller, X, U, Eps)
             
     opti.minimize(obj_fun)

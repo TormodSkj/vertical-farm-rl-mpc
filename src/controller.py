@@ -163,7 +163,7 @@ class Controller():
 
         # Initialize cost function and constraints
         J = self.model.elcost_obj_function(N, self.spot_prices, U)\
-            + self.model.AM_bidding_obj_function(N, self.spot_prices, B_volumes = B[:2,:], B_prices = B[2:4,:], balancing_market = self.market.AM)\
+            + self.model.Bidding_obj_function(N, self.spot_prices, B_volumes = B[:2,:], B_prices = B[2:4,:], balancing_market = self.market.AM)\
             + self.model.terminal_cost(self, X, U, Eps)
 
 
@@ -275,8 +275,8 @@ class Controller():
 
         J = 0
         J += self.model.elcost_obj_function(N, spot_prices, AM_U)
-        J += self.model.CM_bidding_obj_function(N, spot_prices, CM_B_volumes, CM_B_prices, CM)
-        J += self.model.AM_bidding_obj_function(N, spot_prices, AM_B_volumes, AM_B_prices, AM)
+        J += self.model.Bidding_obj_function(N, spot_prices, CM_B_volumes, CM_B_prices, CM)
+        J += self.model.Bidding_obj_function(N, spot_prices, AM_B_volumes, AM_B_prices, AM)
         J += self.model.terminal_cost(self, nom_X, nom_U, nom_Eps) \
             + self.model.terminal_cost(self, CM_X, CM_U, CM_Eps) \
             + self.model.terminal_cost(self, AM_X, AM_U, AM_Eps)
@@ -607,7 +607,7 @@ class Controller():
         sol = {}
         sol['eps'] = Eps
         sol['f'] = self.model.elcost_obj_function(N, spot_prices, U)\
-                    + self.model.AM_bidding_obj_function(N, spot_prices, B[:2, :], B[2:4, :], self.market)  
+                    + self.model.Bidding_obj_function(N, spot_prices, B[:2, :], B[2:4, :], self.market)  
         sol['elapsed_time'] = end_time - start_time
         
         self.store_run(run_id, dependencies, sol, np.array(X), np.array(U).reshape((1,-1)), B=np.array(B), U_nom=np.array(U_nom).reshape((1,-1)), refrun_id = target_run_id, balancing_market=self.market.AM, plot_run=plot_run)
@@ -724,7 +724,7 @@ class Controller():
 
         U = self.model.get_u(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market.AM)
         J = self.model.elcost_obj_function(N_TH, spot_prices, U)\
-            + self.model.AM_bidding_obj_function(N_TH, spot_prices, B_volumes, B_prices, self.market, current_mtu)\
+            + self.model.Bidding_obj_function(N_TH, spot_prices, B_volumes, B_prices, self.market, current_mtu)\
             + self.model.terminal_cost(self, X, U, Eps)
         
         
@@ -820,8 +820,8 @@ class Controller():
         sol= {}
         sol['f'] = float(
                     self.model.elcost_obj_function(N, self.spot_prices, U_log) \
-                    + self.model.AM_bidding_obj_function(N, self.spot_prices, AM_bid_volumes, AM_bid_prices, AM)\
-                    + self.model.CM_bidding_obj_function(N, self.spot_prices, CM_bid_volumes, CM_bid_prices, CM)\
+                    + self.model.Bidding_obj_function(N, self.spot_prices, AM_bid_volumes, AM_bid_prices, AM)\
+                    + self.model.Bidding_obj_function(N, self.spot_prices, CM_bid_volumes, CM_bid_prices, CM)\
                     + self.model.terminal_cost(self, X_log, U_log, Eps_log)
                     )
                     # + self.model.terminal_cost(self, X_nom_log, U_nom_log, Eps_nom)

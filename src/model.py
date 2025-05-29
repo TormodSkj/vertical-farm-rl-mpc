@@ -202,7 +202,7 @@ class PlantModel:
     
     
 
-    def AM_bidding_obj_function(self, N_TH, spot_prices, B_volumes, B_prices, balancing_market: BalancingMarket, MTU_start = None):
+    def Bidding_obj_function(self, N_TH, spot_prices, B_volumes, B_prices, balancing_market: BalancingMarket, MTU_start = None):
         
         bid_volumes_up      = B_volumes[0,:]
         bid_volumes_down    = B_volumes[1,:]
