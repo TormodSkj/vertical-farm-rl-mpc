@@ -326,8 +326,32 @@ class PlantModel:
             g_eq.append(B[:, k] - bid.as_array())
         
         return g_eq, g_ineq
+    
+    
+    def get_bidding_constraints(self, g_eq, g_ineq, N, U_nom, balancing_market: BalancingMarket, B_volumes = None, B_prices=None, B_volumes_lower_bound = None, B_prices_upper_bound = None):
 
-    def get_bidding_constraints(self, opti: ca.Opti, N, U_nom, balancing_market: BalancingMarket, B_volumes = None, B_prices=None, B_volumes_lower_bound = None, B_prices_upper_bound = None):
+        lb_B_volumes, ub_B_volumes, lb_B_prices, ub_B_prices = self.get_bidding_bounds(N, U_nom, balancing_market)
+        if B_volumes_lower_bound is not None :   lb_B_volumes    = B_volumes_lower_bound
+        if B_prices_upper_bound  is not None:    ub_B_prices     = B_prices_upper_bound
+
+        if B_volumes is not None:
+            for k in range(N):
+                for bid_param in range(2):
+                    
+                    g_ineq.append(B_volumes[bid_param,k] - lb_B_volumes[bid_param,k])
+                    g_ineq.append(- B_volumes[bid_param,k] + ub_B_volumes[bid_param,k])
+
+        if B_prices is not None:
+            for k in range(N):
+                for bid_param in range(2):
+
+                    g_ineq.append(B_prices[bid_param,k] - lb_B_prices[bid_param,k])
+                    g_ineq.append(- B_prices[bid_param,k] + ub_B_prices[bid_param,k])
+
+        return g_eq, g_ineq
+
+
+    def apply_bidding_constraints(self, opti: ca.Opti, N, U_nom, balancing_market: BalancingMarket, B_volumes = None, B_prices=None, B_volumes_lower_bound = None, B_prices_upper_bound = None):
 
         lb_B_volumes, ub_B_volumes, lb_B_prices, ub_B_prices = self.get_bidding_bounds(N, U_nom, balancing_market)
         if B_volumes_lower_bound is not None :   lb_B_volumes    = B_volumes_lower_bound
@@ -390,7 +414,7 @@ class PlantModel:
 
         return g_eq, g_ineq
     
-    def get_static_process_constraints(self, opti: ca.Opti, N, dt, X, x0, U, Eps):
+    def apply_static_process_constraints(self, opti: ca.Opti, N, dt, X, x0, U, Eps):
         '''Creates list of constraints for the mpc optimization problem'''
 
         U = U.reshape((1,-1))
@@ -409,7 +433,7 @@ class PlantModel:
 
         return
     
-    def get_static_variable_bounds(self, opti: ca.Opti, N, dt, X, x0, U, Eps):
+    def apply_static_variable_bounds(self, opti: ca.Opti, N, dt, X, x0, U, Eps):
 
         opti.subject_to(opti.bounded(0, X,   ca.inf))
         opti.subject_to(opti.bounded(0, Eps, ca.inf))
@@ -419,7 +443,7 @@ class PlantModel:
 
 
 
-    def get_dynamic_process_constraints(self, opti: ca.Opti, N, X, Eps, ref_weight, past_X = None):
+    def opti_dynamic_process_constraints(self, opti: ca.Opti, N, X, Eps, ref_weight, past_X = None):
         '''Creates list of constraints for the mpc optimization problem'''
 
         slack_freshweight = Eps[0]

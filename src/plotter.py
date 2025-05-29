@@ -925,7 +925,10 @@ class Plotter():
 
     def plot_mpc_iterations(self, plot_name='mpc_iterations', run_id=None, pdf=None):
         controller = self.controller
-        schedule_df = controller.mpc_schedules[run_id].fillna(0)
+        try:
+            schedule_df = controller.mpc_schedules[run_id].fillna(0)
+        except:
+            return  # rage quit
 
         slot_cols = [col for col in schedule_df.columns if isinstance(col, int)]
         opt_matrix = schedule_df[slot_cols].astype(int)
@@ -941,7 +944,7 @@ class Plotter():
 
         # --- Y-axis labels (only show at start of day) ---
         y_labels = [
-            f"D-{int(schedule_df.loc[i, 'day']):02d}"
+            f"Day {int(schedule_df.loc[i, 'day']):02d}"
             if 'cm' in schedule_df.loc[i, 'optimizer'].lower() else ''
             for i in schedule_df.index
         ]
@@ -2122,6 +2125,144 @@ class Plotter():
     
         plt.show()
 
+    def plot_simbatch(self, filename: str):
 
+        # --- File I/O ---
+        full_filename = filename if filename.endswith('.csv') else f"{filename}.csv"
+        output_directory = self.config.output_path
+        full_path = os.path.join(output_directory, full_filename)
+
+        df = pd.read_csv(full_path)
+
+        # --- Preprocessing ---
+        df['Cost Reduction'] = df['Cost Reduction'].str.rstrip('%').astype(float)
+        df['simulation_day'] = pd.to_datetime(df['simulation_day'])
+
+        # Filter to only successful simulations
+        original_len = len(df)
+        df = df[df['Ran Successfully'] == True].copy()
+        print(f"Filtered out {original_len - len(df)} unsuccessful simulations.")
+
+        # Compute AM and CM share of total revenue
+        df['Total Earnings'] = df['CM Earnings'] + df['AM Earnings']
+        df['CM Share'] = df['CM Earnings'] / df['Total Earnings'].replace(0, 1)
+        df['AM Share'] = df['AM Earnings'] / df['Total Earnings'].replace(0, 1)
+
+        # Compute AM/CM share of cost reduction
+        df['CM Cost Reduction'] = df['Cost Reduction'] * df['CM Share']
+        df['AM Cost Reduction'] = df['Cost Reduction'] * df['AM Share']
+
+        # --- Time-series line plot: Cost Reduction ---
+        grouped_costred = df.groupby(['simulation_day', 'bidding_zone'])['Cost Reduction'].mean().reset_index()
+        pivot_costred = grouped_costred.pivot(index='simulation_day', columns='bidding_zone', values='Cost Reduction')
+
+        plt.figure(figsize=(10, 6))
+        for zone in pivot_costred.columns:
+            plt.plot(pivot_costred.index, pivot_costred[zone], label=zone, marker='o')
+
+        plt.title('Cost Reduction Over Time by Bidding Zone')
+        plt.xlabel('Simulation Day')
+        plt.ylabel('Cost Reduction (%)')
+        plt.grid(True, linestyle='--', alpha=0.5)
+        plt.legend(title='Bidding Zone')
+        plt.tight_layout()
+        plt.show()
+
+        # --- Time-series line plot: Final Fresh Weight ---
+        grouped_weight = df.groupby(['simulation_day', 'bidding_zone'])['Final fresh weight'].mean().reset_index()
+        pivot_weight = grouped_weight.pivot(index='simulation_day', columns='bidding_zone', values='Final fresh weight')
+
+        # Calculate mean and variance across all zones/days
+        mean_fw = df['Final fresh weight'].mean()
+        fw_var = df['Final fresh weight'].var()
+        std_fw = np.sqrt(fw_var)
+        conf_interval = 1.96 * std_fw  # 95% CI
+
+        # Plot
+        plt.figure(figsize=(10, 6))
+        for zone in pivot_weight.columns:
+            plt.plot(
+                pivot_weight.index,
+                pivot_weight[zone],
+                color = 'slategray',
+                # label=zone,
+                # marker='o',
+                alpha = 0.7
+            )
+
+        # Plot mean line
+        plt.axhline(y=mean_fw, color='navy', linewidth=2, label="Mean Final Freshweight")
+        plt.axhline(y=self.controller.model.Final_fw_sht, color='slategray', linestyle=':', label="Target Freshweight")
+
+        # Confidence interval band
+        x_vals = pivot_weight.index
+        plt.fill_between(
+            x_vals,
+            mean_fw - conf_interval,
+            mean_fw + conf_interval,
+            color='lightskyblue',
+            alpha=0.3,
+            label="95% Confidence Interval"
+        )
+
+        plt.title('Final Freshweight by Bidding Zone')
+        plt.xlabel('Simulation Day')
+        plt.ylabel('Final Freshweight (g/plant)')
+        plt.grid(True, linestyle='--', alpha=0.5)
+        # plt.legend(title='Bidding Zone', bbox_to_anchor=(1.0, 0))
+        plt.legend(title='Bidding Zone')
+        plt.tight_layout()
+        plt.show()
+
+
+
+        # --- Histogram: Final Freshweights (All Zones Combined) ---
+        fw_all = df['Final fresh weight'].dropna()
+
+        plt.figure(figsize=(9, 5))
+        plt.hist(fw_all, bins=25, color='slategray', edgecolor='black', alpha=0.75)
         
+        # Annotate mean and required threshold
+        mean_fw = fw_all.mean()
+        plt.axvline(mean_fw, color='navy', linestyle=':', linewidth=2, label=f"Mean: {mean_fw:.2f} g")
+
+        if hasattr(self.controller.model, 'Final_fw_sht'):
+            threshold = self.controller.model.Final_fw_sht
+            plt.axvline(threshold, color='red', linestyle='--', linewidth=2, label=f"Target: {threshold:.2f} g")
+
+        plt.title("Distribution of Final Fresh Weights (All Zones)")
+        plt.xlabel("Final Fresh Weight (g/plant)")
+        plt.ylabel("Number of Simulations")
+        plt.grid(True, linestyle='--', alpha=0.5)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+
+
+        # --- Stacked Area Plot: Cost Reduction Split (CM + AM) ---
+        grouped_split = df.groupby(['simulation_day', 'bidding_zone'])[
+            ['CM Cost Reduction', 'AM Cost Reduction']
+        ].mean().reset_index()
+
+        for zone in grouped_split['bidding_zone'].unique():
+            zone_df = grouped_split[grouped_split['bidding_zone'] == zone].sort_values('simulation_day')
+
+            dates = zone_df['simulation_day']
+            cm = zone_df['CM Cost Reduction']
+            am = zone_df['AM Cost Reduction']
+            total = cm + am
+
+            plt.figure(figsize=(9, 5))
+            plt.fill_between(dates, 0, cm, label='CM Share', color='lightskyblue', alpha=0.7)
+            plt.fill_between(dates, cm, total, label='AM Share', color='coral', alpha=0.7)
+
+            plt.title(f"Cost Reduction Split by Market - {zone}")
+            plt.xlabel("Simulation Day")
+            plt.ylabel("Cost Reduction (%)")
+            plt.grid(True, linestyle='--', alpha=0.5)
+            plt.legend()
+            plt.tight_layout()
+            plt.show()
+
 

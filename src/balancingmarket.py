@@ -299,16 +299,16 @@ class BalancingMarket:
         training_end_date   =  date + pd.DateOffset(minutes= 15 * training_window[1])
 
 
-        timeslots           = self.get_market_data(start_date = start_date, end_date = end_date, zone = self.bidding_zone,
+        timeslots                   = self.get_market_data(start_date = start_date, end_date = end_date, zone = self.bidding_zone,
                                                    times = True)
-        dependent_true_data      = self.get_market_data(start_date = start_date, end_date = end_date, zone = self.bidding_zone,
+        dependent_true_data         = self.get_market_data(start_date = start_date, end_date = end_date, zone = self.bidding_zone,
                                                    clearing_prices=True)
-        independent_input_data    = self.get_market_data(start_date = start_date, end_date = end_date, zone = self.bidding_zone,
+        independent_input_data      = self.get_market_data(start_date = start_date, end_date = end_date, zone = self.bidding_zone,
                                                    spot_prices=True)
 
-        dependent_training_data      = self.get_market_data(start_date = training_start_date, end_date = training_end_date, zone = self.bidding_zone,
+        dependent_training_data     = self.get_market_data(start_date = training_start_date, end_date = training_end_date, zone = self.bidding_zone,
                                                    clearing_prices=True)
-        independent_training_data    = self.get_market_data(start_date = training_start_date, end_date = training_end_date, zone = self.bidding_zone,
+        independent_training_data   = self.get_market_data(start_date = training_start_date, end_date = training_end_date, zone = self.bidding_zone,
                                                    spot_prices=True)
 
         if not self.exact_estimation:

@@ -727,11 +727,11 @@ def set_constraints(controller, market: Market, model: PlantModel, opti: ca.Opti
         Req_volumes = opt_vars['Req_volumes']
         Max_prices  = opt_vars['Max_prices']
         U = model.get_u(N_TH, N_bids, U_nom=U_nom, B_volumes=B_volumes, B_prices=B_prices, spot_prices=spot_prices, balancing_market=market.AM, clearing_prices = AM_est_prices).reshape((1,-1))
-        model.get_static_process_constraints(opti, N_TH, controller.dt, X, x0, U, Eps)
-        model.get_bidding_constraints(opti, N_bids, U_nom, market.AM, B_prices = B_prices, B_volumes=B_volumes, 
+        model.apply_static_process_constraints(opti, N_TH, controller.dt, X, x0, U, Eps)
+        model.apply_bidding_constraints(opti, N_bids, U_nom, market.AM, B_prices = B_prices, B_volumes=B_volumes, 
                                         B_volumes_lower_bound=Req_volumes, B_prices_upper_bound=Max_prices)
         
-        model.get_static_variable_bounds(opti, N_TH, controller.dt, X, x0, U, Eps)
+        model.apply_static_variable_bounds(opti, N_TH, controller.dt, X, x0, U, Eps)
 
 
     elif opt_vars['opti_type'] == 'CM':
@@ -740,12 +740,12 @@ def set_constraints(controller, market: Market, model: PlantModel, opti: ca.Opti
         Eps_nom = opt_vars['Eps_nom']
 
         U = model.get_u_CM(N_TH, N_bids, U_nom=U_nom, CM_B_volumes=B_volumes, CM_B_prices=B_prices, spot_prices=spot_prices, CM=market.CM, AM=market.AM, CM_clearing_prices=CM_est_prices).reshape((1,-1))
-        model.get_static_process_constraints(opti, N_TH, controller.dt, X_nom, x0, U_nom, Eps_nom)
-        model.get_static_process_constraints(opti, N_TH, controller.dt, X, x0, U, Eps)
-        model.get_bidding_constraints(opti, N_bids, U_nom, market.CM, B_volumes = B_volumes, B_prices = B_prices)
+        model.apply_static_process_constraints(opti, N_TH, controller.dt, X_nom, x0, U_nom, Eps_nom)
+        model.apply_static_process_constraints(opti, N_TH, controller.dt, X, x0, U, Eps)
+        model.apply_bidding_constraints(opti, N_bids, U_nom, market.CM, B_volumes = B_volumes, B_prices = B_prices)
     
-        model.get_static_variable_bounds(opti, N_TH, controller.dt, X_nom, x0, U_nom, Eps_nom)
-        model.get_static_variable_bounds(opti, N_TH, controller.dt, X, x0, U, Eps)
+        model.apply_static_variable_bounds(opti, N_TH, controller.dt, X_nom, x0, U_nom, Eps_nom)
+        model.apply_static_variable_bounds(opti, N_TH, controller.dt, X, x0, U, Eps)
 
         #TODO Add constraint to ensure same bid for every hour. Or change optimizer. Last option might be better, as that might speed things up
         model.get_hourly_bids_contraint(opti, N_bids, B_volumes, B_prices)
@@ -775,8 +775,8 @@ def update_optimizer_CM_bids(controller, market: Market, model: PlantModel, opti
     CM_prices_up, CM_prices_down = market.CM.get_estimated_clearing_prices(start_date = MTU, n_data = N_TH)
     CM_prices = np.vstack((CM_prices_up, CM_prices_down))
 
-    model.get_dynamic_process_constraints(opti, N_TH, X,     Eps,     ref_weight, past_X = past_X)
-    model.get_dynamic_process_constraints(opti, N_TH, X_nom, Eps_nom, ref_weight, past_X = past_X)
+    model.opti_dynamic_process_constraints(opti, N_TH, X,     Eps,     ref_weight, past_X = past_X)
+    model.opti_dynamic_process_constraints(opti, N_TH, X_nom, Eps_nom, ref_weight, past_X = past_X)
     
     U = model.get_u_CM(N_TH, N_bids, U_nom, B_volumes, B_prices, spot_prices, CM = market.CM, AM = market.AM, CM_clearing_prices=Est_prices)
     
@@ -834,7 +834,7 @@ def update_optimizer_AM_bids(controller, market: Market, model: PlantModel, opti
     N_bids = min(N_bids, N_TH)
     full_N_TH = X.shape[1] - 1
 
-    model.get_dynamic_process_constraints(opti, N_TH, X, Eps, ref_weight, past_X = past_X)
+    model.opti_dynamic_process_constraints(opti, N_TH, X, Eps, ref_weight, past_X = past_X)
     
     U = model.get_u(N_TH, N_bids, U_nom, B_volumes, B_prices, spot_prices, market.AM, clearing_prices=Est_prices)
     obj_fun = model.elcost_obj_function(N_TH, spot_prices, U)\

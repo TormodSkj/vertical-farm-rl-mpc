@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 
 # from utils import vertigrow_calculate_energy_consumption, plot_balancing_market_earnings_upper_bounds
 
-SIM_NAME            = "MPC_18day_SE1_2024_10_01_exact_actrate025"
-SIMULATION_LENGTH   = 18
+SIM_NAME            = "TrueOpt_7day_SE1_2024_10_01_exact_actrate025"
+SIMULATION_LENGTH   = 7
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
 SIMULATION_DATE     = '2024-10-01'
@@ -67,34 +67,39 @@ def main():
     ''' OPTIMIZAION '''
     
     # '''
-    controller.optimize_MPC_complete('complete_MPC', 'fixed', plot_run = True)
+    # controller.optimize_MPC_complete('complete_MPC', 'fixed', plot_run = True)
+    # controller.optimize_mfrr('mfrr', 'fixed', plot_run = True)
+    # simulator.apply_mfrr_clearing_prices('mfrr_applied', 'mfrr', plot_run = True)
+    # controller.generate_true_optimum_BL_CM_AM('true_opt_BL_CM_AM', 'fixed', plot_run=True)
 
     # '''
     
     '''Status report'''
     # controller.status_report()
     controller.save_to_json()
-    if SAVE_TO_CSV: controller.save_performance_to_csv('simbatch_4', run_id='complete_MPC')
+    if SAVE_TO_CSV: controller.save_performance_to_csv('simbatch5_exact', run_id='complete_MPC')
     ''''''
     
     # 
     ''' PLOTTING '''
-    if not SAVE_TO_CSV: plotter.save_ocp_plots()
-    if not SAVE_TO_CSV: plotter.plot_financial_report()
+    # if not SAVE_TO_CSV: plotter.save_ocp_plots()
+    # if not SAVE_TO_CSV: plotter.plot_financial_report()
 
     # plotter.plot_spot_mfrr_prices() 
     # plotter.plot_CM_data() 
+    plotter.plot_simbatch('simbatch5_exact')
     ''''''
 
     # controller.export_intensity_to_json('abs_applied')
 
 
 def repeat_main(surpress_output):
-    start_date = datetime.strptime("2024-04-01", "%Y-%m-%d")
+    # start_date = datetime.strptime("2024-04-01", "%Y-%m-%d")
+    start_date = datetime.strptime("2025-01-13", "%Y-%m-%d")
     end_date = datetime.strptime("2025-02-01", "%Y-%m-%d")
     # end_date = datetime.strptime("2024-04-28", "%Y-%m-%d")
     delta = timedelta(days=7)
-    bidding_zones = ["NO2", "SE1", "DK1", "FI"]
+    bidding_zones = ["SE1", "DK1", "FI"]
     # bidding_zones = ["NO2", "SE1"]
 
     globals()["SURPRESS_OUTPUT"]    = surpress_output
@@ -106,7 +111,7 @@ def repeat_main(surpress_output):
         sim_suffix = current_date.strftime("%Y_%m_%d")
         
         for zone in bidding_zones:
-            sim_name = f"Batch4_MPC_7day_{sim_suffix}_{zone}_est_actrate1"
+            sim_name = f"Batch5_MPC_7day_{sim_suffix}_{zone}_exact_actrate025"
             
             # Set globals (you could refactor main() to accept arguments instead)
             globals()["SIM_NAME"] = sim_name
