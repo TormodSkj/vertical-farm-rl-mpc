@@ -51,9 +51,9 @@ class PlantModel:
         self.PPFD_max       = self.model_settings['PPFD_MAX']           # Max lighting capacity (or max tolerated light level for the plants) [mol / m^2/s]
         self.eta_light      = self.model_settings['LED_EFFICIENCY']     # LED efficiency coefficient
 
-        self.C_conv      = 0.217                                            # W / PPFD
-        self.C_conv_PPFD = self.C_conv*self.A_crop/(self.eta_light*1000)    # Conversion factor between PPFD and power. Expressed in kW
-        self.P_cap_max   = self.PPFD_max*self.C_conv_PPFD/1000              # Vertical farm power capacity [MW]
+        self.C_conv      = 0.217                                            # (W/m^2) / PPFD
+        self.k_P         = self.C_conv*self.A_crop/(self.eta_light * 1e6)   # Conversion factor between light intensity [PPFD] and power [MW]
+        self.P_cap_max   = self.PPFD_max*self.k_P                   # Vertical farm power capacity [MW]
 
 
 
@@ -254,7 +254,7 @@ class PlantModel:
 
         L = 0
         for k in range(N):
-            L += spot_prices[k] /1000 * U[:,k] * self.C_conv_PPFD
+            L += spot_prices[k] * self.k_P * U[:,k] 
                   
         L = L/4
                   
@@ -275,7 +275,7 @@ class PlantModel:
         slack_max_DLI       = Eps[1,0]
         slack_min_DLI       = Eps[2,0]
 
-        return slack_freshweight * 10**6 + (slack_max_DLI + slack_min_DLI) * 10**6
+        return slack_freshweight * 10**6 + (slack_max_DLI + slack_min_DLI) * 10**5
 
 
 
@@ -353,9 +353,9 @@ class PlantModel:
 
     def apply_bidding_constraints(self, opti: ca.Opti, N, U_nom, balancing_market: BalancingMarket, B_volumes = None, B_prices=None, B_volumes_lower_bound = None, B_prices_upper_bound = None):
 
-        lb_B_volumes, ub_B_volumes, lb_B_prices, ub_B_prices = self.get_bidding_bounds(N, U_nom, balancing_market)
-        if B_volumes_lower_bound is not None :   lb_B_volumes    = B_volumes_lower_bound
-        if B_prices_upper_bound  is not None:    ub_B_prices     = B_prices_upper_bound
+        lb_B_volumes, ub_B_volumes, lb_B_prices, ub_B_prices    = self.get_bidding_bounds(N, U_nom, balancing_market)
+        if B_volumes_lower_bound is not None :   lb_B_volumes   = B_volumes_lower_bound
+        if B_prices_upper_bound  is not None:    ub_B_prices    = B_prices_upper_bound
 
         if B_volumes is not None:
             for k in range(N):
@@ -565,7 +565,7 @@ class PlantModel:
                 P_tilde = B_volumes[1,k]*balancing_market.activation_prob_down(B_prices[1,k], spot_prices[k], clearing_prices_down[:,k], clearing_price_variance_down)\
                         - B_volumes[0,k]*balancing_market.activation_prob_up(B_prices[0,k], spot_prices[k], clearing_prices_up[:,k], clearing_price_variance_up)
                 
-                u_tilde = 1000/self.C_conv_PPFD * P_tilde
+                u_tilde =  P_tilde / self.k_P
 
             else:
                 u_tilde = 0
@@ -596,7 +596,7 @@ class PlantModel:
                         - AM_Demand_up   * CM_Volume_up
                                     
 
-                u_tilde = 1000/self.C_conv_PPFD * P_tilde
+                u_tilde = P_tilde / self.k_P
             
             else:
                 u_tilde = 0
@@ -648,7 +648,7 @@ class PlantModel:
 
 
             P_tilde = volume_down * activation_chance_down - volume_up * activation_chance_up
-            u_tilde = 1000*P_tilde/self.C_conv_PPFD
+            u_tilde = P_tilde/self.k_P
             U = np.append(U, U_nom[:,k] + u_tilde)
 
         return ca.vertcat(*U).reshape((1,-1))
@@ -675,7 +675,7 @@ class PlantModel:
                     - AM_A_up*(CM_A_up * casadi_max(CM_Volume_up, AM_Volume_up) + (1-CM_A_up)*AM_Volume_up)
             
 
-            u_tilde = 1000*P_tilde/self.C_conv_PPFD
+            u_tilde = P_tilde/self.k_P
 
             U = np.append(U, U_nom[:,k] + u_tilde)
 
@@ -690,8 +690,8 @@ class PlantModel:
         ub_B_prices = balancing_market.bid_price_limit * ca.DM.ones(2, N)
         
         lb_B_volumes = ca.DM.zeros(2, N)
-        ub_B_volumes = ca.vertcat(self.C_conv_PPFD * U_nom/1000,                       # Bid vol up
-                                  self.C_conv_PPFD * (self.PPFD_max - U_nom)/1000)     # Bid vol down
+        ub_B_volumes = ca.vertcat(self.k_P * U_nom,                       # Bid vol up
+                                  self.k_P * (self.PPFD_max - U_nom))     # Bid vol down
 
         return lb_B_volumes, ub_B_volumes, lb_B_prices, ub_B_prices
     

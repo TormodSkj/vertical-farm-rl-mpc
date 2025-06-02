@@ -582,7 +582,7 @@ class MPCSimulation():
 
 
         # Store U
-        u_tilde = 1000/self.model.C_conv_PPFD * (self.AM_activated_volumes_down - self.AM_activated_volumes_up).reshape((1,-1))
+        u_tilde = (self.AM_activated_volumes_down - self.AM_activated_volumes_up).reshape((1,-1)) / self.model.k_P
         u = (np.array(U_nom_log[:,:u_tilde.shape[1]]).flatten() + u_tilde).reshape((1,-1))
         U_log[:,:u.shape[1]] = u    
 

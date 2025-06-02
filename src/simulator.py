@@ -87,8 +87,8 @@ class Simulator():
             clearing_prices_up = np.random.normal(loc=mu_up, scale=market.sigma_AM_up)
             clearing_prices_dn = np.random.normal(loc=mu_dn, scale=market.sigma_AM_down)
 
-            u = u_nom + 1000*(np.where(np.logical_and(activation_demands == -1, bidding_price_dn < clearing_prices_dn), bidding_vol_dn, 0)\
-                            - np.where(np.logical_and(activation_demands == 1, bidding_price_up < clearing_prices_up), bidding_vol_up, 0))/controller.model.C_conv_PPFD
+            u = u_nom + (np.where(np.logical_and(activation_demands == -1, bidding_price_dn < clearing_prices_dn), bidding_vol_dn, 0)\
+                        - np.where(np.logical_and(activation_demands == 1, bidding_price_up < clearing_prices_up), bidding_vol_up, 0))/controller.model.k_P
 
             X = np.zeros((controller.model.nx, N+1))
             X[:,0] = controller.model.x_init.flatten()
@@ -184,7 +184,7 @@ class Simulator():
 
             if balancing_market.market_type == 'Activation Market':
                 P_tilde = activated_volumes_down - activated_volumes_up
-                U_tilde = 1000/controller.model.C_conv_PPFD * P_tilde
+                U_tilde =  P_tilde / controller.model.k_P
                 U = U_nom + U_tilde
 
         # B = np.vstack((bidding_vol_up, bidding_vol_down, bidding_price_up, bidding_price_down))
@@ -202,7 +202,7 @@ class Simulator():
             X[:,k+1] = np.array(F(X[:,k], np.array([U[:,k]]))).flatten()
 
 
-        f = 0.25*self.model.C_conv_PPFD/1000 * np.sum(np.multiply(spot_prices, U))\
+        f = 0.25*self.model.k_P * np.sum(np.multiply(spot_prices, U))\
                   - sum([market_earnings[market_type] for market_type in market_earnings])
         # \
         #     + np.sum(np.where(activation_down == 1, np.multiply((spot_prices - clearing_prices_down),  bidding_vol_down), 0)) \

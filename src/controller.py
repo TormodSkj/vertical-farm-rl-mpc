@@ -580,8 +580,8 @@ class Controller():
                 # Store inputs
                 U_nom[:,store_data_slice] = u_opt_base[:,extract_solution_slice]
                 
-                u_tilde = 1000/self.model.C_conv_PPFD * (np.where(activation_down == 1, B_volumes_opt[1,:], 0)\
-                                - np.where(activation_up == 1, B_volumes_opt[0,:], 0))
+                u_tilde = (np.where(activation_down == 1, B_volumes_opt[1,:], 0)\
+                           - np.where(activation_up == 1, B_volumes_opt[0,:], 0)) / self.model.k_P 
                 u = (np.array(U_nom[:,iter_slice]).flatten() + u_tilde)[extract_solution_slice]
                 U[:,store_data_slice] = u
                 
@@ -1218,7 +1218,7 @@ class Controller():
        
             U = np.array([])
             for k in range(N):
-                u_tilde = 1000/self.model.C_conv_PPFD*(bid_volumes_down[k]*reservations_down[k] - bid_volumes_up[k]*reservations_up[k])
+                u_tilde = (bid_volumes_down[k]*reservations_down[k] - bid_volumes_up[k]*reservations_up[k])/self.model.k_P
                 U = np.append(U, U_nom[:,k] + u_tilde)
 
             return ca.vertcat(*U).reshape((1,-1))
@@ -1228,8 +1228,8 @@ class Controller():
 
         L_nom, L = 0, 0
         for k in range(0, N): #from k = 2, to N-1. 
-            L_nom += spot_prices[k] * self.model.C_conv_PPFD/1000 * U_nom[:,k]
-            L     += spot_prices[k] * self.model.C_conv_PPFD/1000 * U_nom[:,k] \
+            L_nom += spot_prices[k] * self.model.k_P * U_nom[:,k]
+            L     += spot_prices[k] * self.model.k_P * U_nom[:,k] \
                   + (spot_prices[k] - clearing_prices_down[k]) * bid_volumes_down[k] * reservations_down[k]\
                   - (spot_prices[k] + clearing_prices_up[k])   * bid_volumes_up[k]   * reservations_up[k]
 
@@ -1360,7 +1360,7 @@ class Controller():
        
             U = np.array([])
             for k in range(N):
-                u_tilde = 1000/self.model.C_conv_PPFD*(bid_volumes_down[k]*activations_down[k] - bid_volumes_up[k]*activations_up[k])
+                u_tilde = (bid_volumes_down[k]*activations_down[k] - bid_volumes_up[k]*activations_up[k])/self.model.k_P
                 U = np.append(U, U_nom[:,k] + u_tilde)
 
             return ca.vertcat(*U).reshape((1,-1))
@@ -1370,7 +1370,7 @@ class Controller():
 
         L = 0
         for k in range(0, N): #from k = 2, to N-1. 
-            L += spot_prices[k] * self.model.C_conv_PPFD/1000 * U_nom[:,k] \
+            L += spot_prices[k] * self.model.k_P * U_nom[:,k] \
                   + (spot_prices[k] - clearing_prices_down[k]) * bid_volumes_down[k] * activations_down[k]\
                   - (spot_prices[k] + clearing_prices_up[k])   * bid_volumes_up[k]   * activations_up[k]
 
@@ -1391,8 +1391,8 @@ class Controller():
         # Extract state and bidding bounds
         lbx, ubx = self.model.get_state_bounds(self)
         lb_B = np.zeros((2, N))
-        ub_B = np.vstack((self.model.C_conv_PPFD * U_nom/1000,                        # Bid vol up
-                          self.model.C_conv_PPFD * (self.model.PPFD_max - U_nom)/1000))    # Bid vol down
+        ub_B = np.vstack((self.model.k_P * U_nom,                           # Bid vol up
+                          self.model.k_P * (self.model.PPFD_max - U_nom)))  # Bid vol down
         lb_eps, ub_eps = np.zeros((neps,1)), np.inf * np.ones((neps,1))
 
         # Flatten decision variables and bounds
@@ -1497,7 +1497,7 @@ class Controller():
        
             U = np.array([])
             for k in range(N):
-                u_tilde = 1000/self.model.C_conv_PPFD*(bid_volumes_down[k]*activations_down[k] - bid_volumes_up[k]*activations_up[k])
+                u_tilde = (bid_volumes_down[k]*activations_down[k] - bid_volumes_up[k]*activations_up[k])/self.model.k_P
                 U = np.append(U, U_nom[:,k] + u_tilde)
 
             return ca.vertcat(*U).reshape((1,-1))
@@ -1508,7 +1508,7 @@ class Controller():
 
         L = 0
         for k in range(0, N): #from k = 2, to N-1. 
-            L   += spot_prices[k] * self.model.C_conv_PPFD/1000 * nom_U[:,k] \
+            L   += spot_prices[k] * self.model.k_P * nom_U[:,k] \
                  - CM_clearing_prices_down[k] * CM_bid_volumes_down[k] * CM_activations_down[k] \
                  - CM_clearing_prices_up[k]   * CM_bid_volumes_up[k]   * CM_activations_up[k] \
                  + (spot_prices[k] - AM_clearing_prices_down[k]) * AM_bid_volumes_down[k] * AM_activations_down[k] \
@@ -1676,7 +1676,7 @@ class Controller():
        
             U = np.array([])
             for k in range(N):
-                u_tilde = 1000/self.model.C_conv_PPFD*(bid_volumes_down[k]*activations_down[k] - bid_volumes_up[k]*activations_up[k])
+                u_tilde = (bid_volumes_down[k]*activations_down[k] - bid_volumes_up[k]*activations_up[k])/self.model.k_P
                 U = np.append(U, U_nom[:,k] + u_tilde)
 
             return ca.vertcat(*U).reshape((1,-1))
@@ -1687,7 +1687,7 @@ class Controller():
 
         L = 0
         for k in range(0, N): #from k = 2, to N-1. 
-            L   += spot_prices[k] * self.model.C_conv_PPFD/1000 * nom_U[:,k] \
+            L   += spot_prices[k] * self.model.k_P * nom_U[:,k] \
                  - CM_clearing_prices_down[k] * CM_bid_volumes_down[k] * CM_activations_down[k] \
                  - CM_clearing_prices_up[k]   * CM_bid_volumes_up[k]   * CM_activations_up[k] \
                  + (spot_prices[k] - AM_clearing_prices_down[k]) * AM_bid_volumes_down[k] * AM_activations_down[k] \

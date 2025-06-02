@@ -548,7 +548,7 @@ class Plotter():
             subplots[plot_name] = {'run_id': run_id, 'fig': fig, 'axes': axes, 'pdf': pdf}
             ax1 = axes[i]
 
-            k = 1000/self.controller.model.C_conv_PPFD
+            k = 1/self.controller.model.k_P
             u_tilde = k*(np.multiply(bid_activations_down, bid_volumes_down) - np.multiply(bid_activations_up, bid_volumes_up))
             
             ax1.step(t, u_nom,           color='lightgrey', label="Baseline",       where='post', linestyle=':')
