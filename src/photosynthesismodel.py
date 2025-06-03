@@ -1,0 +1,374 @@
+import numpy as np
+import casadi as ca
+from market import Market
+from globals import *
+from settings import Settings
+from balancingmarket import BalancingMarket
+from utils import *
+
+class Photosynthesis:
+
+    name = 'Gjermund plant model'   # Model made by gjermund bae
+
+    Final_fw_sht:   float       # Final plant shoot fresh weight requirement    [g]
+    x_init:         np.array    # Initial dry weights per m^2                   [g/m^2]
+
+    specs: dict
+
+    temp = 24       # Ambient temperature of indoor climate in Celcius
+    co2  = 400      # Ambient co2 ppm
+
+    nx: int
+    nu: int
+    
+    def __init__(self, x_init, Final_fw_sht):
+
+        self.lai = 3
+        self.g_stm = 0.005
+        self.g_bnd = 0.007
+        self.inty_to_par = 0.217
+        self.c_w = 1.83e-3
+        self.c_Gamma = 71.2
+        self.c_car_1 = -1.32e-5
+        self.c_car_2 = 5.94e-4
+        self.c_car_3 = 2.64e-3
+        self.c_epsilon = 17e-6
+        self.c_T = 0.15              #Ratio of root dry weight to total crop dry weight
+        self.c_a = 0.68              #Conversion factor CO2 -> sugar
+        self.c_b = 0.72              #Yield factor
+        self.c_gr_max = 5e-6         #Saturation growth rate
+        self.c_Q_10_gr = 1.6         #Q10 growth factor
+        self.c_resp_sht = 3.47e-7    #Maintenance respiration coeff for the shoot
+        self.c_resp_rt = 1.16e-7     #Maintenance respiration coeff for the  root
+
+        # self.c_lar = 0.075           #Structural leaf area ratio
+        # self.c_k = 0.9               #Extinction coefficient
+        # self.c_Gamma = 71.5          #CO2 Compensation point at 20C 
+        # self.c_Q_10_Gamma = 2        #Q10 value affecting Gamma
+        # self.c_e = 17e-6             #Light use effiiency at high CO2 concentrations
+        # self.rho_c = 1.893           #Density of co2
+        # self.l = 0.11                #Mean leaf diameter
+        # self.u_inf = 0.15            #Uninhibited air speed
+        # self.c_p = 0.217             #Conversion factor from PPFD to PAR
+        self.c_d = 0.05              #Dry matter content
+        self.PCD = 25                #Plant crop density
+    
+
+        self.precompute_constants()
+
+        states, controls, expl = self.photosynthesis_model()
+        # self.nx = states.shape[0]
+        self.nx = 3
+        self.nu = controls.shape[0]
+
+        self.Final_fw_sht = Final_fw_sht
+        self.x_init = np.zeros(self.nx)
+        self.x_init[:len(x_init)] = x_init
+
+        self.specs = {
+            'type'                  : self.name,
+            'x0'                    : x_init,
+            'Fresh weight goal'     : Final_fw_sht,
+            'Ideal DLI'             : self.IDEAL_DLI,
+            'Max DLI'               : self.DLI_max,
+            'Min DLI'               : self.DLI_min,
+            'DLI resolution'        : self.DLI_res,
+            'Total growht area'     : self.A_crop,
+            'Ambient temp'          : self.temp,
+            'CO2 concentration'     : self.co2,
+            'Max PPFD'              : self.PPFD_max
+        } 
+
+
+
+
+
+    def precompute_constants(self):
+        self.g_car = self.c_car_1 * self.temp**2 + self.c_car_2 * self.temp - self.c_car_3
+        self.g_CO2 = 1 / (1 / self.g_bnd + 1 / self.g_stm + 1 / self.g_car)
+        self.Gamma = self.c_Gamma * 2 ** ((self.temp - 20) / 10)
+        self.epsilon_biomass = self.c_epsilon * (self.co2 - self.Gamma) / (self.co2 + 2 * self.Gamma)
+        self.A_sat = self.g_CO2 * self.c_w * (self.co2 - self.Gamma)
+        self.k_slope = self.epsilon_biomass
+        self.curve = 0.9
+        self.slope = 0.927 * self.k_slope
+
+    def photosynthesis_model(self):
+        # Returns explicit rates and control variables
+        # This model does not consider leaf area index or crop area cover
+        phot = ca.MX.sym('phot')
+        light_integral = ca.MX.sym('light_integral')
+        x = ca.vertcat(phot, light_integral)
+    
+        u_light = ca.MX.sym('u_light') # light intensity
+        u = ca.vertcat(u_light)
+
+        term1 = self.A_sat + self.slope * u_light * self.inty_to_par
+        term2 = ca.sqrt(1e-9 + term1**2 - 4 * self.curve * self.slope * u_light * self.inty_to_par * self.A_sat)
+        phot_rate = (term1 - term2) / (2 * self.curve)
+        light_rate = u_light
+        f_expl = ca.vertcat(phot_rate)
+        return x, u, f_expl
+    
+    def casadi_function(self, ts=3600):
+        states, controls, expl = self.photosynthesis_model()
+        f = ca.Function('f', [states, controls], [expl], ['x', 'u'], ['ode'])
+        
+        return f
+    
+        # TODO remove ruins from old code. 50 000 people used to live here. Now it's a ghost town        
+        intg_options = {}
+        ode = {
+            'x': states,
+            'p': controls,
+            'ode': f(states,controls)
+        }
+        intg = ca.integrator('intg', 'rk', ode, 0, ts, intg_options)
+        res = intg(x0=states, p=controls)
+        x_next = res['xf']
+        F = ca.Function('F', [states, controls], [x_next], ['x', 'u_control'], ['x_next'])
+
+        return F
+        
+
+    def evaluate_photosynthesis_model(self, u_light_values):
+        x, u, f = self.photosynthesis_model()
+        phot_rate_fun = ca.Function('phot_rate_fun', [u], [f[0]])
+        light_rate_fun = ca.Function('light_rate_fun', [u], [f[1]])
+
+        phot_rate_values = phot_rate_fun(u_light_values)
+        light_rate_values = light_rate_fun(u_light_values)
+
+        return phot_rate_values.full().flatten(), light_rate_values.full().flatten()
+
+    '''
+    def plot_photosynthesis_rate(self):
+        u_light_values = ca.DM(np.linspace(0, 500, 400))
+        phot_rate_values, light_rate_values = self.evaluate_photosynthesis_model(u_light_values)
+
+        plt.plot(light_rate_values, phot_rate_values)
+        plt.xlabel('Light Intensity (u_light)')
+        plt.ylabel('Photosynthesis Rate')
+        plt.title('Photosynthesis Rate vs Light Intensity')
+        plt.show()
+    '''
+
+    A_crop = 15000                                  # Total growth area [m^2]
+    PPFD_max = 250                                # Max lighting capacity (or max tolerated light level for the plants) [mol / m^2/s]
+    C_conv = 0.217                                  # W / PPFD
+    eta_light = 0.8                                 # LED efficiency coefficient
+    C_conv_PPFD = C_conv*A_crop/(eta_light*1000)    # Conversion factor between PPFD and power. Expressed in kW
+    P_cap_max = PPFD_max*C_conv_PPFD              # Vertical farm power capacity [MW]
+
+
+    PHOTOPERIOD = 16    # Hours of light in a day
+    LIGHT_INTY  = 200   # Light intensity for the photoactive hours
+    IDEAL_DLI   = PHOTOPERIOD * LIGHT_INTY * SECONDS_PER_HOUR * 1e-6       # Equates to 11.52
+
+    DLI_max = 1.1 * IDEAL_DLI       # Calculated from ideal PPFD and ideal photoperiod
+    DLI_min = 0.9 * IDEAL_DLI       # Only used for variable DLI schemes
+    DLI_res = 2                     # DLI enforcement rate. 4 = enforce over last 24h every 6h (24/4)
+
+    
+    # state labels and units (for plotting)
+    title  = "Gjermund plant model"
+    labels = ["Total dry weight (g/m^2)"]
+    x_unit = "Weight (g/m^2)"
+    u_unit = "PPFD (umol/m^2/s)"
+
+    def derivative(self, x: ca.MX.sym, u: ca.MX.sym)->ca.MX.sym:
+        
+        #Extract state
+        x_sdw   = x[0]      # structural dry weight
+        x_nsdw  = x[1]      # non-structural dry weight
+        PPFD    = u[0]      # umol/m^2/s
+
+        epsilon = 1e-6      #Small constant to avoid division by zero
+
+        #Abstractions
+        r_gr = x_nsdw / (x_nsdw + x_sdw + epsilon) * self.c_gr_max * self.c_Q_10_gr**((self.temp-20)/10)      #Growth rate
+        f_phot_fun = self.casadi_function()
+        f_phot = f_phot_fun(0, PPFD)            # f_Phot doesn't take state into account
+        f_resp = (self.c_resp_sht*(1-self.c_T) + self.c_resp_rt*self.c_T)*x_sdw * self.c_Q_10_gr**((self.temp-25)/10)   #Maintenance respiration rate
+
+        #Derivatives
+        x_sdw_dot = r_gr * x_sdw
+        # x_nsdw_dot = c_a * f_phot - x_sdw_dot - f_resp - (1-c_b)/c_b * r_gr * x_sdw   # Slightly inefficient implementation
+        x_nsdw_dot = self.c_a * f_phot - f_resp - 1/self.c_b * x_sdw_dot                # More efficient implementation
+        x_LI_dot = PPFD*1e-6
+
+        return ca.vertcat(x_sdw_dot, x_nsdw_dot, x_LI_dot)
+    
+
+    def freshweight(self, x):
+        x_sdw = x[0]
+        x_nsdw = x[1]
+
+        x_dw = x_sdw + x_nsdw
+        x_dw_plant = x_dw/self.PCD
+        x_fw_sht = x_dw_plant*(1-self.c_T)/self.c_d
+
+        return ca.vertcat(x_fw_sht)
+    
+    
+
+    def bidding_objective_function(self, controller, X, U, B, balancing_market: BalancingMarket):
+        
+        N = controller.N
+        spot_prices = controller.spot_prices
+
+        Bp_up = B[0,:]
+        Bp_dn = B[1,:]
+        Bc_up = B[2,:]
+        Bc_dn = B[3,:]
+
+        L = 0
+        
+        for k in range(0, N): #from k = 2, to N-1. 
+            L += spot_prices[k] * self.C_conv_PPFD * controller.u_base[k] \
+                  + 1000 * (spot_prices[k] - Bc_dn[k]) * Bp_dn[k] * balancing_market.activation_prob_down(spot_prices[k], Bc_dn[k])\
+                  - 1000 * (spot_prices[k] + Bc_up[k]) * Bp_up[k] * balancing_market.activation_prob_up(spot_prices[k], Bc_up[k])
+
+        L = L/4
+
+        return L
+
+    def spotopt_obj_function(self, controller, X, U):
+        N = controller.N
+        spot_prices = controller.spot_prices
+
+        L = 0
+        for k in range(N):
+            L += spot_prices[k] * U[k] * self.C_conv_PPFD
+                  
+        L = L/4
+                  
+        return L
+
+    def terminal_cost(self, controller, X, U, Eps):
+
+        return Eps * 10**6
+
+    def get_bidding_constraints(self, controller, g_eq, g_ineq, B):
+
+        # Enforce initial bids
+
+        for k, bid in enumerate(controller.bids):
+            g_eq.append(B[:, k] - bid.as_array())
+        
+        return g_eq, g_ineq
+    
+
+
+    def get_process_constraints(self, controller, g_eq, g_ineq, X, U, Eps):
+
+        N = controller.N
+        dt = controller.dt
+
+
+        # Initial state constraint
+        g_eq.append(X[:, 0] - self.x_init)
+        # Final weight constraint
+        g_ineq.append(self.freshweight(X[:,-1]) + Eps - self.Final_fw_sht)   
+
+        # Define the dynamic and control constraints
+        for k in range(0,N):
+            # Model equalities
+            x_next = X[:, k] + dt*self.derivative(X[:, k], U[k])
+            g_eq.append(X[:, k+1] - x_next)
+
+
+        ''' Inequality constraints: g_ineq[k] > 0 for all k '''
+
+        # Upper and lower bounds on u
+        for k in range(N):
+            g_ineq.append(U[k])
+            g_ineq.append(self.PPFD_max - U[k])
+
+
+        # DLI constraint
+        for k in range(N+1):
+            if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
+                # k = 96 +24, +48, +72 ...
+
+                LI = (X[2,k] - X[2,k-QUARTER_HOURS_PER_DAY])
+                # LI = ca.sum2(U[k-QUARTER_HOURS_PER_DAY:k])*1e-6*SECONDS_PER_QUARTER_HOUR # Convert from umol/m^2/s to mol/m^2/s
+                
+                g_ineq.append(self.DLI_max - LI)
+                g_ineq.append(LI - self.DLI_min)
+
+
+
+        return g_eq, g_ineq
+    
+
+    def get_u(self, controller, B):
+
+        N = controller.N
+        spot_prices = controller.spot_prices
+        u_bar = controller.u_base
+        U = np.array([])
+
+        for k in range(N):
+
+            if(k<controller.market.n_given_activations):
+                u_tilde = 1000*(B[1,k]*controller.A_down[k] - B[0,k]*controller.A_up[k])/self.C_conv_PPFD
+            else:
+                u_tilde = 1000*(B[1,k]*controller.market.activation_prob_dn(spot_prices[k], B[3,k]) - B[0,k]*controller.market.activation_prob_up(spot_prices[k], B[2,k]))/self.C_conv_PPFD
+
+            U = np.append(U, u_bar[k] + u_tilde)
+
+        return ca.vertcat(*U)
+
+    def get_bidding_bounds(self, controller, U_nom):
+
+        N = controller.N
+
+        lb_B = 0 * np.ones((4, N))
+        ub_B = np.vstack((self.C_conv_PPFD * U_nom/1000,                        # Bid vol up
+                          self.C_conv_PPFD * (self.PPFD_max - U_nom)/1000,      # Bid vol down
+                          1000 * np.ones((1, N)),                               # Bid price up. Arbitrary limit of 1000€ / MW 
+                          1000 * np.ones((1, N))))                              # Bid price down. Arbitrary limit of 1000€ / MW 
+        
+        return lb_B, ub_B
+    
+    def get_state_bounds(self, controller):
+
+        N = controller.N
+
+        # Define bounds on x and u
+        lbx = 0* np.ones((self.nx, N+1))         # Lower bound for x (x >= 0)
+        ubx = np.inf * np.ones((self.nx, N+1))   # Upper bound for x (no upper bound)
+
+
+        return lbx, ubx
+    
+    def get_input_bounds(self, controller):
+        
+        N = controller.N
+
+        lbu = np.zeros((self.nu, N))    # Lower bound for u (u >= 0)
+        ubu = self.PPFD_max * np.ones((self.nu, N))                     # Upper bound for u (u <= Max PPFD 250)
+
+        return lbu, ubu
+    
+
+    def get_metrics(self, controller, run_id, metrics_data, x, u, B):
+
+        # DLI = [np.sum(u[int(k):int(k)+QUARTER_HOURS_PER_DAY])*1e-6*SECONDS_PER_QUARTER_HOUR for k in np.linspace(0, controller.N - QUARTER_HOURS_PER_DAY, controller.T*self.DLI_res)]
+
+        DLI = []
+
+        for k in range(controller.N+1):
+            if (k % (QUARTER_HOURS_PER_DAY/self.DLI_res) == 0 and k>=QUARTER_HOURS_PER_DAY): 
+                # k = 96 +24, +48, +72 ...
+                DLI.append(x[2,k] - x[2,k-QUARTER_HOURS_PER_DAY])
+
+
+        metrics_data['DLI_avg'] = np.average(DLI)
+        metrics_data['DLI_max'] = np.max(DLI)
+        metrics_data['DLI_min'] = np.min(DLI)
+        metrics_data['Final fresh weight'] = float(self.freshweight(x[:,-1]))
+
+        return metrics_data
+    
