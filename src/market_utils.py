@@ -217,7 +217,7 @@ def load_mfrr_AM_data(data_folder):
     combined_df.rename(columns = rename_dict, inplace=True)
 
     combined_df.drop(columns = ['Delivery Start (CET)', 'Delivery End (CET)'], inplace=True)
-    combined_df.drop(columns = [col for col in combined_df.columns if 'Imbalance' in col], inplace=True)
+    # combined_df.drop(columns = [col for col in combined_df.columns if 'Imbalance' in col], inplace=True)
 
     return combined_df
 

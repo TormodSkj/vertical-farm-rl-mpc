@@ -48,6 +48,7 @@ class BalancingMarket:
         self.data_resolution    = data_resolution
 
         self.market_data_full_set    = self.standardize_market_data(market_data)
+        self.market_data_raw         = self.market_data_full_set.copy()
         if market_type == 'Activation Market':  self.generate_activation_times(activation_chance=self.market_settings['AM_ACTIVATION_RATE'], hourly_roll=False)
         if market_type == 'Capacity Market':    self.generate_activation_times(activation_chance=self.market_settings['CM_ACTIVATION_RATE'], hourly_roll=True)
         self.market_data_working_set = self.get_market_data(all=True)
@@ -385,7 +386,7 @@ class BalancingMarket:
         return
 
 
-    def get_market_data(self, start_date=None, end_date=None, n_days = None, zone = None, all = False, times = False, spot_prices=False, clearing_prices=False, volumes=False, activations=False):
+    def get_market_data(self, start_date=None, end_date=None, n_days = None, zone = None, all = False, times = False, spot_prices=False, clearing_prices=False, volumes=False, activations=False, imbalance_prices = False, dataset = None):
         '''
         Fetch a slice form the full data set containing specified data types.
         
@@ -400,7 +401,10 @@ class BalancingMarket:
         start_date = pd.to_datetime(start_date, format='%Y-%m-%d')
 
         # Remove dates before simdate
-        market_data_full_set = self.market_data_full_set.copy()
+        if dataset is None: 
+            market_data_full_set = self.market_data_full_set.copy()
+        else:
+            market_data_full_set = dataset
 
         market_data_working_set = market_data_full_set[
             (market_data_full_set['Start Time']   >= start_date)    &
@@ -411,6 +415,7 @@ class BalancingMarket:
         if times            or all: keywords += ['Start Time']
         if spot_prices      or all: keywords += ['spot']
         if clearing_prices  or all: keywords += ['up price', 'down price']
+        if imbalance_prices or all: keywords += ['imbalance price']
         if volumes          or all: keywords += ['volume']
         if activations      or all: keywords += ['activated']
         columns = [col for col in market_data_working_set.columns if any([keyword.lower() in col.lower() for keyword in keywords])]
@@ -437,7 +442,7 @@ class BalancingMarket:
         data = data.sort_values(by='Start Time')  # Ensure proper ordering
         inferred_freq = pd.infer_freq(data['Start Time'].iloc[:5])  # Check first few rows
 
-        if inferred_freq in ["h", "60min"]:  # If data is hourly, resample to 15-minute intervals
+        if inferred_freq in ["H", "h", "60min"]:  # If data is hourly, resample to 15-minute intervals
             new_index = pd.date_range(start=data['Start Time'].min(), 
                                     end=data['Start Time'].max() + pd.Timedelta(hours=1) - pd.Timedelta(minutes=15),  
                                     freq="15min")
