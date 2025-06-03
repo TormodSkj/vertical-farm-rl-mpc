@@ -455,10 +455,10 @@ class Plotter():
             # ax1.set_aspect('equal')
             # ax2.set_aspect('equal')
 
-            ax1.set_ylabel("Recorded bid activation rate (%)")
-            ax1.set_xlabel("Expected bid activation chance (%)")
-            ax2.set_ylabel("Recorded bid activation rate (%)")
-            ax2.set_xlabel("Expected bid activation chance (%)")
+            ax1.set_ylabel("Recorded bid activation rate Up (%)")
+            ax1.set_xlabel("Expected bid activation chance Down (%)")
+            ax2.set_ylabel("Recorded bid activation rate Up (%)")
+            ax2.set_xlabel("Expected bid activation chance Down (%)")
             
             fig.suptitle(f'Expected vs recorded activation rates ({market.bidding_zone}, {market.date})')
             ax1.set_title(market_type)
