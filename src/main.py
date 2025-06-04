@@ -11,11 +11,11 @@ from datetime import datetime, timedelta
 
 # from utils import vertigrow_calculate_energy_consumption, plot_balancing_market_earnings_upper_bounds
 
-SIM_NAME            = "MPC_batch_relative_7d_actrate010_exact"
-SIMULATION_LENGTH   = 7
+SIM_NAME            = "MPC_18d_SE1_2024_10_20_exact_actrate010_3"
+SIMULATION_LENGTH   = 18
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
-SIMULATION_DATE     = '2024-04-05'
+SIMULATION_DATE     = '2024-10-20'
 BIDDING_ZONE        = 'SE1'
 OPTIMISTIC          = 1
 SEARCH_CACHE        = 0
@@ -67,7 +67,7 @@ def main():
     ''' OPTIMIZAION '''
     
     # '''
-    controller.optimize_MPC_complete('complete_MPC', 'fixed', plot_run = True)
+    # controller.optimize_MPC_complete('complete_MPC', 'fixed', plot_run = True)
     # controller.optimize_mfrr('mfrr', 'fixed', plot_run = True)
     # simulator.apply_mfrr_clearing_prices('mfrr_applied', 'mfrr', plot_run = True)
     # controller.generate_true_optimum_BL_CM_AM('true_opt_BL_CM_AM', 'fixed', plot_run=True)
@@ -82,13 +82,13 @@ def main():
     
     # 
     ''' PLOTTING '''
-    if not SAVE_TO_CSV: plotter.save_ocp_plots()
-    if not SAVE_TO_CSV: plotter.plot_financial_report()
+    # if not SAVE_TO_CSV: plotter.save_ocp_plots()
+    # if not SAVE_TO_CSV: plotter.plot_financial_report()
 
-    # plotter.plot_spot_mfrr_prices() 
-    # plotter.plot_activations() 
+    plotter.plot_spot_mfrr_prices() 
+    plotter.plot_activations() 
     # plotter.plot_CM_data() 
-    # plotter.plot_simbatch('simbatch5_exact')
+    # plotter.plot_simbatch('simbatch6_relative_exact')
     ''''''
 
     # controller.export_intensity_to_json('abs_applied')
@@ -128,5 +128,5 @@ def repeat_main(surpress_output):
 
 
 if __name__ == "__main__":
-    # main()
-    repeat_main(surpress_output=True)
+    main()
+    # repeat_main(surpress_output=True)
