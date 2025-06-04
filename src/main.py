@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 # from utils import vertigrow_calculate_energy_consumption, plot_balancing_market_earnings_upper_bounds
 
-SIM_NAME            = "sanity_check_7days_SE2_04_05_exact_actrate1_relative_prices"
+SIM_NAME            = "MPC_batch_relative_7d_actrate010_exact"
 SIMULATION_LENGTH   = 7
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
@@ -43,7 +43,7 @@ def main():
     settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH,
                          CM_N_BIDS = 96, AM_N_BIDS = 48, CHECK_FEASIBILITY = False)
     settings.add_setting('market', SIMULATION_DATE = SIMULATION_DATE, OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE, 
-                         AM_ACTIVATION_RATE  = 1, CM_ACTIVATION_RATE  = 1, EXACT_ESTIMATION = True, RELATIVE_AM_PRICES = True)
+                         AM_ACTIVATION_RATE  = 0.25, CM_ACTIVATION_RATE  = 0.25, EXACT_ESTIMATION = True, RELATIVE_AM_PRICES = True)
     settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT, DLI_RESOLUTION = 2, DISCRETIZATION = DISCRETIZATION)
     settings.add_setting('plotter', SEARCH_PLOT_CACHE = SEARCH_PLOT_CACHE, PLOT_EXPORT_TYPE='pdf', FILTER_BIDS = True, PLOT_ASPECT_RATIO = (14, 6))
 
@@ -67,7 +67,7 @@ def main():
     ''' OPTIMIZAION '''
     
     # '''
-    # controller.optimize_MPC_complete('complete_MPC', 'fixed', plot_run = True)
+    controller.optimize_MPC_complete('complete_MPC', 'fixed', plot_run = True)
     # controller.optimize_mfrr('mfrr', 'fixed', plot_run = True)
     # simulator.apply_mfrr_clearing_prices('mfrr_applied', 'mfrr', plot_run = True)
     # controller.generate_true_optimum_BL_CM_AM('true_opt_BL_CM_AM', 'fixed', plot_run=True)
@@ -77,16 +77,16 @@ def main():
     '''Status report'''
     # controller.status_report()
     # controller.save_to_json()
-    if SAVE_TO_CSV: controller.save_performance_to_csv('simbatch5_exact', run_id='complete_MPC')
+    if SAVE_TO_CSV: controller.save_performance_to_csv('simbatch6_relative_exact', run_id='complete_MPC')
     ''''''
     
     # 
     ''' PLOTTING '''
-    # if not SAVE_TO_CSV: plotter.save_ocp_plots()
-    # if not SAVE_TO_CSV: plotter.plot_financial_report()
+    if not SAVE_TO_CSV: plotter.save_ocp_plots()
+    if not SAVE_TO_CSV: plotter.plot_financial_report()
 
-    plotter.plot_spot_mfrr_prices() 
-    plotter.plot_activations() 
+    # plotter.plot_spot_mfrr_prices() 
+    # plotter.plot_activations() 
     # plotter.plot_CM_data() 
     # plotter.plot_simbatch('simbatch5_exact')
     ''''''
@@ -95,12 +95,14 @@ def main():
 
 
 def repeat_main(surpress_output):
-    # start_date = datetime.strptime("2024-04-01", "%Y-%m-%d")
-    start_date = datetime.strptime("2025-01-13", "%Y-%m-%d")
-    end_date = datetime.strptime("2025-02-01", "%Y-%m-%d")
+    start_date = datetime.strptime("2024-04-01", "%Y-%m-%d")
+    # start_date = datetime.strptime("2025-01-13", "%Y-%m-%d")
+    end_date = datetime.strptime("2024-12-26", "%Y-%m-%d")
+    # end_date = datetime.strptime("2025-02-01", "%Y-%m-%d")
     # end_date = datetime.strptime("2024-04-28", "%Y-%m-%d")
     delta = timedelta(days=7)
-    bidding_zones = ["SE1", "DK1", "FI"]
+    bidding_zones = ["NO2", "SE1", "DK1", "FI"]
+    # bidding_zones = ["SE1", "DK1", "FI"]
     # bidding_zones = ["NO2", "SE1"]
 
     globals()["SURPRESS_OUTPUT"]    = surpress_output
@@ -112,7 +114,7 @@ def repeat_main(surpress_output):
         sim_suffix = current_date.strftime("%Y_%m_%d")
         
         for zone in bidding_zones:
-            sim_name = f"Batch5_MPC_7day_{sim_suffix}_{zone}_exact_actrate025"
+            sim_name = f"Batch6_relativeprices_MPC_7day_{sim_suffix}_{zone}_exact_actrate025"
             
             # Set globals (you could refactor main() to accept arguments instead)
             globals()["SIM_NAME"] = sim_name
@@ -126,5 +128,5 @@ def repeat_main(surpress_output):
 
 
 if __name__ == "__main__":
-    main()
-    # repeat_main(surpress_output=True)
+    # main()
+    repeat_main(surpress_output=True)
