@@ -1105,8 +1105,8 @@ class Plotter():
         zone = market.bidding_zone
 
         # Remove drastic outliers
-        price_data_raw = market.AM_data_working_set
-        price_data = price_data_raw.where(price_data_raw[f'{zone} Up Price']<500).where(price_data_raw[f'{zone} Down Price']>-500).dropna()
+        price_data = market.AM_data_working_set
+        # price_data = price_data_raw.where(price_data_raw[f'{zone} Up Price']<500).where(price_data_raw[f'{zone} Down Price']>-500).dropna()
 
         timestamps      = price_data['Start Time']
         spot_prices     = np.array(price_data[f'{zone} Spot Price'])
@@ -1312,50 +1312,6 @@ class Plotter():
 
         filename = f"AM_raw_prices_vs_imbalance_prices_{market.bidding_zone}"
         plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
-
-        ###########################################
-        #            SPOT VS CM PRICES VS CM VOLUMES
-        #         [RAW]  [OUTLIERS REMOVED]
-
-
-        CM_timestamps       = market.CM.get_market_data(times=True)
-        CM_spot_prices    =  np.array(market.CM.get_market_data(spot_prices=True)).flatten()
-        CM_price_data = market.CM.get_market_data(clearing_prices=True)
-        CM_volume_data = market.CM.get_market_data(volumes=True)
-
-        CM_prices_up   = np.array(CM_price_data[f'{zone} Up Price'   ]).flatten()
-        CM_prices_down = np.array(CM_price_data[f'{zone} Down Price' ]).flatten()
-
-        CM_volumes_up   = np.array(CM_volume_data[f'{zone} Up Volume'   ]).flatten()
-        CM_volumes_down = np.array(CM_volume_data[f'{zone} Down Volume' ]).flatten()
-
-
-        fig, (ax1, ax3) = plt.subplots(2, 1, figsize=self.aspect_ratio, sharex=False)
-
-        ax1.step(CM_timestamps, CM_prices_up, label="Clearing price up", color='blue', alpha=1, where='post')
-        ax1.step(CM_timestamps, CM_prices_down, label="Clearing price down", color='red', alpha=1, where='post')
-        ax1.step(CM_timestamps, CM_spot_prices, label="Spot price", color='grey', alpha=1, where='post')
-        
-        ax3.step(CM_timestamps, CM_volumes_up,     label="Up", color='blue', alpha=1, where='post')
-        ax3.step(CM_timestamps, CM_volumes_down,   label="Down", color='red', alpha=1, where='post')
-        # ax2.step(CM_timestamps, CM_spot_prices,   label="Spot price", color='grey', alpha=1, where='post')
-
-        ax1.set_ylabel("Price (€/MW)")
-        ax1.set_xlabel("Time (days)")
-        ax1.set_title(f"Clearing Prices")
-        ax1.legend(loc='upper left')
-        ax3.set_ylabel("Power (MW)")
-        ax3.set_xlabel("Time (days)")
-        ax3.set_title(f"Activated Volumes")
-        ax3.legend(loc='upper left')
-
-
-        fig.suptitle(f"CM clearing prices vs Reserved Volumes (Zone: {zone}, Date: {market.date})")
-        fig.tight_layout()
-
-        filename = f"CM_raw_prices_vs_volumes_{market.bidding_zone}"
-        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
-
 
 
         ####################################################

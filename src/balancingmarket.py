@@ -49,8 +49,16 @@ class BalancingMarket:
 
         self.market_data_full_set    = self.standardize_market_data(market_data)
         self.market_data_raw         = self.market_data_full_set.copy()
-        if market_type == 'Activation Market':  self.generate_activation_times(activation_chance=self.market_settings['AM_ACTIVATION_RATE'], hourly_roll=False)
-        if market_type == 'Capacity Market':    self.generate_activation_times(activation_chance=self.market_settings['CM_ACTIVATION_RATE'], hourly_roll=True)
+
+        # Transform data
+        if market_type == 'Activation Market':  
+            if self.market_settings['RELATIVE_AM_PRICES']: 
+                self.market_data_full_set = self.transform_prices_to_relative(self.market_data_full_set)
+            self.generate_activation_times(activation_chance=self.market_settings['AM_ACTIVATION_RATE'], hourly_roll=False)
+        if market_type == 'Capacity Market':    
+            self.generate_activation_times(activation_chance=self.market_settings['CM_ACTIVATION_RATE'], hourly_roll=True)
+        
+        
         self.market_data_working_set = self.get_market_data(all=True)
 
         self.spot_prices             = np.array(self.market_data_working_set[f'{self.bidding_zone} Spot Price'])
@@ -472,6 +480,22 @@ class BalancingMarket:
 
         return data
 
+
+    def transform_prices_to_relative(self, dataset):
+
+
+        data = dataset.copy()
+
+        for col in data.columns:
+
+            if 'spot' in col.lower():   # only one spot column per zone
+                zone = col.split()[0]
+                if zone == 'NO2NSL': continue
+                
+                data[f'{zone} Up Price'] = data[f'{zone} Up Price'] - data[f'{zone} Spot Price']
+                data[f'{zone} Down Price'] = data[f'{zone} Spot Price'] - data[f'{zone} Down Price']
+
+        return data
 
 
     def subject_bids_to_market_data(self, MTU_start, Bid_volumes, Bid_prices, zone = None):

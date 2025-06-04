@@ -11,12 +11,12 @@ from datetime import datetime, timedelta
 
 # from utils import vertigrow_calculate_energy_consumption, plot_balancing_market_earnings_upper_bounds
 
-SIM_NAME            = "MPC_18day_SE1_2024_04_15_exact_actrate025_2"
-SIMULATION_LENGTH   = 4
+SIM_NAME            = "sanity_check_7days_SE2_04_05_exact_actrate1_relative_prices"
+SIMULATION_LENGTH   = 7
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
 SIMULATION_DATE     = '2024-04-05'
-BIDDING_ZONE        = 'SE2'
+BIDDING_ZONE        = 'SE1'
 OPTIMISTIC          = 1
 SEARCH_CACHE        = 0
 SEARCH_PLOT_CACHE   = 0
@@ -43,7 +43,7 @@ def main():
     settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH,
                          CM_N_BIDS = 96, AM_N_BIDS = 48, CHECK_FEASIBILITY = False)
     settings.add_setting('market', SIMULATION_DATE = SIMULATION_DATE, OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE, 
-                         AM_ACTIVATION_RATE  = 0.25, CM_ACTIVATION_RATE  = 0.25, EXACT_ESTIMATION = True)
+                         AM_ACTIVATION_RATE  = 1, CM_ACTIVATION_RATE  = 1, EXACT_ESTIMATION = True, RELATIVE_AM_PRICES = True)
     settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT, DLI_RESOLUTION = 2, DISCRETIZATION = DISCRETIZATION)
     settings.add_setting('plotter', SEARCH_PLOT_CACHE = SEARCH_PLOT_CACHE, PLOT_EXPORT_TYPE='pdf', FILTER_BIDS = True, PLOT_ASPECT_RATIO = (14, 6))
 
