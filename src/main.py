@@ -11,11 +11,11 @@ from datetime import datetime, timedelta
 
 # from utils import vertigrow_calculate_energy_consumption, plot_balancing_market_earnings_upper_bounds
 
-SIM_NAME            = "MPC_18d_SE1_2024_10_20_exact_actrate010_3"
-SIMULATION_LENGTH   = 18
+SIM_NAME            = "objfun_comparison_tormod"
+SIMULATION_LENGTH   = 7
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
-SIMULATION_DATE     = '2024-10-20'
+SIMULATION_DATE     = '2024-04-01'
 BIDDING_ZONE        = 'SE1'
 OPTIMISTIC          = 1
 SEARCH_CACHE        = 0
@@ -43,7 +43,7 @@ def main():
     settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH,
                          CM_N_BIDS = 96, AM_N_BIDS = 48, CHECK_FEASIBILITY = False)
     settings.add_setting('market', SIMULATION_DATE = SIMULATION_DATE, OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE, 
-                         AM_ACTIVATION_RATE  = 0.25, CM_ACTIVATION_RATE  = 0.25, EXACT_ESTIMATION = True, RELATIVE_AM_PRICES = True)
+                         AM_ACTIVATION_RATE  = 0.25, CM_ACTIVATION_RATE  = 0.25, EXACT_ESTIMATION = False, RELATIVE_AM_PRICES = True)
     settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT, DLI_RESOLUTION = 2, DISCRETIZATION = DISCRETIZATION)
     settings.add_setting('plotter', SEARCH_PLOT_CACHE = SEARCH_PLOT_CACHE, PLOT_EXPORT_TYPE='pdf', FILTER_BIDS = True, PLOT_ASPECT_RATIO = (14, 6))
 
@@ -77,18 +77,18 @@ def main():
     '''Status report'''
     # controller.status_report()
     # controller.save_to_json()
-    if SAVE_TO_CSV: controller.save_performance_to_csv('simbatch6_relative_exact', run_id='complete_MPC')
+    if SAVE_TO_CSV: controller.save_performance_to_csv('simbatch7_relative_newobj_exact', run_id='complete_MPC')
     ''''''
     
     # 
     ''' PLOTTING '''
-    # if not SAVE_TO_CSV: plotter.save_ocp_plots()
-    # if not SAVE_TO_CSV: plotter.plot_financial_report()
+    if not SAVE_TO_CSV: plotter.save_ocp_plots()
+    if not SAVE_TO_CSV: plotter.plot_financial_report()
 
-    plotter.plot_spot_mfrr_prices() 
-    plotter.plot_activations() 
+    # plotter.plot_spot_mfrr_prices() 
+    # plotter.plot_activations() 
     # plotter.plot_CM_data() 
-    # plotter.plot_simbatch('simbatch6_relative_exact')
+    plotter.plot_simbatch('simbatch7_relative_newobj_exact')
     ''''''
 
     # controller.export_intensity_to_json('abs_applied')
@@ -114,7 +114,7 @@ def repeat_main(surpress_output):
         sim_suffix = current_date.strftime("%Y_%m_%d")
         
         for zone in bidding_zones:
-            sim_name = f"Batch6_relativeprices_MPC_7day_{sim_suffix}_{zone}_exact_actrate025"
+            sim_name = f"Batch7_relativeprices_newobj_MPC_7day_{sim_suffix}_{zone}_exact_actrate025"
             
             # Set globals (you could refactor main() to accept arguments instead)
             globals()["SIM_NAME"] = sim_name

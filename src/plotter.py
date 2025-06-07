@@ -1404,14 +1404,14 @@ class Plotter():
 
         ax1.hist(mfrr_prices_up-spot_prices_eur, label="Clearing price up", color='blue', alpha=0.4, bins=2*n_bins, density=True)
         ax1.set_xlabel("Bidding prices (€/MW)")
-        ax1.set_xlim([-75, 25])
+        # ax1.set_xlim([-75, 25])
         ax1.legend()
         ax1.set_yscale('log')
 
 
         ax3.hist(mfrr_prices_dn-spot_prices_eur, label="Clearing price down", color='red', alpha=0.4, bins=n_bins, density=True)
         ax3.set_xlabel("Bidding prices (€/MW)")
-        ax3.set_xlim([-75, 25])
+        # ax3.set_xlim([-75, 25])
         ax3.legend()
         ax3.set_yscale('log')
 

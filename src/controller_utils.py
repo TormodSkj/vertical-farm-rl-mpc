@@ -379,6 +379,11 @@ class MPCSimulation():
         self.Eps_nom_opt_CM      = sol_CM.value(opt_vars_CM['Eps_nom'])
 
 
+        # Compare cost functions 
+        # print(f"Seb's cost function: {self.model.Bidding_obj_function_seb(self.CM_N_bids, self.spot_prices[self.CM_iter_slice], self.CM_bid_volumes_opt, self.CM_bid_prices_opt, self.CM, self.CM_optimizer_start_MTU)}")
+        # print(f"Tormod's cost function: {self.model.Bidding_obj_function(self.CM_N_bids, self.spot_prices[self.CM_iter_slice], self.CM_bid_volumes_opt, self.CM_bid_prices_opt, self.CM, self.CM_optimizer_start_MTU)}")
+
+
         extracted_bids = ca.vertcat(self.CM_bid_volumes_opt[:,:self.CM_N_bids_to_submit], 
                                     self.CM_bid_prices_opt[:,:self.CM_N_bids_to_submit])
         self.CM_bid_submissions = ca.horzcat(self.CM_bid_submissions, ca.vertcat(extracted_bids))
@@ -507,6 +512,10 @@ class MPCSimulation():
         self.AM_bid_volumes_opt     = sol_AM.value(opt_vars_AM['B_volumes'])[:,:self.AM_N_horizon]
         self.AM_bid_prices_opt      = sol_AM.value(opt_vars_AM['B_prices'])[:,:self.AM_N_horizon]
         self.Eps_opt_AM             = sol_AM.value(opt_vars_AM['Eps'])
+
+        # Compare cost functions
+        # print(f"Seb's cost function: {self.model.Bidding_obj_function_seb(self.AM_N_bids, self.spot_prices[self.AM_iter_slice], self.AM_bid_volumes_opt, self.AM_bid_prices_opt, self.AM, self.AM_optimizer_start_MTU)}")
+        # print(f"Tormod's cost function: {self.model.Bidding_obj_function(self.AM_N_bids, self.spot_prices[self.AM_iter_slice], self.AM_bid_volumes_opt, self.AM_bid_prices_opt, self.AM, self.AM_optimizer_start_MTU)}")
 
 
         extracted_bids = ca.vertcat(self.AM_bid_volumes_opt[:,:self.AM_N_bids_to_submit], 
@@ -782,7 +791,7 @@ def update_optimizer_CM_bids(controller, market: Market, model: PlantModel, opti
     
     # U = self.model.get_u(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market.CM)
     obj = model.elcost_obj_function(N_TH, spot_prices, U) \
-        + model.Bidding_obj_function(N_bids, spot_prices, B_volumes, B_prices, market.CM, MTU_start = MTU)\
+        + model.Bidding_obj_function_seb(N_bids, spot_prices, B_volumes, B_prices, market.CM, MTU_start = MTU)\
         + model.terminal_cost(controller, X, U, Eps)\
         + model.terminal_cost(controller, X_nom, U_nom, Eps_nom)
 
@@ -838,7 +847,7 @@ def update_optimizer_AM_bids(controller, market: Market, model: PlantModel, opti
     
     U = model.get_u(N_TH, N_bids, U_nom, B_volumes, B_prices, spot_prices, market.AM, clearing_prices=Est_prices)
     obj_fun = model.elcost_obj_function(N_TH, spot_prices, U)\
-            + model.Bidding_obj_function(N_bids, spot_prices, B_volumes, B_prices, market.AM, MTU_start=MTU)\
+            + model.Bidding_obj_function_seb(N_bids, spot_prices, B_volumes, B_prices, market.AM, MTU_start=MTU)\
             + model.terminal_cost(controller, X, U, Eps)
             
     opti.minimize(obj_fun)

@@ -235,6 +235,18 @@ def conditional_expectation(y, means, cov_matrix):
 #     return cond_cov
 
 
+
+def gaussian_PDF(x, mu, sigma):
+    """
+    Returns the PDF of a Gaussian N(mu, sigma^2) evaluated at x.
+    Everything is CasADi-trackable.
+    """
+    epsilon = 1e-6  # To prevent division by zero
+    denom = ca.sqrt(2 * ca.pi) * (sigma + epsilon)
+    z = (x - mu) / (sigma + epsilon)
+    return (1 / denom) * ca.exp(-0.5 * z**2)
+
+
 def gaussian_CDF(X, mu, sigma: float):
     '''
     Calculates the probability of P(x<=X) if x ~N(x; mu, sigma)

@@ -224,32 +224,9 @@ class PlantModel:
         L = L/4
 
         return L
-
-    def AM_bidding_obj_function(self, N_TH, spot_prices, B_volumes, B_prices, balancing_market: BalancingMarket, MTU_start = None):
-
-        # Altered cost function by advice from Jay during the seminar.
-
-        bid_volumes_up      = B_volumes[0,:]
-        bid_volumes_down    = B_volumes[1,:]
-        bid_prices_up       = B_prices[0,:]
-        bid_prices_down     = B_prices[1,:]
-
-        expected_prices_up, expected_prices_down = balancing_market.get_estimated_clearing_prices(start_date = MTU_start, n_data = N_TH)
-        expected_price_variance_up, expected_price_variance_down = balancing_market.get_estimated_clearing_price_variances()
-
-        L = 0
-
-        for k in range(0, N_TH):
-            L += \
-                  - (spot_prices[k] - expected_prices_down[:,k])   * bid_volumes_down[k]   * balancing_market.activation_prob_down(bid_prices_down[k], spot_prices[k], expected_prices_down[:,k], expected_price_variance_down)\
-                  - (expected_prices_up[:,k] - spot_prices[k])     * bid_volumes_up[k]     * balancing_market.activation_prob_up(bid_prices_up[k], spot_prices[k], expected_prices_up[:,k], expected_price_variance_up)
-
-        L = L/4
-
-        return L
     
-    
-    def CM_bidding_obj_function(self, N_TH, spot_prices, B_volumes, B_prices, balancing_market: BalancingMarket, MTU_start = None):
+
+    def Bidding_obj_function_seb(self, N_TH, spot_prices, B_volumes, B_prices, balancing_market: BalancingMarket, MTU_start = None):
         
         bid_volumes_up      = B_volumes[0,:]
         bid_volumes_down    = B_volumes[1,:]
@@ -257,21 +234,74 @@ class PlantModel:
         bid_prices_down     = B_prices[1,:]
 
         # expected_prices_up, expected_prices_down = balancing_market.expected_clearing_prices_up.flatten(), balancing_market.expected_clearing_prices_down.flatten()
-        
-        # expected_prices_up, expected_prices_down = balancing_market.get_estimated_clearing_prices(spot_prices)
         expected_prices_up, expected_prices_down = balancing_market.get_estimated_clearing_prices(start_date = MTU_start, n_data = N_TH)
         expected_price_variance_up, expected_price_variance_down = balancing_market.get_estimated_clearing_price_variances()
-        
+        # expected_prices_up, expected_prices_down = balancing_market.get_expected_clearing_prices(spot_prices)
+
+        expected_price_sd_up, expected_price_sd_down = ca.sqrt(expected_price_variance_up), ca.sqrt(expected_price_variance_down)
+
         L = 0
 
         for k in range(0, N_TH):
             L += \
-                  - expected_prices_down[:,k]   * bid_volumes_down[k]   * balancing_market.activation_prob_down(bid_prices_down[k], spot_prices[k], expected_prices_down[:,k], expected_price_variance_down)\
-                  - expected_prices_up[:,k]     * bid_volumes_up[k]     * balancing_market.activation_prob_up(bid_prices_up[k], spot_prices[k], expected_prices_up[:,k], expected_price_variance_up)
+                  - bid_volumes_down[k] * balancing_market.demand_prob_down(spot_prices[k]) * (expected_prices_down[:,k]*(1-gaussian_CDF(bid_prices_down[k], expected_prices_down[:,k], expected_price_sd_down)) + expected_price_sd_down*gaussian_PDF(bid_prices_down[k], expected_prices_down[:,k], expected_price_sd_down)) \
+                  - bid_volumes_up[k] * balancing_market.demand_prob_up(spot_prices[k]) * (expected_prices_up[:,k]*(1-gaussian_CDF(bid_prices_up[k], expected_prices_up[:,k], expected_price_sd_up)) + expected_price_sd_up*gaussian_PDF(bid_prices_up[k], expected_prices_up[:,k], expected_price_sd_up))
+
+
+                #   - expected_prices_down[:,k]   * bid_volumes_down[k]   * balancing_market.activation_prob_down(bid_prices_down[k], spot_prices[k], expected_prices_down[:,k], expected_price_variance_down)\
+                #   - expected_prices_up[:,k]     * bid_volumes_up[k]     * balancing_market.activation_prob_up(bid_prices_up[k], spot_prices[k], expected_prices_up[:,k], expected_price_variance_up)
 
         L = L/4
 
         return L
+
+    # def AM_bidding_obj_function(self, N_TH, spot_prices, B_volumes, B_prices, balancing_market: BalancingMarket, MTU_start = None):
+
+    #     # Altered cost function by advice from Jay during the seminar.
+
+    #     bid_volumes_up      = B_volumes[0,:]
+    #     bid_volumes_down    = B_volumes[1,:]
+    #     bid_prices_up       = B_prices[0,:]
+    #     bid_prices_down     = B_prices[1,:]
+
+    #     expected_prices_up, expected_prices_down = balancing_market.get_estimated_clearing_prices(start_date = MTU_start, n_data = N_TH)
+    #     expected_price_variance_up, expected_price_variance_down = balancing_market.get_estimated_clearing_price_variances()
+
+    #     L = 0
+
+    #     for k in range(0, N_TH):
+    #         L += \
+    #               - (spot_prices[k] - expected_prices_down[:,k])   * bid_volumes_down[k]   * balancing_market.activation_prob_down(bid_prices_down[k], spot_prices[k], expected_prices_down[:,k], expected_price_variance_down)\
+    #               - (expected_prices_up[:,k] - spot_prices[k])     * bid_volumes_up[k]     * balancing_market.activation_prob_up(bid_prices_up[k], spot_prices[k], expected_prices_up[:,k], expected_price_variance_up)
+
+    #     L = L/4
+
+    #     return L
+    
+    
+    # def CM_bidding_obj_function(self, N_TH, spot_prices, B_volumes, B_prices, balancing_market: BalancingMarket, MTU_start = None):
+        
+    #     bid_volumes_up      = B_volumes[0,:]
+    #     bid_volumes_down    = B_volumes[1,:]
+    #     bid_prices_up       = B_prices[0,:]
+    #     bid_prices_down     = B_prices[1,:]
+
+    #     # expected_prices_up, expected_prices_down = balancing_market.expected_clearing_prices_up.flatten(), balancing_market.expected_clearing_prices_down.flatten()
+        
+    #     # expected_prices_up, expected_prices_down = balancing_market.get_estimated_clearing_prices(spot_prices)
+    #     expected_prices_up, expected_prices_down = balancing_market.get_estimated_clearing_prices(start_date = MTU_start, n_data = N_TH)
+    #     expected_price_variance_up, expected_price_variance_down = balancing_market.get_estimated_clearing_price_variances()
+        
+    #     L = 0
+
+    #     for k in range(0, N_TH):
+    #         L += \
+    #               - expected_prices_down[:,k]   * bid_volumes_down[k]   * balancing_market.activation_prob_down(bid_prices_down[k], spot_prices[k], expected_prices_down[:,k], expected_price_variance_down)\
+    #               - expected_prices_up[:,k]     * bid_volumes_up[k]     * balancing_market.activation_prob_up(bid_prices_up[k], spot_prices[k], expected_prices_up[:,k], expected_price_variance_up)
+
+    #     L = L/4
+
+    #     return L
 
     def elcost_obj_function(self, N, spot_prices, U):
 
