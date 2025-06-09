@@ -100,7 +100,8 @@ class Settings():
                          SPOTPRICES_PATH            = 'spot_market/',          
                          MFRR_CBMP_DATA_PATH        = 'mFRR_CBMP/',
                          MFRR_CM_DATA_PATH          = 'mFRR_capacity_market/',
-                         MFRR_AM_DATA_PATH          = 'mFRR_activation_market/'
+                         MFRR_AM_DATA_PATH          = 'mFRR_activation_market/',
+                         GEOJSON_DATA_PATH          = 'bidding_zones_geodata/'
                          )
 
 

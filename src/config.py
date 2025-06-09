@@ -29,6 +29,7 @@ class Config():
         self.data_path          = os.path.join(self.path, self.config_settings['DATA_SUBDIR'])
         self.data_analysis_path = os.path.join(self.path, self.config_settings['DATA_ANALYSIS_SUBDIR'])
         self.output_path        = os.path.join(self.path, self.config_settings['OUTPUT_SUBDIR'])
+        self.geodata_path       = os.path.join(self.path, self.config_settings['GEOJSON_DATA_PATH'])
 
         self.current_sim_plot_path  = os.path.join(self.plots_path, self.sim_name)
 
@@ -47,7 +48,8 @@ class Config():
                          self.data_path,
                          self.data_analysis_path,
                          self.output_path,
-                         self.mfrr_CBMP_data_path
+                         self.mfrr_CBMP_data_path,
+                         self.geodata_path
                          )
 
         # Scan all data and store metrics/metadata in a readme

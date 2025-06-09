@@ -1666,6 +1666,11 @@ class Plotter():
 
     def plot_activations(self):
 
+        fontname = "DejaVu Serif"
+        plt.rcParams["font.family"] = fontname
+        plt.rcParams.update({'font.size': 16})
+        
+
         config = self.config
         controller = self.controller
         market = controller.market
@@ -1715,47 +1720,50 @@ class Plotter():
         # mfrr_prices_dn  = np.array(price_data[f'{zone} Down Price'])
         # spot_prices_eur = np.array(spot_prices)
 
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=self.aspect_ratio, sharex=False)
+        # fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=self.aspect_ratio, sharex=False)
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=self.aspect_ratio, sharex=False)
 
 
-        ax1.fill_between(CM_timestamps, 0, CM_act_up_raw,    label="Up",      color='blue',   alpha=0.4, step='post')
-        ax1.fill_between(CM_timestamps, 0, CM_act_down_raw,  label="Down",    color='red',    alpha=0.4, step='post')
-        # ax1.step(CM_timestamps, CM_spot_prices,       label="Spot price",             color='grey',   alpha=0.8, where='post')
-        # ax1.step(CM_timestamps, CM_clearing_prices,       label="Spot price",             color='grey',   alpha=0.8, where='post')
-        ax1.set_title('CM activations raw data')
+        # ax1.fill_between(CM_timestamps, 0, CM_act_up_raw,    label="Up",      color='blue',   alpha=0.4, step='post')
+        # ax1.fill_between(CM_timestamps, 0, CM_act_down_raw,  label="Down",    color='red',    alpha=0.4, step='post')
+        # # ax1.step(CM_timestamps, CM_spot_prices,       label="Spot price",             color='grey',   alpha=0.8, where='post')
+        # # ax1.step(CM_timestamps, CM_clearing_prices,       label="Spot price",             color='grey',   alpha=0.8, where='post')
+        # ax1.set_title('CM activations raw data')
 
-        ax2.fill_between(AM_timestamps, 0, AM_act_up_raw,  label="Up",      color='blue',   alpha=0.4, step='post')
-        ax2.fill_between(AM_timestamps, 0, AM_act_down_raw,  label="Down",    color='red',    alpha=0.4, step='post')
-        # ax2.step(AM_timestamps, AM_spot_prices,       label="Spot price",             color='grey',   alpha=0.8, where='post')
-        ax2.set_title('AM activations raw data')
+        # ax2.fill_between(AM_timestamps, 0, AM_act_up_raw,  label="Up",      color='blue',   alpha=0.4, step='post')
+        # ax2.fill_between(AM_timestamps, 0, AM_act_down_raw,  label="Down",    color='red',    alpha=0.4, step='post')
+        # # ax2.step(AM_timestamps, AM_spot_prices,       label="Spot price",             color='grey',   alpha=0.8, where='post')
+        # ax2.set_title('AM activations raw data')
 
 
-        ax3.fill_between(CM_timestamps, 0, CM_act_up_raw,      label="Up Raw",      color='blue',   alpha=0.1, step='post')
-        ax3.fill_between(CM_timestamps, 0, CM_act_down_raw,    label="Down Raw",    color='red',    alpha=0.1, step='post')
-        ax3.fill_between(CM_timestamps, 0, CM_act_up,          label="Up Randomized",      color='blue',   alpha=1.0, step='post')
-        ax3.fill_between(CM_timestamps, 0, CM_act_down,        label="Down Randomized",    color='red',    alpha=1.0, step='post')
+        translucent_alpha = 0.2
+
+        ax1.fill_between(CM_timestamps, 0, CM_act_up_raw,      label="Up, Original",      color='blue',   alpha=translucent_alpha, step='post')
+        ax1.fill_between(CM_timestamps, 0, CM_act_up,          label="Up, Randomized",      color='blue',   alpha=1.0, step='post')
+        ax1.fill_between(CM_timestamps, 0, CM_act_down_raw,    label="Down, Original",    color='red',    alpha=translucent_alpha, step='post')
+        ax1.fill_between(CM_timestamps, 0, CM_act_down,        label="Down, Randomized",    color='red',    alpha=1.0, step='post')
         # ax3.step(CM_timestamps, CM_spot_prices,  label="Spot price",             color='grey',   alpha=0.8, where='post')
-        ax3.set_title(f'CM activations data, randomized. Activation rate = [{cm_actrate}]')
+        ax1.set_title(f'CM reservations, randomized. Activation rate = {cm_actrate}')
         
-        ax4.fill_between(AM_timestamps, 0, AM_act_up_raw,      label="Up Raw",      color='blue',   alpha=0.1, step='post')
-        ax4.fill_between(AM_timestamps, 0, AM_act_down_raw,    label="Down Raw",    color='red',    alpha=0.1, step='post')
-        ax4.fill_between(AM_timestamps, 0, AM_act_up,          label="Up Randomized",      color='blue',   alpha=1.0, step='post')
-        ax4.fill_between(AM_timestamps, 0, AM_act_down,        label="Down Randomized",    color='red',    alpha=1.0, step='post')
+        ax2.fill_between(AM_timestamps, 0, AM_act_up_raw,      label="Up Raw",      color='blue',   alpha=translucent_alpha, step='post')
+        ax2.fill_between(AM_timestamps, 0, AM_act_down_raw,    label="Down Raw",    color='red',    alpha=translucent_alpha, step='post')
+        ax2.fill_between(AM_timestamps, 0, AM_act_up,          label="Up Randomized",      color='blue',   alpha=1.0, step='post')
+        ax2.fill_between(AM_timestamps, 0, AM_act_down,        label="Down Randomized",    color='red',    alpha=1.0, step='post')
         # ax4.step(AM_timestamps, AM_spot_prices,  label="Spot price",             color='grey',   alpha=0.8, where='post')
-        ax4.set_title(f'AM activations data, randomized. Activation rate = [{am_actrate}]')
+        ax2.set_title(f'AM activations, randomized. Activation rate = {am_actrate}')
 
         # plt.step(timestamps, mfrr_prices_up,    label="Clearing price up",      color='blue',   alpha=0.4, where='post')
         # plt.step(timestamps, mfrr_prices_dn,    label="Clearing price down",    color='red',    alpha=0.4, where='post')
         # plt.step(timestamps, spot_prices_eur,   label="Spot price",             color='grey',   alpha=0.4, where='post')
 
         # plt.ylabel("Price (€/MW)")
-        ax3.set_xlabel("Time (days)")
-        ax4.set_xlabel("Time (days)")
-        fig.suptitle(f"Activation Times (Bidding Zone: {zone}, Date: {market.date})")
-        ax1.legend()
-        ax2.legend()
-        ax3.legend()
-        ax4.legend()
+        ax1.set_xlabel("Time (MM-DD HH)")
+        ax2.set_xlabel("Time (MM-DD HH)")
+        # fig.suptitle(f"Activation Times (Bidding Zone: {zone}, Date: {market.date})")
+        ax1.legend(bbox_to_anchor=(1.35, 1.0))
+        # ax2.legend(bbox_to_anchor=(1.35, 1.0))
+        # ax1.legend(bbox_to_anchor=(1.5, 0.5))
+        # ax2.legend(bbox_to_anchor=(1.5, 0.5))
         fig.tight_layout()
 
 
