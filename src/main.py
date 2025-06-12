@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 # from utils import vertigrow_calculate_energy_consumption, plot_balancing_market_earnings_upper_bounds
 
 SIM_NAME            = "trimmed_AM_down_prices"
-SIMULATION_LENGTH   = 4
+SIMULATION_LENGTH   = 7
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
 SIMULATION_DATE     = '2024-04-05'
@@ -43,7 +43,11 @@ def main():
     settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH,
                          CM_N_BIDS = 96, AM_N_BIDS = 48, CHECK_FEASIBILITY = False)
     settings.add_setting('market', SIMULATION_DATE = SIMULATION_DATE, OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE, 
-                         AM_ACTIVATION_RATE  = 1, CM_ACTIVATION_RATE  = 1, EXACT_ESTIMATION = True, RELATIVE_AM_PRICES = True, TRIM_AM_PRICES = True)
+                         AM_ACTIVATION_RATE = 0.25, 
+                         CM_ACTIVATION_RATE = 0.25, 
+                         EXACT_ESTIMATION   = False, 
+                         RELATIVE_AM_PRICES = False, 
+                         TRIM_AM_PRICES     = True)
     settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT, DLI_RESOLUTION = 2, DISCRETIZATION = DISCRETIZATION)
     settings.add_setting('plotter', SEARCH_PLOT_CACHE = SEARCH_PLOT_CACHE, PLOT_EXPORT_TYPE='pdf', FILTER_BIDS = True, PLOT_ASPECT_RATIO = (14, 6))
 
@@ -57,7 +61,7 @@ def main():
     
     
     ''' ANALYSIS '''
-    market.calculate_balancing_market_earnings_upper_bound(AM=True, CM=True, plot = True)
+    # market.calculate_balancing_market_earnings_upper_bound(AM=True, CM=True, plot = True)
     # market.nordic_markets_overview(output=True)
 
     # market.AM.get_predicted_clearing_prices('2024-10-22', controller.mpc_N_horizon, plot=True)
@@ -67,7 +71,7 @@ def main():
     ''' OPTIMIZAION '''
     
     # '''
-    # controller.optimize_MPC_complete('complete_MPC', 'fixed', plot_run = True)
+    controller.optimize_MPC_complete('complete_MPC', 'fixed', plot_run = True)
     # controller.optimize_mfrr('mfrr', 'fixed', plot_run = True)
     # simulator.apply_mfrr_clearing_prices('mfrr_applied', 'mfrr', plot_run = True)
     # controller.generate_true_optimum_BL_CM_AM('true_opt_BL_CM_AM', 'fixed', plot_run=True)
@@ -76,14 +80,14 @@ def main():
     
     '''Status report'''
     # controller.status_report()
-    # controller.save_to_json()
-    if SAVE_TO_CSV: controller.save_performance_to_csv('simbatch7_relative_newobj_exact', run_id='complete_MPC')
+    controller.save_to_json()
+    if SAVE_TO_CSV: controller.save_performance_to_csv('simbatch8_trimmed_est', run_id='complete_MPC')
     ''''''
     
     # 
     ''' PLOTTING '''
-    # if not SAVE_TO_CSV: plotter.save_ocp_plots()
-    # if not SAVE_TO_CSV: plotter.plot_financial_report()
+    if not SAVE_TO_CSV: plotter.save_ocp_plots()
+    if not SAVE_TO_CSV: plotter.plot_financial_report()
 
     # plotter.plot_spot_mfrr_prices(fontsize = 12) 
     # plotter.plot_activations() 
@@ -117,7 +121,7 @@ def repeat_main(surpress_output):
         sim_suffix = current_date.strftime("%Y_%m_%d")
         
         for zone in bidding_zones:
-            sim_name = f"Batch7_relativeprices_newobj_MPC_7day_{sim_suffix}_{zone}_exact_actrate025"
+            sim_name = f"Batch8_trimmedprices_MPC_7day_{sim_suffix}_{zone}_est_actrate025"
             
             # Set globals (you could refactor main() to accept arguments instead)
             globals()["SIM_NAME"] = sim_name
@@ -131,5 +135,5 @@ def repeat_main(surpress_output):
 
 
 if __name__ == "__main__":
-    main()
-    # repeat_main(surpress_output=True)
+    # main()
+    repeat_main(surpress_output=True)
