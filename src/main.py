@@ -11,12 +11,12 @@ from datetime import datetime, timedelta
 
 # from utils import vertigrow_calculate_energy_consumption, plot_balancing_market_earnings_upper_bounds
 
-SIM_NAME            = "objfun_comparison_tormod"
-SIMULATION_LENGTH   = 3
+SIM_NAME            = "trimmed_AM_down_prices"
+SIMULATION_LENGTH   = 4
 FINAL_FRESHWEIGHT   = 136.7             # 20 Days 
 # FINAL_FRESHWEIGHT      = 2.05              # 20 Days [From vertigrow experiments]
-SIMULATION_DATE     = '2024-04-01'
-BIDDING_ZONE        = 'SE1'
+SIMULATION_DATE     = '2024-04-05'
+BIDDING_ZONE        = 'NO2'
 OPTIMISTIC          = 1
 SEARCH_CACHE        = 0
 SEARCH_PLOT_CACHE   = 0
@@ -43,7 +43,7 @@ def main():
     settings.add_setting('mpc', MPC_TIMEHORIZON = MPC_TIMEHORIZON, MPC_STEPLENGTH = MPC_STEPLENGTH,
                          CM_N_BIDS = 96, AM_N_BIDS = 48, CHECK_FEASIBILITY = False)
     settings.add_setting('market', SIMULATION_DATE = SIMULATION_DATE, OPTIMISTIC = OPTIMISTIC, BIDDING_ZONE = BIDDING_ZONE, 
-                         AM_ACTIVATION_RATE  = 0.05, CM_ACTIVATION_RATE  = 0.05, EXACT_ESTIMATION = True, RELATIVE_AM_PRICES = True)
+                         AM_ACTIVATION_RATE  = 1, CM_ACTIVATION_RATE  = 1, EXACT_ESTIMATION = True, RELATIVE_AM_PRICES = True, TRIM_AM_PRICES = True)
     settings.add_setting('plantmodel', INIT_STATE = X_INIT, TARGET_FRESHWEIGHT = FINAL_FRESHWEIGHT, DLI_RESOLUTION = 2, DISCRETIZATION = DISCRETIZATION)
     settings.add_setting('plotter', SEARCH_PLOT_CACHE = SEARCH_PLOT_CACHE, PLOT_EXPORT_TYPE='pdf', FILTER_BIDS = True, PLOT_ASPECT_RATIO = (14, 6))
 
@@ -57,7 +57,7 @@ def main():
     
     
     ''' ANALYSIS '''
-    market.calculate_balancing_market_earnings_upper_bound(AM=True, CM=True)
+    market.calculate_balancing_market_earnings_upper_bound(AM=True, CM=True, plot = True)
     # market.nordic_markets_overview(output=True)
 
     # market.AM.get_predicted_clearing_prices('2024-10-22', controller.mpc_N_horizon, plot=True)
@@ -85,10 +85,13 @@ def main():
     # if not SAVE_TO_CSV: plotter.save_ocp_plots()
     # if not SAVE_TO_CSV: plotter.plot_financial_report()
 
-    # plotter.plot_spot_mfrr_prices() 
+    # plotter.plot_spot_mfrr_prices(fontsize = 12) 
     # plotter.plot_activations() 
     # plotter.plot_CM_data() 
     # plotter.plot_simbatch('simbatch7_relative_newobj_exact')
+
+    # plotter.plot_preliminary_analysis_geodata()
+
     ''''''
 
     # controller.export_intensity_to_json('abs_applied')

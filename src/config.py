@@ -29,7 +29,6 @@ class Config():
         self.data_path          = os.path.join(self.path, self.config_settings['DATA_SUBDIR'])
         self.data_analysis_path = os.path.join(self.path, self.config_settings['DATA_ANALYSIS_SUBDIR'])
         self.output_path        = os.path.join(self.path, self.config_settings['OUTPUT_SUBDIR'])
-        self.geodata_path       = os.path.join(self.path, self.config_settings['GEOJSON_DATA_PATH'])
 
         self.current_sim_plot_path  = os.path.join(self.plots_path, self.sim_name)
 
@@ -38,6 +37,7 @@ class Config():
         self.mfrr_AM_data_path              = os.path.join(self.data_path, self.config_settings['MFRR_AM_DATA_PATH'])
         self.mfrr_CM_data_path              = os.path.join(self.data_path, self.config_settings['MFRR_CM_DATA_PATH'])
         self.mfrr_CBMP_data_path            = os.path.join(self.data_path, self.config_settings['MFRR_CBMP_DATA_PATH'])
+        self.geodata_path                   = os.path.join(self.data_path, self.config_settings['GEOJSON_DATA_PATH'])
 
         # Paths for different datasets
         self.spotprices_data_path        = os.path.join(self.data_path, self.config_settings['SPOTPRICES_PATH'])

@@ -819,9 +819,10 @@ class Controller():
 
         sol= {}
         sol['f'] = float(
-                    self.model.elcost_obj_function(N, self.spot_prices, U_log) \
-                    + self.model.Bidding_obj_function(N, self.spot_prices, AM_bid_volumes, AM_bid_prices, AM)\
-                    + self.model.Bidding_obj_function(N, self.spot_prices, CM_bid_volumes, CM_bid_prices, CM)\
+                    self.model.elcost_obj_function(N, self.spot_prices, U_nom_log) \
+                    + self.model.Bidding_obj_function_seb(N, self.spot_prices, CM_bid_volumes, CM_bid_prices, CM)\
+                    + self.model.Bidding_obj_function_seb(N, self.spot_prices, AM_bid_volumes, AM_bid_prices, AM)\
+                    + self.model.AM_baseline_deviation_obj_function(N, self.spot_prices, AM_bid_volumes, AM_bid_prices, AM)\
                     + self.model.terminal_cost(self, X_log, U_log, Eps_log)
                     )
                     # + self.model.terminal_cost(self, X_nom_log, U_nom_log, Eps_nom)
@@ -927,7 +928,7 @@ class Controller():
         '''
 
         # assert not (B is not None and balancing_market is None), 'Must specify a balancing market'
-        if U_nom is None: U_nom = np.zeros((1,self.N))
+        if U_nom is None: U_nom = u
         
         timeseries_data = {
             't'     : self.t,
@@ -950,7 +951,7 @@ class Controller():
         
         metrics_data = self.model.get_metrics(metrics_data, self, run_id, x, u)
 
-        metrics_data['Costs'] = float(self.model.elcost_obj_function(self.N, self.spot_prices, u))
+        metrics_data['Costs'] = float(self.model.elcost_obj_function(self.N, self.spot_prices, U_nom))
         total = metrics_data['Costs']
 
         for market_type in market_data:
@@ -976,9 +977,23 @@ class Controller():
             clearing_prices_up      = balancing_market.clearing_prices_up
             clearing_prices_down    = balancing_market.clearing_prices_down
         
-            total_earnings   = 1/4 * np.sum(np.multiply(clearing_prices_up,   np.multiply(bid_activations_up,   bid_volumes_up))) \
-                             + 1/4 * np.sum(np.multiply(clearing_prices_down, np.multiply(bid_activations_down, bid_volumes_down)))
+
+            if market_type == 'CM':
+                total_earnings_up  = 1/4 * np.sum(np.multiply(clearing_prices_up,   np.multiply(bid_activations_up,   bid_volumes_up)))
+                total_earnings_down = 1/4 * np.sum(np.multiply(clearing_prices_down, np.multiply(bid_activations_down, bid_volumes_down)))
             
+            elif market_type == 'AM':
+                total_earnings_up  = 1/4 * np.sum(np.multiply(clearing_prices_up - self.spot_prices,   np.multiply(bid_activations_up,   bid_volumes_up)))
+                total_earnings_down = 1/4 * np.sum(np.multiply(clearing_prices_down - self.spot_prices, np.multiply(bid_activations_down, bid_volumes_down)))
+
+            else: 
+                assert False, f'Weird market type: {market_type}'            
+
+
+            metrics_data[f'{market_type} Earnings Up'] = float(total_earnings_up)
+            metrics_data[f'{market_type} Earnings Down'] = float(total_earnings_down)
+
+            total_earnings = total_earnings_up + total_earnings_down
             metrics_data[f'{market_type} Earnings'] = float(total_earnings)
 
 
@@ -1017,6 +1032,8 @@ class Controller():
             }     
 
             market_data[market_type]['Earnings']        = total_earnings
+            market_data[market_type]['Earnings Up']     = total_earnings_up
+            market_data[market_type]['Earnings Down']   = total_earnings_down
             total                                       -= total_earnings
             market_data[market_type]['bidding result']  = bidding_data 
 

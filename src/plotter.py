@@ -17,6 +17,8 @@ import time
 import matplotlib.colors as mcolors
 import seaborn as sns
 from matplotlib.patches import Patch
+import geopandas as gpd
+
 
 
 
@@ -1097,12 +1099,17 @@ class Plotter():
 
 
 
-    def plot_spot_mfrr_prices(self):
+    def plot_spot_mfrr_prices(self, fontsize: float = None):
+
+        if fontsize is not None: plt.rcParams.update({'font.size': fontsize})
 
         config = self.config
         controller = self.controller
         market = controller.market
         zone = market.bidding_zone
+
+        CM = market.CM
+        AM = market.AM
 
         # Remove drastic outliers
         price_data = market.AM_data_working_set
@@ -1113,6 +1120,12 @@ class Plotter():
         mfrr_prices_up  = np.array(price_data[f'{zone} Up Price'])
         mfrr_prices_dn  = np.array(price_data[f'{zone} Down Price'])
         spot_prices_eur = np.array(spot_prices)
+
+        CM_clearing_price_data      = CM.get_market_data(clearing_prices=True, times=True, spot_prices=True)
+        CM_clearing_prices_up       = np.array(CM_clearing_price_data[f'{zone} Up Price'])
+        CM_clearing_prices_down     = np.array(CM_clearing_price_data[f'{zone} Down Price'])
+        CM_timestamps               = CM_clearing_price_data['Start Time']
+        CM_spot_prices              = np.array(CM_clearing_price_data[f'{zone} Spot Price'])
 
 
         def moving_average(data, window_size):
@@ -1148,7 +1161,7 @@ class Plotter():
         plt.xlabel("Time (days)")
         plt.title(f"Spot price vs activation prices smoothed using {window_length}h moving average")
         plt.legend()
-
+        plt.tight_layout()
 
         filename = f"smoothed_prices_{market.bidding_zone}"
         plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
@@ -1156,22 +1169,43 @@ class Plotter():
 
 
         ###########################################
-        #            SPOT VS MFRR PRICES 
+        #            SPOT VS MFRR CM PRICES 
         #         [RAW]  [OUTLIERS REMOVED]
 
         plt.figure(figsize=self.aspect_ratio)
 
-        plt.step(timestamps, mfrr_prices_up, label="Clearing price up", color='blue', alpha=1, where='post')
-        plt.step(timestamps, mfrr_prices_dn, label="Clearing price down", color='red', alpha=1, where='post')
-        plt.step(timestamps, spot_prices_eur, label="Spot price", color='grey', alpha=1, where='post')
+        plt.step(CM_timestamps, CM_clearing_prices_up,     label="Clearing price up",      color='blue',   alpha=1, where='post')
+        plt.step(CM_timestamps, CM_clearing_prices_down,   label="Clearing price down",    color='red',    alpha=1, where='post')
+        plt.step(CM_timestamps, CM_spot_prices,            label="Spot price",             color='grey',   alpha=1, where='post')
+
+        plt.ylabel("Price (€/MW)")
+        plt.xlabel("Time (days)")
+        plt.title(f"Spot price vs CM clearing prices (Zone: {zone}, Date: {market.date})")
+        plt.legend()
+        plt.tight_layout()
+
+
+        filename = f"CM_raw_prices_{market.bidding_zone}"
+        plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
+        
+        ###########################################
+        #            SPOT VS MFRR AM PRICES 
+        #         [RAW]  [OUTLIERS REMOVED]
+
+        plt.figure(figsize=self.aspect_ratio)
+
+        plt.step(timestamps, mfrr_prices_up, label="Clearing price up",     color='blue',   alpha=1, where='post')
+        plt.step(timestamps, mfrr_prices_dn, label="Clearing price down",   color='red',    alpha=1, where='post')
+        plt.step(timestamps, spot_prices_eur, label="Spot price",           color='grey',   alpha=1, where='post')
 
         plt.ylabel("Price (€/MW)")
         plt.xlabel("Time (days)")
         plt.title(f"Spot price vs AM clearing prices (Zone: {zone}, Date: {market.date})")
         plt.legend()
+        plt.tight_layout()
 
 
-        filename = f"raw_prices_{market.bidding_zone}"
+        filename = f"AM_raw_prices_{market.bidding_zone}"
         plt.savefig(config.data_analysis_path + filename + "." + self.plot_file_type, format=self.plot_file_type)
         
         
@@ -2539,5 +2573,240 @@ class Plotter():
             plt.legend()
             plt.tight_layout()
             plt.show()
+
+
+
+    def plot_preliminary_analysis_geodata(self):
+
+        controller = self.controller
+        market = controller.market
+        CM = market.CM
+        AM = market.AM
+
+
+        spot_data = market.spot_data_full_set
+        # AM_prices_data = AM.get_market_data(clearing_prices=True)
+        # CM_prices_data = AM.get_market_data(clearing_prices=True)
+
+        # AM_volumes_data = AM.get_market_data(volumes=True)
+        # CM_volumes_data = CM.get_market_data(volumes=True)
+        
+        # AM_activations_data = AM.get_market_data(activations=True)
+        # CM_activations_data = CM.get_market_data(activations=True)
+
+
+
+
+        ################################################################
+        #               MEAN SPOT PRICES GEOPLOT
+
+
+        spot_data = market.spot_data_full_set
+
+        zone_data = {}
+
+        spot_data_culled = spot_data.dropna()
+
+        for col in spot_data_culled.columns:
+            if 'spot' in col.lower():
+                zone = col.split(' ')[0]
+                if zone.lower() == 'no2nsl': continue
+                zone_data[zone] = np.array(spot_data_culled[col]).flatten().mean()
+
+        from_date   = str(spot_data_culled['Start Time'].min()).split(' ')[0]
+        to_date     = str(spot_data_culled['Start Time'].max()).split(' ')[0]
+
+        self.plot_geodata(zone_data = zone_data, cmap = 'bone_r', legend=True, value_limits=[20, 100], title=False,
+                          plot_name=f"Average Spot Price per Bidding Zone [€/MWh] \n({from_date} - {to_date})", sort=True,
+                          filename = f"geodata_avg_spot_price")
+
+
+
+
+        ################################################################
+        #               MEAN RELATIVE AM CLEARING PRICES Up/Down GEOPLOT
+
+
+        zone_data_up = {}
+        zone_data_down = {}
+
+        AM_prices_data = AM.get_market_data(times = True, clearing_prices=True, zone='all', start_date = '2024-01-01', end_date='2025-03-05').dropna()
+
+        for col in AM_prices_data.columns:
+            if 'price' in col.lower():
+                zone = col.split(' ')[0]
+                if zone.lower() == 'no2nsl': continue
+
+                if 'up' in col.lower():
+                    zone_data_up[zone] = np.array(AM_prices_data[col]).flatten().mean()
+                if 'down' in col.lower():
+                    zone_data_down[zone] = np.array(AM_prices_data[col]).flatten().mean()
+
+        from_date   = str(AM_prices_data['Start Time'].min()).split(' ')[0]
+        to_date     = str(AM_prices_data['Start Time'].max()).split(' ')[0]
+
+        self.plot_geodata(zone_data = zone_data_up, cmap = 'bone_r', legend=True, value_limits=[0, 20], title=True,
+                          plot_name=f"Average Relative AM Clearing Price Up [€/MWh] \n({from_date} - {to_date})", sort=True,
+                          filename = f"geodata_avg_AM_prices_up")
+        
+        self.plot_geodata(zone_data = zone_data_down, cmap = 'bone_r', legend=True, value_limits=[0, 20], title=True,
+                          plot_name=f"Average Relative AM Clearing Price Down [€/MWh] \n({from_date} - {to_date})", sort=True,
+                          filename = f"geodata_avg_AM_prices_down")
+
+        ################################################################
+        #               MEAN CM CLEARING PRICES Up/Down GEOPLOT
+
+
+        zone_data_up = {}
+        zone_data_down = {}
+
+        CM_prices_data = CM.get_market_data(times = True, clearing_prices=True, zone='all', start_date = '2024-01-01', end_date='2025-03-05').dropna()
+
+        for col in CM_prices_data.columns:
+            if 'price' in col.lower():
+                zone = col.split(' ')[0]
+                if zone.lower() == 'no2nsl': continue
+
+                if 'up' in col.lower():
+                    zone_data_up[zone] = np.array(CM_prices_data[col]).flatten().mean()
+                if 'down' in col.lower():
+                    zone_data_down[zone] = np.array(CM_prices_data[col]).flatten().mean()
+
+        from_date   = str(CM_prices_data['Start Time'].min()).split(' ')[0]
+        to_date     = str(CM_prices_data['Start Time'].max()).split(' ')[0]
+
+        self.plot_geodata(zone_data = zone_data_up, cmap = 'bone_r', legend=True, value_limits=[0, 50], title=True,
+                          plot_name=f"Average CM Clearing Price Up [€/MWh] \n({from_date} - {to_date})", sort=True,
+                          filename = f"geodata_avg_CM_prices_up")
+        
+        self.plot_geodata(zone_data = zone_data_down, cmap = 'bone_r', legend=True, value_limits=[0, 50], title=True,
+                          plot_name=f"Average CM Clearing Price Down [€/MWh] \n({from_date} - {to_date})", sort=True,
+                          filename = f"geodata_avg_CM_prices_down")
+
+
+
+
+
+
+
+    def plot_geodata(self, zone_data: dict, cmap: str, legend: bool, plot_name: str, filename: str, value_limits: list = None, cbar_margin: float = 0, sort: bool = False, title = True):
+        '''
+        Plot bidding zone data as map graphic using bidding zone outlines
+        '''
+
+
+        geojson_dir = self.config.geodata_path
+
+        geofiles = [
+            'DK_1.geojson', 'DK_2.geojson', 'FI.geojson',
+            'NO_1.geojson', 'NO_2.geojson', 'NO_3.geojson',
+            'NO_4.geojson', 'NO_5.geojson',
+            'SE_1.geojson', 'SE_2.geojson', 'SE_3.geojson', 'SE_4.geojson'
+        ]
+
+        # Get the path to the current script directory
+        data_analysis_path = self.config.data_analysis_path
+
+        # Style setup
+        my_colors = ["slategray", "#77CDFF", "#F95454"]
+        plt.rcParams['axes.prop_cycle'] = plt.cycler(color=my_colors)
+        plt.rcParams["font.family"] = "DejaVu Serif"
+        fontsize = 12
+        plt.rcParams.update({'font.size': fontsize})
+
+        # Load and concatenate all GeoJSON files
+        gdfs = []
+        for file in geofiles:
+            gdf = gpd.read_file(os.path.join(geojson_dir, file))
+            gdf["geometry"] = gdf["geometry"].simplify(tolerance=0.01, preserve_topology=True)
+
+            # Add a new column for the zone name based on file name (remove extension and underscores)
+            gdf["zone_name"] = file.replace(".geojson", "").replace("_", "")
+            gdfs.append(gdf)
+
+        full_gdf = gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True), crs=gdfs[0].crs)
+        
+        # Add cost reduction to GeoDataFrame
+        full_gdf["data_metric"] = full_gdf["zone_name"].map(zone_data)
+
+        # Plot heatmap
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6, 5), width_ratios=[1, 4])
+
+
+        # table
+        data_table = [[key, f"{zone_data[key]:.2f}"] for key in zone_data]
+        if sort: 
+            temp_table = np.array(data_table)
+            temp_table = np.flip(temp_table[np.float64(temp_table[:,1]).argsort(axis=0)], axis=0)
+            for i, row in enumerate(temp_table):
+                data_table[i] = list(row)
+
+        table = [['Zone', 'Value']] + data_table
+
+        ax1.axis("tight")
+        ax1.axis("off")
+        ax1.table(cellText=table, cellLoc='center', loc='center') #, colWidths=[0.2, 0.3], fontsize = 20)
+
+
+        if value_limits is None:
+            vmin = min(zone_data.values()) - cbar_margin
+            vmax = max(zone_data.values()) + cbar_margin
+        else:
+            vmin = min(value_limits) - cbar_margin
+            vmax = max(value_limits) + cbar_margin
+
+        full_gdf.plot(
+            column="data_metric",
+            cmap=cmap,
+            linewidth=0.8,
+            edgecolor='black',
+            legend=legend,
+            ax=ax2,
+            vmin=vmin,         
+            vmax=vmax,
+            legend_kwds={"shrink": 0.9}
+        )
+
+        offsets = {
+            "DK1": (-3.1,   0.0     ),
+            "DK2": (2.0,    -1.0    ),
+            "FI":  (0.9,    0.0     ),
+            "NO1": (0.0,    0.1     ),
+            "NO2": (0.0,    0.0     ),
+            "NO3": (0.0,    0.0     ),
+            "NO4": (-0.7,   0.7     ),
+            "NO5": (0.0,    -0.1    ),
+            "SE1": (0.0,    0.0     ),
+            "SE2": (0.0,    0.0     ),
+            "SE3": (0.0,    0.0     ),
+            "SE4": (0.0,    0.1     ),
+        }
+
+        for idx, row in full_gdf.iterrows():
+            zone = row["zone_name"]
+            centroid = row["geometry"].centroid
+            dx, dy = offsets.get(zone, (0, 0))
+            x_text, y_text = centroid.x + dx, centroid.y + dy
+
+            # Add label
+            ax2.text(
+                x_text,
+                y_text,
+                zone,
+                ha="center",
+                va="center",
+                fontsize=10,
+                color="black"
+            )
+
+        if title: fig.suptitle(f"{plot_name}")
+        ax2.axis("off")
+        fig.tight_layout()
+
+        sanitized_name = filename.replace(' ','_').lower()
+        output_path = os.path.join(data_analysis_path, f"{sanitized_name}.pdf")
+        fig.savefig(output_path, bbox_inches='tight')
+
+        
 
 

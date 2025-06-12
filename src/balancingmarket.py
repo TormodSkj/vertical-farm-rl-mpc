@@ -52,14 +52,18 @@ class BalancingMarket:
 
         # Transform data
         if market_type == 'Activation Market':  
+            if self.market_settings['TRIM_AM_PRICES']: 
+                self.market_data_full_set = self.trim_prices(self.market_data_full_set, lower_bound = 0, upper_bound = np.inf)
             if self.market_settings['RELATIVE_AM_PRICES']: 
                 self.market_data_full_set = self.transform_prices_to_relative(self.market_data_full_set)
             self.generate_activation_times(activation_chance=self.market_settings['AM_ACTIVATION_RATE'], hourly_roll=False)
+        
+        
         if market_type == 'Capacity Market':    
             self.generate_activation_times(activation_chance=self.market_settings['CM_ACTIVATION_RATE'], hourly_roll=True)
         
         
-        self.market_data_working_set = self.get_market_data(all=True)
+        self.market_data_working_set = self.get_market_data(all_metrics=True)
 
         self.spot_prices             = np.array(self.market_data_working_set[f'{self.bidding_zone} Spot Price'])
         self.clearing_prices_up      = np.array(self.market_data_working_set[f'{self.bidding_zone} Up Price'])
@@ -394,7 +398,7 @@ class BalancingMarket:
         return
 
 
-    def get_market_data(self, start_date=None, end_date=None, n_days = None, zone = None, all = False, times = False, spot_prices=False, clearing_prices=False, volumes=False, activations=False, imbalance_prices = False, dataset = None):
+    def get_market_data(self, start_date=None, end_date=None, n_days = None, zone = None, all_metrics = False, times = False, spot_prices=False, clearing_prices=False, volumes=False, activations=False, imbalance_prices = False, dataset = None):
         '''
         Fetch a slice form the full data set containing specified data types.
         
@@ -420,12 +424,12 @@ class BalancingMarket:
             ]
         
         keywords = []
-        if times            or all: keywords += ['Start Time']
-        if spot_prices      or all: keywords += ['spot']
-        if clearing_prices  or all: keywords += ['up price', 'down price']
-        if imbalance_prices or all: keywords += ['imbalance price']
-        if volumes          or all: keywords += ['volume']
-        if activations      or all: keywords += ['activated']
+        if times            or all_metrics: keywords += ['Start Time']
+        if spot_prices      or all_metrics: keywords += ['spot']
+        if clearing_prices  or all_metrics: keywords += ['up price', 'down price']
+        if imbalance_prices or all_metrics: keywords += ['imbalance price']
+        if volumes          or all_metrics: keywords += ['volume']
+        if activations      or all_metrics: keywords += ['activated']
         columns = [col for col in market_data_working_set.columns if any([keyword.lower() in col.lower() for keyword in keywords])]
 
         if zone.lower() != 'all':
@@ -494,6 +498,27 @@ class BalancingMarket:
                 
                 data[f'{zone} Up Price'] = data[f'{zone} Up Price'] - data[f'{zone} Spot Price']
                 data[f'{zone} Down Price'] = data[f'{zone} Spot Price'] - data[f'{zone} Down Price']
+
+        return data
+    
+
+    def trim_prices(self, dataset, lower_bound, upper_bound):
+        ''' 
+        Make sure down prices are always below 0. 
+        In case spot price is lower than 0, set clearing price to equal spot price.
+        Handles human errors where clearing price down is -1000
+        '''
+
+        data = dataset.copy()
+
+        for col in data.columns:
+
+            if 'spot' in col.lower():   # only one spot column per zone
+                zone = col.split()[0]
+                if zone == 'NO2NSL': continue
+                
+                data[f'{zone} Up Price']    = np.minimum(np.maximum(data[f'{zone} Up Price'], data[f'{zone} Spot Price']), upper_bound)
+                data[f'{zone} Down Price']  = np.minimum(np.maximum(data[f'{zone} Down Price'], lower_bound), data[f'{zone} Spot Price'])
 
         return data
 

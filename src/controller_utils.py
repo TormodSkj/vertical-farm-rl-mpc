@@ -790,7 +790,7 @@ def update_optimizer_CM_bids(controller, market: Market, model: PlantModel, opti
     U = model.get_u_CM(N_TH, N_bids, U_nom, B_volumes, B_prices, spot_prices, CM = market.CM, AM = market.AM, CM_clearing_prices=Est_prices)
     
     # U = self.model.get_u(N_TH, U_nom, B_volumes, B_prices, spot_prices, self.market.CM)
-    obj = model.elcost_obj_function(N_TH, spot_prices, U) \
+    obj = model.elcost_obj_function(N_TH, spot_prices, U_nom) \
         + model.Bidding_obj_function_seb(N_bids, spot_prices, B_volumes, B_prices, market.CM, MTU_start = MTU)\
         + model.terminal_cost(controller, X, U, Eps)\
         + model.terminal_cost(controller, X_nom, U_nom, Eps_nom)
@@ -846,9 +846,11 @@ def update_optimizer_AM_bids(controller, market: Market, model: PlantModel, opti
     model.opti_dynamic_process_constraints(opti, N_TH, X, Eps, ref_weight, past_X = past_X)
     
     U = model.get_u(N_TH, N_bids, U_nom, B_volumes, B_prices, spot_prices, market.AM, clearing_prices=Est_prices)
-    obj_fun = model.elcost_obj_function(N_TH, spot_prices, U)\
-            + model.Bidding_obj_function_seb(N_bids, spot_prices, B_volumes, B_prices, market.AM, MTU_start=MTU)\
-            + model.terminal_cost(controller, X, U, Eps)
+    
+    obj_fun = model.Bidding_obj_function_seb(N_bids, spot_prices, B_volumes, B_prices, market.AM, MTU_start=MTU)\
+            + model.AM_baseline_deviation_obj_function(N_bids, spot_prices, B_volumes, B_prices, market.AM, MTU_start=MTU)\
+            + model.terminal_cost(controller, X, U, Eps) #\
+            # + model.elcost_obj_function(N_TH, spot_prices, U_nom)     # Removing this one, as U_nom is constant.
             
     opti.minimize(obj_fun)
 

@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 import geopandas as gpd
-from shapely.geometry import Point
-import matplotlib.patheffects as pe
+# from shapely.geometry import Point
+# import matplotlib.patheffects as pe
 
 def main1():
     # Load files
@@ -203,12 +203,16 @@ def main3():
     gdfs = []
     for file in geofiles:
         gdf = gpd.read_file(os.path.join(geojson_dir, file))
+        gdf["geometry"] = gdf["geometry"].simplify(tolerance=0.01, preserve_topology=True)
+
         # Add a new column for the zone name based on file name (remove extension and underscores)
         gdf["zone_name"] = file.replace(".geojson", "").replace("_", "")
         gdfs.append(gdf)
 
     full_gdf = gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True), crs=gdfs[0].crs)
 
+    # dk, fi, no, se = 170000, 230000, 300000, 380000
+    # zone_costs = {'NO1' : no, 'NO2': no, 'NO3' : no, 'NO4': no, 'NO5' : no, 'DK1': dk, 'DK2' : dk, 'FI': fi, 'SE1' : se, 'SE2': se, 'SE3' : se, 'SE4': se}
     zone_costs = {}
 
     for zone in zones:
@@ -223,7 +227,7 @@ def main3():
 
     full_gdf.plot(
         column="cost_reduction",
-        cmap="YlOrRd",
+        cmap="bone_r",
         linewidth=0.8,
         edgecolor='black',
         legend=True,
@@ -277,10 +281,12 @@ def main3():
         #     )
 
 
+    # ax.set_title("Nordic Bidding Zones")
     ax.set_title("Electricity Cost Across Nordic Bidding Zones")
     ax.axis("off")
     plt.tight_layout()
 
+    # output_path = os.path.join(data_path, f"nordic_bidding_zones.pdf")
     output_path = os.path.join(data_path, f"nordic_cost_reduction_map.pdf")
     fig.savefig(output_path, bbox_inches='tight')
 

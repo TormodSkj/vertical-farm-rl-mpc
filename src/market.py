@@ -434,7 +434,7 @@ class Market:
         
 
 
-    def calculate_balancing_market_earnings_upper_bound(self, AM = True, CM = True, zones = None, start_date='2024-02-15', end_date='2025-02-15'):
+    def calculate_balancing_market_earnings_upper_bound(self, AM = True, CM = True, zones = None, start_date='2024-02-15', end_date='2025-02-15', plot = True):
         """
         Calculates the upper bound for earnings from the AM market by optimizing activation periods.
         
@@ -633,7 +633,8 @@ class Market:
         nominal_costs_df.to_csv(os.path.join(output_dir, "nominal_costs.csv"), index=False)
         mfrr_costs_df.to_csv(os.path.join(output_dir, "mfrr_costs.csv"), index=False)
 
-        '''
+        if not plot: return
+
         for zone in results: print(results[zone]['message'])
 
         cmap = plt.get_cmap("Set3")
@@ -666,7 +667,8 @@ class Market:
         # my_colors = ["#727D73", "#AAB99A", "#D0DDD0", "#F0F0D7"]
         # my_colors = ["#4B5945", "#66785F", "#91AC8F", "#B2C9AD"]
         # my_colors = ["#BF9264", "#6F826A", "#BBD8A3", "#F0F1C5"]
-        my_colors = ["#557571", "#D49A89", "#F7D1BA", "#F4F4F4"]
+        # my_colors = ["#557571", "#D49A89", "#F7D1BA", "#F4F4F4"]
+        my_colors = ['slategray', 'lightskyblue', 'coral', 'lightgreen']
         plt.rcParams['axes.prop_cycle'] = plt.cycler(color=my_colors)
 
 
@@ -774,15 +776,13 @@ class Market:
         plt.show()
 
         return
-
-        #'''
         
 
 
     def nordic_markets_overview(self, output=False):
 
-        AM_data_raw = self.AM.get_market_data('2024-01-01', n_days=365, all=True)
-        CM_data_raw = self.CM.get_market_data('2024-01-01', n_days=365, all=True)
+        AM_data_raw = self.AM.get_market_data('2024-01-01', n_days=365, all_metrics=True)
+        CM_data_raw = self.CM.get_market_data('2024-01-01', n_days=365, all_metrics=True)
         
 
         zones = ['DK1', 'DK2', 'FI', 'NO1', 'NO2', 'NO3', 'NO4', 'NO5', 'SE1', 'SE2', 'SE3', 'SE4']

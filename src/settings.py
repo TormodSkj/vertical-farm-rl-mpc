@@ -37,7 +37,8 @@ class Settings():
                          AM_ACTIVATION_RATE  = 0.25,
                          CM_ACTIVATION_RATE  = 0.25,
                          EXACT_ESTIMATION    = False,
-                         RELATIVE_AM_PRICES  = False
+                         RELATIVE_AM_PRICES  = False,
+                         TRIM_AM_PRICES      = False
                          )
 
         # Model settings
